@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, HTTPException, Response
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel, Field
 
 dashboard_router = APIRouter()
 
@@ -444,6 +445,28 @@ def gmail_review_candidates(response: Response) -> dict:
     response.headers["Cache-Control"] = "no-store"
     with KnowledgeStore() as store:
         return {"candidates": store.gmail_review_candidates()}
+
+
+class Ga4PropertySettings(BaseModel):
+    property_id: str = Field(max_length=30)
+
+
+@dashboard_router.get("/v1/dashboard/ga4-settings")
+def google_analytics_settings(response: Response) -> dict:
+    from openjarvis.connectors.ga4_report import ga4_settings
+
+    response.headers["Cache-Control"] = "no-store"
+    return ga4_settings()
+
+
+@dashboard_router.put("/v1/dashboard/ga4-settings")
+def update_google_analytics_settings(payload: Ga4PropertySettings) -> dict:
+    from openjarvis.connectors.ga4_report import save_ga4_property
+
+    try:
+        return save_ga4_property(payload.property_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @dashboard_router.get("/v1/dashboard/ga4-views")

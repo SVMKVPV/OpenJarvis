@@ -26,6 +26,7 @@ import { SoftwareEngineeringWorkspace, type WorkspaceEntry } from './SoftwareEng
 import { CustomDashboard, DASHBOARD_WIDGETS, DEFAULT_WIDGET_IDS } from './CustomDashboard';
 import { SharedBrainPanel } from './SharedBrainPanel';
 import { GmailReviewList } from './GmailReviewList';
+import { Ga4PropertyForm } from './Ga4PropertyForm';
 import { SocialContentStudio } from './SocialContentStudio';
 import { SystemBuilderLab } from './SystemBuilderLab';
 import { WorkstationAgentActivity } from './WorkstationAgentActivity';
@@ -695,7 +696,7 @@ export function CommandCenterPage() {
             </section>
           )}
           {selected.id === 'email' && <GmailReviewList onOpenWorkflow={openGmailReplyWorkflow} />}
-          {selected.id === 'marketing' && <SocialContentStudio />}
+          {selected.id === 'marketing' && <><Ga4PropertyForm /><SocialContentStudio /></>}
           {selected.id === 'system-builder' && <SystemBuilderLab />}
           {STATION_AGENT_TEMPLATES[selected.id] && (
             <Link to={`/agents?template=${STATION_AGENT_TEMPLATES[selected.id]}`}>

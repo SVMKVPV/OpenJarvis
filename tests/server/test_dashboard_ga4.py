@@ -49,3 +49,30 @@ def test_ga4_dashboard_reads_views_only_after_configuration(tmp_path, monkeypatc
         "metrics": [{"name": "screenPageViews"}],
         "dateRanges": [{"startDate": "28daysAgo", "endDate": "yesterday"}],
     }
+
+def test_ga4_property_persists_without_overriding_backend_environment(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("OPENJARVIS_HOME", str(tmp_path))
+    monkeypatch.delenv("OPENJARVIS_GA4_PROPERTY_ID", raising=False)
+    app = FastAPI()
+    app.include_router(dashboard_router)
+    path = "/v1/dashboard/ga4-settings"
+    with TestClient(app) as client:
+        assert client.put(path, json={"property_id": "non-numeric"}).status_code == 400
+        assert client.put(path, json={"property_id": "123"}).json() == {
+            "property_id": "123",
+            "environment_override": False,
+        }
+        assert client.get(path).json()["property_id"] == "123"
+        assert client.get("/v1/dashboard/ga4-views").json() == {
+            "status": "authorization_required",
+            "views": None,
+        }
+        monkeypatch.setenv("OPENJARVIS_GA4_PROPERTY_ID", "456")
+        assert client.get(path).json()["environment_override"] is True
+        assert client.put(path, json={"property_id": "789"}).status_code == 400
+        assert client.get(path).json()["property_id"] == "456"
+        monkeypatch.delenv("OPENJARVIS_GA4_PROPERTY_ID")
+        assert client.get(path).json()["property_id"] == "123"
+        assert client.put(path, json={"property_id": ""}).json()["property_id"] == ""

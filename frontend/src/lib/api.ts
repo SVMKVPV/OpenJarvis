@@ -1307,6 +1307,30 @@ export async function fetchGmailReviewCandidates(signal?: AbortSignal): Promise<
   return candidates;
 }
 
+export type Ga4PropertySettings = {
+  property_id: string;
+  environment_override: boolean;
+};
+
+export async function fetchGa4Property(signal?: AbortSignal): Promise<Ga4PropertySettings> {
+  const response = await apiFetch('/v1/dashboard/ga4-settings', { signal });
+  if (!response.ok) throw new Error('GA4 settings unavailable.');
+  return response.json();
+}
+
+export async function saveGa4Property(propertyId: string): Promise<Ga4PropertySettings> {
+  const response = await apiFetch('/v1/dashboard/ga4-settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ property_id: propertyId }),
+  });
+  if (!response.ok) {
+    const result = await response.json().catch(() => null);
+    throw new Error(typeof result?.detail === 'string' ? result.detail : 'Could not save GA4 property.');
+  }
+  return response.json();
+}
+
 export type Ga4Views = {
   status: 'unconfigured' | 'invalid_property' | 'authorization_required' | 'unavailable' | 'live';
   views: number | null;
