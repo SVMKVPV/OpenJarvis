@@ -437,6 +437,15 @@ def gmail_review_summary(response: Response) -> dict:
         return {"threads_to_review": store.gmail_threads_to_review()}
 
 
+@dashboard_router.get("/v1/dashboard/gmail-review/candidates")
+def gmail_review_candidates(response: Response) -> dict:
+    from openjarvis.connectors.store import KnowledgeStore
+
+    response.headers["Cache-Control"] = "no-store"
+    with KnowledgeStore() as store:
+        return {"candidates": store.gmail_review_candidates()}
+
+
 @dashboard_router.get("/v1/dashboard/calendar")
 def upcoming_calendar_events(response: Response, local_day: date | None = None) -> dict:
     from openjarvis.connectors.store import KnowledgeStore

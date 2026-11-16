@@ -1291,6 +1291,22 @@ export async function fetchGmailReviewCount(signal?: AbortSignal): Promise<numbe
   throw new Error('Gmail index unavailable.');
 }
 
+export type GmailReviewCandidate = {
+  id: string;
+  message_id: string | null;
+  subject: string;
+  sender: string | null;
+  received_at: string;
+};
+
+export async function fetchGmailReviewCandidates(signal?: AbortSignal): Promise<GmailReviewCandidate[]> {
+  const response = await apiFetch('/v1/dashboard/gmail-review/candidates', { signal });
+  if (!response.ok) throw new Error('Gmail index unavailable.');
+  const { candidates } = await response.json();
+  if (!Array.isArray(candidates)) throw new Error('Gmail index unavailable.');
+  return candidates;
+}
+
 export type IndexedCalendarEvent = {
   id: string;
   title: string;

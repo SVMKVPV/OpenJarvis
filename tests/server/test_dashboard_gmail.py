@@ -28,6 +28,9 @@ def test_gmail_review_counts_threads_with_inbound_latest_message(tmp_path, monke
                     source="gmail",
                     doc_type="email",
                     doc_id=f"gmail:{i}",
+                    source_id=f"a{i}",
+                    title=f"Test subject {i}",
+                    author="sender@example.test",
                     thread_id=thread,
                     channel=channel,
                     timestamp=f"2026-11-0{day}T00:00:00+00:00",
@@ -37,3 +40,12 @@ def test_gmail_review_counts_threads_with_inbound_latest_message(tmp_path, monke
         assert response.status_code == 200
         assert response.headers["Cache-Control"] == "no-store"
         assert response.json() == {"threads_to_review": 1}
+        candidates = client.get(route + "/candidates")
+        assert candidates.headers["Cache-Control"] == "no-store"
+        assert candidates.json() == {"candidates": [{
+            "id": "gmail:1",
+            "message_id": "a1",
+            "subject": "Test subject 1",
+            "sender": "sender@example.test",
+            "received_at": "2026-11-02T00:00:00+00:00",
+        }]}

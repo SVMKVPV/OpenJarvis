@@ -574,25 +574,46 @@ class KnowledgeStore(MemoryBackend):
         ).fetchall()
         return [r[0] for r in rows]
 
-    def gmail_threads_to_review(self) -> int | None:
-        """Count indexed Gmail threads whose latest inbox or sent item is inbound."""
-        row = self._conn.execute(
-            """
-            WITH messages AS (
-                SELECT channel, row_number() OVER (
+    _GMAIL_LATEST_IN_THREAD = """
+        WITH messages AS (
+            SELECT doc_id, source_id, title, author, timestamp, channel,
+                row_number() OVER (
                     PARTITION BY thread_id
                     ORDER BY julianday(timestamp) DESC, channel = 'SENT' DESC, doc_id
                 ) AS rank
-                FROM knowledge_chunks
-                WHERE source = 'gmail' AND doc_type = 'email' AND chunk_index = 0
-                    AND deleted_at IS NULL AND channel IN ('INBOX', 'SENT')
-                    AND thread_id IS NOT NULL AND thread_id != ''
-                    AND julianday(timestamp) IS NOT NULL
-            )
-            SELECT sum(channel = 'INBOX') FROM messages WHERE rank = 1
-            """
+            FROM knowledge_chunks
+            WHERE source = 'gmail' AND doc_type = 'email' AND chunk_index = 0
+                AND deleted_at IS NULL AND channel IN ('INBOX', 'SENT')
+                AND thread_id IS NOT NULL AND thread_id != ''
+                AND julianday(timestamp) IS NOT NULL
+        )
+    """
+
+    def gmail_threads_to_review(self) -> int | None:
+        """Count indexed Gmail threads whose latest inbox or sent item is inbound."""
+        row = self._conn.execute(
+            self._GMAIL_LATEST_IN_THREAD
+            + "SELECT sum(channel = 'INBOX') FROM messages WHERE rank = 1"
         ).fetchone()
         return row[0]
+
+    def gmail_review_candidates(self, *, limit: int = 10) -> list[dict[str, Any]]:
+        """Return recent inbound candidates without message bodies."""
+        rows = self._conn.execute(
+            self._GMAIL_LATEST_IN_THREAD
+            + """
+            SELECT doc_id, source_id, title, author, timestamp
+            FROM messages WHERE rank = 1 AND channel = 'INBOX'
+            ORDER BY julianday(timestamp) DESC, doc_id
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [
+            {"id": row[0], "message_id": row[1], "subject": row[2] or "(No subject)",
+             "sender": row[3], "received_at": row[4]}
+            for row in rows
+        ]
 
     def upcoming_calendar_events(
         self, now_iso: str, local_day: str, *, limit: int = 8

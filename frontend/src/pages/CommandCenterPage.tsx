@@ -25,6 +25,7 @@ import { useAppStore } from '../lib/store';
 import { SoftwareEngineeringWorkspace } from './SoftwareEngineeringWorkspace';
 import { CustomDashboard, DASHBOARD_WIDGETS, DEFAULT_WIDGET_IDS } from './CustomDashboard';
 import { SharedBrainPanel } from './SharedBrainPanel';
+import { GmailReviewList } from './GmailReviewList';
 import { SocialContentStudio } from './SocialContentStudio';
 import { SystemBuilderLab } from './SystemBuilderLab';
 import { WorkstationAgentActivity } from './WorkstationAgentActivity';
@@ -679,6 +680,7 @@ export function CommandCenterPage() {
               return <button key={widget.id} className={added ? 'added' : ''} onClick={() => setDashboardWidgetIds(added ? dashboardWidgetIds.filter((id) => id !== widget.id) : [...dashboardWidgetIds, widget.id])}>{added ? 'REMOVE' : '+ ADD'} {widget.name.toUpperCase()}</button>;
             })}</div>
           </section>
+          {selected.id === 'email' && <GmailReviewList />}
           {selected.id === 'marketing' && <SocialContentStudio />}
           {selected.id === 'system-builder' && <SystemBuilderLab />}
           {STATION_AGENT_TEMPLATES[selected.id] && (
