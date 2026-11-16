@@ -13,6 +13,7 @@ import {
   fetchWorkflowRun,
   fetchWorkflowRuns,
   requestWorkflowRunAction,
+  rescheduleWorkflowRun,
   runSavedWorkflow,
   saveWorkflowDefinition,
   startWorkflowRun,
@@ -180,9 +181,35 @@ export function SoftwareEngineeringWorkspace({ initialRunId = '' }: { initialRun
   const [runActionMessage, setRunActionMessage] = useState<{ id: string; text: string } | null>(null);
   const runIsActive = runDetail !== null && ACTIVE_WORKFLOW_STATES.has(runDetail.status);
   const cancellationPending = runIsActive && runDetail.cancel_requested;
+  const [newRunTime, setNewRunTime] = useState('');
+  const moveRun = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!runDetail?.scheduled_at || runDetail.status !== 'scheduled' || runActionPending) return;
+    const time = Date.parse(newRunTime) / 1000;
+    if (!Number.isFinite(time) || time <= Date.now() / 1000) {
+      setRunActionMessage({ id: runDetail.id, text: 'Choose a future start time.' });
+      return;
+    }
+    setRunActionPending(true);
+    setRunActionMessage(null);
+    try {
+      const updated = await rescheduleWorkflowRun(runDetail.id, time, runDetail.scheduled_at);
+      setRunDetail((current) => current?.id === updated.id ? updated : current);
+      setNewRunTime('');
+      setRunActionMessage({ id: updated.id, text: 'Workflow rescheduled.' });
+    } catch (error) {
+      setRunActionMessage({
+        id: runDetail.id,
+        text: error instanceof Error ? error.message : 'Could not reschedule workflow.',
+      });
+    } finally {
+      setRunActionPending(false);
+    }
+  };
   const inspectRun = (id: string) => {
     setRunDetail(null);
     setRunDetailError('');
+    setNewRunTime('');
     setInspectedRunId(id);
   };
 
@@ -1034,6 +1061,15 @@ export function SoftwareEngineeringWorkspace({ initialRunId = '' }: { initialRun
                   <p>Run status: {cancellationPending ? 'cancelling' : runDetail.status.replace('_', ' ')}</p>
                   {runDetail.scheduled_at && (
                     <p>Scheduled time {new Date(runDetail.scheduled_at * 1000).toLocaleString()}</p>
+                  )}
+                  {runDetail.status === 'scheduled' && !cancellationPending && (
+                    <form className="connector-editor" onSubmit={moveRun}>
+                      <label>New start time (local time)
+                        <input type="datetime-local" value={newRunTime}
+                          onChange={(event) => setNewRunTime(event.target.value)} />
+                      </label>
+                      <button type="submit" disabled={runActionPending || !newRunTime}>Reschedule run</button>
+                    </form>
                   )}
                   {runDetail.initial_input && (
                     <details>

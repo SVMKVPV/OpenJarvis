@@ -291,6 +291,24 @@ class WorkflowRuntime:
             self.resume(run_id)
             return True
 
+    def reschedule(
+        self, run_id: str, scheduled_at: float, expected_scheduled_at: float
+    ) -> dict[str, Any]:
+        with self._lock:
+            if self._stopping:
+                raise WorkflowRuntimeStopping("Workflow runtime is stopping")
+            if self.store.get_run(run_id) is None:
+                raise KeyError(run_id)
+            if not self.store.reschedule_run(
+                run_id, scheduled_at, expected_scheduled_at
+            ):
+                raise ValueError(
+                    "The run schedule changed or the run has already started."
+                )
+            run = self.store.get_run(run_id, include_graph=True)
+            assert run is not None
+            return run
+
     def cancel(self, run_id: str) -> bool:
         with self._lock:
             run = self.store.get_run(run_id)

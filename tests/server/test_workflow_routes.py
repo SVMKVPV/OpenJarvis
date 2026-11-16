@@ -272,8 +272,19 @@ def test_scheduled_workflow_launch_survives_app_restart(tmp_path, monkeypatch):
         other = client.post(path, json={**payload, "scheduled_at": time.time() + 60})
         cancelled_id = other.json()["id"]
         cancelled_path = f"/v1/workflows/runs/{cancelled_id}"
+        move = {
+            "scheduled_at": time.time() + 120,
+            "expected_scheduled_at": other.json()["scheduled_at"],
+        }
+        moved = client.patch(cancelled_path + "/schedule", json=move)
+        assert moved.status_code == 200
+        assert moved.json()["id"] == cancelled_id
+        assert moved.json()["scheduled_at"] == move["scheduled_at"]
+        assert client.patch(cancelled_path + "/schedule", json=move).status_code == 409
         assert client.post(cancelled_path + "/cancel").status_code == 202
         assert client.get(cancelled_path).json()["status"] == "cancelled"
+        move["expected_scheduled_at"] = move["scheduled_at"]
+        assert client.patch(cancelled_path + "/schedule", json=move).status_code == 409
 
     restarted = create_app(engine, "test")
     with TestClient(restarted) as client:

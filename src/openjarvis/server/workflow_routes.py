@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from pathlib import Path
 from typing import Any, Dict
 
@@ -34,6 +35,11 @@ class WorkflowInputs(BaseModel):
 
 class ScheduledWorkflowInputs(WorkflowInputs):
     scheduled_at: float = Field(gt=0, allow_inf_nan=False)
+
+
+class RescheduleWorkflowRun(BaseModel):
+    scheduled_at: float = Field(gt=0, allow_inf_nan=False)
+    expected_scheduled_at: float = Field(gt=0, allow_inf_nan=False)
 
 
 class WorkflowDefinitionUpdate(WorkflowDefinition):
@@ -111,6 +117,25 @@ def create_workflow_runs_router() -> APIRouter:
         if run is None:
             raise HTTPException(status_code=404, detail="Workflow run not found")
         return run
+
+    @router.patch("/{run_id}/schedule")
+    def reschedule_run(
+        run_id: str, payload: RescheduleWorkflowRun, request: Request
+    ) -> dict:
+        if payload.scheduled_at <= time.time():
+            raise HTTPException(status_code=422, detail="Choose a future start time.")
+        try:
+            return _runtime(request).reschedule(
+                run_id, payload.scheduled_at, payload.expected_scheduled_at
+            )
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=404, detail="Workflow run not found"
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except WorkflowRuntimeStopping as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @router.post("/{run_id}/cancel", status_code=status.HTTP_202_ACCEPTED)
     async def cancel_run(run_id: str, request: Request) -> dict:

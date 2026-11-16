@@ -1309,6 +1309,21 @@ export async function fetchWorkflowRun(id: string, signal?: AbortSignal): Promis
   return res.json();
 }
 
+export async function rescheduleWorkflowRun(
+  id: string, scheduledAt: number, expectedScheduledAt: number,
+): Promise<WorkflowRunDetail> {
+  const response = await apiFetch(`/v1/workflows/runs/${encodeURIComponent(id)}/schedule`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scheduled_at: scheduledAt, expected_scheduled_at: expectedScheduledAt }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(typeof body?.detail === 'string' ? body.detail : `Could not reschedule (${response.status}).`);
+  }
+  return response.json();
+}
+
 export type WorkflowRunAction = 'cancel' | 'retry' | 'resume';
 
 export async function requestWorkflowRunAction(

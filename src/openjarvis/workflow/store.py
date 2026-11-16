@@ -272,6 +272,17 @@ class WorkflowRunStore:
             )
         return bool(result.rowcount)
 
+    def reschedule_run(
+        self, run_id: str, scheduled_at: float, expected_scheduled_at: float
+    ) -> bool:
+        with self._lock, self._conn:
+            result = self._conn.execute(
+                "UPDATE workflow_runs SET scheduled_at = ? "
+                "WHERE id = ? AND status = 'scheduled' AND scheduled_at = ?",
+                (scheduled_at, run_id, expected_scheduled_at),
+            )
+        return bool(result.rowcount)
+
     def mark_running(self, run_id: str) -> None:
         self._update(
             run_id,
