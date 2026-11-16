@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import textwrap
 import time
@@ -103,6 +104,36 @@ class TestStdioTransport:
             assert resp.error is None
             assert resp.result["echo"] == "test/echo"
             assert resp.id == 1
+        finally:
+            transport.close()
+
+    def test_utf8_response_on_non_utf8_locale(self):
+        child = textwrap.dedent("""\
+            import json
+            import sys
+
+            request = json.loads(sys.stdin.buffer.readline())
+            response = {
+                "jsonrpc": "2.0",
+                "id": request["id"],
+                "result": {"text": "Review \u2699\ufe0f"},
+            }
+            body = json.dumps(response, ensure_ascii=False).encode("utf-8")
+            sys.stdout.buffer.write(body + b"\\n")
+        """)
+        spawn = subprocess.Popen
+
+        def popen(*args, **kwargs):
+            kwargs.setdefault("encoding", "cp1252")
+            return spawn(*args, **kwargs)
+
+        with patch("openjarvis.mcp.transport.subprocess.Popen", side_effect=popen):
+            transport = StdioTransport(
+                [sys.executable, "-c", child], response_timeout=5
+            )
+        try:
+            response = transport.send(MCPRequest(method="test/utf8", id=1))
+            assert response.result == {"text": "Review \u2699\ufe0f"}
         finally:
             transport.close()
 
