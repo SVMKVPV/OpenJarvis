@@ -23,6 +23,8 @@ import {
   type WorkflowRunAction,
 } from '../lib/api';
 import { getSyncStatus, listConnectors } from '../lib/connectors-api';
+import { isEmbedOnlyModel } from '../lib/model-capabilities';
+import { useAppStore } from '../lib/store';
 import type { ConnectorInfo, SyncStatus } from '../types/connectors';
 import './software-workspace.css';
 
@@ -56,7 +58,8 @@ const GUARDED_GRAPH_JSON = JSON.stringify({
 
 type DraftEdge = { source: string; target: string; condition?: string };
 
-type DraftGraph = { nodes: { id: string }[]; edges?: DraftEdge[] };
+type DraftNode = { id: string; type?: string; agent?: string; config?: Record<string, unknown> };
+type DraftGraph = { nodes: DraftNode[]; edges?: DraftEdge[] };
 type NewStepType = 'transform' | 'condition' | 'approval' | 'agent';
 
 function readDraftGraph(draft: string): DraftGraph | null {
@@ -175,6 +178,16 @@ export function SoftwareEngineeringWorkspace() {
   const [stepRename, setStepRename] = useState<{ id: string; name: string } | null>(null);
   const [stepType, setStepType] = useState<NewStepType>('transform');
   const [stepSetting, setStepSetting] = useState('');
+  const models = useAppStore((state) => state.models);
+  const workflowModels = [...new Set(models.map((entry) => entry.id).filter((id) => !isEmbedOnlyModel(id)))];
+  const setStepModel = (node: DraftNode, model: string) => {
+    if (!draftGraph || savingDefinition) return;
+    const config = { ...node.config };
+    if (model) config.model = model;
+    else delete config.model;
+    const nodes = draftGraph.nodes.map((entry) => entry.id === node.id ? { ...entry, config } : entry);
+    setWorkflowGraph(JSON.stringify({ ...draftGraph, nodes }, null, 2));
+  };
   const [jsonField, setJsonField] = useState('');
   const [workflowApprovals, setWorkflowApprovals] = useState<PendingApproval[]>([]);
   const [decidingApprovalId, setDecidingApprovalId] = useState('');
@@ -648,7 +661,17 @@ export function SoftwareEngineeringWorkspace() {
                   <legend>Workflow steps</legend>
                   <ul>{draftGraph.nodes.map((node) => (
                     <li key={node.id}>
-                      <span>{node.id}</span>{' '}
+                      <span>{node.id}</span>
+                      {node.type === 'agent' && node.agent === 'none' && (() => {
+                        const model = typeof node.config?.model === 'string' ? node.config.model : '';
+                        return <label>Model for {node.id}
+                          <select value={model} disabled={savingDefinition} onChange={(event) => setStepModel(node, event.target.value)}>
+                            <option value="">Backend default</option>
+                            {model && !workflowModels.includes(model) && <option value={model}>{model} (configured)</option>}
+                            {workflowModels.map((id) => <option key={id} value={id}>{id}</option>)}
+                          </select>
+                        </label>;
+                      })()}{' '}
                       <button type="button" disabled={savingDefinition}
                         aria-label={`Rename step ${node.id}`}
                         onClick={() => setStepRename({ id: node.id, name: node.id })}>

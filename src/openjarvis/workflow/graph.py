@@ -70,6 +70,10 @@ class WorkflowGraph:
     def validate(self) -> Tuple[bool, str]:
         """Validate node settings and check for cycles."""
         for node in self._nodes.values():
+            if node.node_type == NodeType.AGENT and node.agent == "none":
+                model = node.config.get("model", "")
+                if not isinstance(model, str) or (model and model != model.strip()):
+                    return False, f"Model step '{node.id}' requires a trimmed model ID"
             if node.node_type == NodeType.LOOP and (
                 type(node.max_iterations) is not int or node.max_iterations < 1
             ):

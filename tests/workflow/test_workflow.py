@@ -264,7 +264,10 @@ class TestWorkflowEngine:
                 "id": "model",
                 "type": "agent",
                 "agent": "none",
-                "config": {"instruction": "Summarize the record."},
+                "config": {
+                    "instruction": "Summarize the record.",
+                    "model": "review-model",
+                },
             }],
         })
         engine = Mock()
@@ -274,6 +277,8 @@ class TestWorkflowEngine:
         result = WorkflowEngine().run(graph, system, initial_input="Example record")
 
         assert result.final_output == "Summary"
+        assert engine.generate.call_args.kwargs["model"] == "review-model"
+        assert system.model == "test"
         messages = engine.generate.call_args.args[0]
         assert [(message.role, message.content) for message in messages] == [
             (Role.SYSTEM, "Summarize the record."),

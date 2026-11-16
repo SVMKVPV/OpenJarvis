@@ -145,6 +145,7 @@ class JarvisSystem:
         agent: Optional[str] = None,
         tools: Optional[List[str]] = None,
         system_prompt: Optional[str] = None,
+        model: Optional[str] = None,
         operator_id: Optional[str] = None,
         prior_messages: Optional[List[Message]] = None,
     ) -> Dict[str, Any]:
@@ -156,6 +157,7 @@ class JarvisSystem:
             agent=agent,
             tools=tools,
             system_prompt=system_prompt,
+            model=model,
             operator_id=operator_id,
             prior_messages=prior_messages,
         )

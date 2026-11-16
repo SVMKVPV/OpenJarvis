@@ -28,6 +28,7 @@ class QueryOrchestrator:
         agent: Optional[str] = None,
         tools: Optional[List[str]] = None,
         system_prompt: Optional[str] = None,
+        model: Optional[str] = None,
         operator_id: Optional[str] = None,
         prior_messages: Optional[List[Message]] = None,
     ) -> Dict[str, Any]:
@@ -84,16 +85,17 @@ class QueryOrchestrator:
 
         if system_prompt:
             messages.insert(0, Message(role=Role.SYSTEM, content=system_prompt))
+        model = model or s.model
         result = s.engine.generate(
             messages,
-            model=s.model,
+            model=model,
             temperature=temperature,
             max_tokens=max_tokens,
         )
         return {
             "content": result.get("content", ""),
             "usage": result.get("usage", {}),
-            "model": s.model,
+            "model": model,
             "engine": s.engine_key,
             **({"error": result["error"]} if result.get("error") else {}),
         }
