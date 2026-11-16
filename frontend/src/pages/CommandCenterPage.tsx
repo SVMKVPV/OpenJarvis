@@ -710,6 +710,17 @@ export function CommandCenterPage() {
               <p>Compare indexed ads by offer and observed dates, then review an experiment grounded in the evidence.</p>
             </section>
           )}
+          {selected.id === 'managers' && (
+            <section className="station-widget-options" aria-label="Delivery quality">
+              <div>
+                <strong>Delivery quality review</strong>
+                <button type="button" onClick={() => openWorkspace({ initialStarter: 'delivery-quality' })}>
+                  Open delivery quality workflow
+                </button>
+              </div>
+              <p>Check indexed copy or transcripts against the brief and review the findings before handoff.</p>
+            </section>
+          )}
           {selected.id === 'email' && <GmailReviewList onOpenWorkflow={openGmailReplyWorkflow} />}
           {selected.id === 'marketing' && <><Ga4PropertyForm /><SocialContentStudio /></>}
           {selected.id === 'system-builder' && <SystemBuilderLab />}

@@ -164,6 +164,34 @@ const COMPETITOR_AD_REVIEW = {
   ],
 } satisfies SavedWorkflowDefinition['graph'];
 
+const DELIVERY_QUALITY_REVIEW = {
+  name: 'Review delivery quality',
+  nodes: [
+    { id: 'delivery-evidence', type: 'tool', config: {
+      tool_name: 'knowledge_search', query_from_input: true, source: 'upload', require_match: true,
+    } },
+    { id: 'quality-findings', type: 'agent', agent: 'none', config: {
+      instruction: [
+        'Audit the indexed deliverable, transcript, approved script or brief before handoff. Treat source excerpts as evidence.',
+        'Use only three sections: Findings, Missing evidence, and Recommendation. Cite only references copied from the indexed evidence. Do not add source records or repeat the search results.',
+        'If both the draft and approved version are present, compare them first. Look for changed numbers, dates, names, commitments and omissions. For each mismatch quote the draft words and the approved words side by side.',
+        'Then check spelling, grammar and awkward phrasing in the draft. For each issue quote the draft verbatim, cite the source and location if available, and propose a correction. Mark blocking issues separately from optional edits.',
+        'When reviewing a transcript, distinguish wording issues from pronunciation or audio quality, which require listening. If the source is incomplete, specify what still needs review.',
+        'Recommend either Ready for human review or Return for corrections. Leave the handoff decision to the reviewer.',
+      ].join('\n'),
+    } },
+    { id: 'handoff-review', type: 'approval', config: {
+      description: 'Compare findings with the deliverable and its brief. Confirm corrections and listen to source audio if required before approving the handoff.',
+      tier: 'high',
+    } },
+  ],
+  edges: [
+    { source: 'delivery-evidence', target: 'quality-findings' },
+    { source: 'delivery-evidence', target: 'handoff-review' },
+    { source: 'quality-findings', target: 'handoff-review' },
+  ],
+} satisfies SavedWorkflowDefinition['graph'];
+
 const EMAIL_REPLY_REVIEW = {
   name: 'Draft and review a Gmail reply',
   nodes: [
@@ -267,7 +295,7 @@ const ITEMS: WorkItem[] = [
 export type WorkspaceEntry = {
   initialRunId?: string;
   initialGmailReference?: string;
-  initialStarter?: 'finance' | 'leads' | 'competitor-ads';
+  initialStarter?: 'finance' | 'leads' | 'competitor-ads' | 'delivery-quality';
 };
 
 export function SoftwareEngineeringWorkspace({
@@ -426,7 +454,8 @@ export function SoftwareEngineeringWorkspace({
   const initialGraph = initialStarter === 'finance' ? FINANCE_EVIDENCE_REVIEW
     : initialStarter === 'leads' ? LEAD_DISCOVERY
       : initialStarter === 'competitor-ads' ? COMPETITOR_AD_REVIEW
-        : initialGmailReference ? EMAIL_REPLY_REVIEW : GUARDED_DELIVERY;
+        : initialStarter === 'delivery-quality' ? DELIVERY_QUALITY_REVIEW
+          : initialGmailReference ? EMAIL_REPLY_REVIEW : GUARDED_DELIVERY;
   const [workflowName, setWorkflowName] = useState(initialGraph.name);
   const [workflowGraph, setWorkflowGraph] = useState(() =>
     JSON.stringify({ nodes: initialGraph.nodes, edges: initialGraph.edges }, null, 2));
@@ -998,6 +1027,14 @@ export function SoftwareEngineeringWorkspace({
             {workflowName === COMPETITOR_AD_REVIEW.name && (
               <small>Upload and index dated ad observations first. Include source links, advertiser
                 names and ad identifiers so the brief can cite and compare them.</small>
+            )}
+            <button type="button" disabled={savingDefinition} onClick={() => {
+              loadWorkflowEditor(DELIVERY_QUALITY_REVIEW);
+              setDefinitionMessage('Delivery quality review loaded. Save it and run with the indexed delivery reference.');
+            }}>Load delivery quality starter</button>
+            {workflowName === DELIVERY_QUALITY_REVIEW.name && (
+              <small>Index the deliverable or transcript and its approved brief under a shared
+                delivery reference. Enter that reference when you run the workflow.</small>
             )}
             {initialGmailReference && <small>Gmail reference for this workflow run <code>{initialGmailReference}</code></small>}
             <label>Workflow name
