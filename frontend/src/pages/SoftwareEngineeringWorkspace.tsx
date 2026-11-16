@@ -269,6 +269,42 @@ export function SoftwareEngineeringWorkspace() {
     setDefinitionMessage('Saved workflow loaded into the editor. Save workflow creates a new copy.');
   };
 
+  const exportSaved = () => {
+    if (!selectedDefinition) return;
+    const { graph } = selectedDefinition;
+    const file = new Blob([JSON.stringify(graph, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(file);
+    const link = document.createElement('a');
+    const safeName = graph.name.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '');
+    link.href = url;
+    link.download = `${safeName || 'workflow'}.openjarvis.json`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const importDraft = async (file: File) => {
+    if (file.size > 1024 * 1024) {
+      setDefinitionMessage('Workflow JSON must be under 1 MB.');
+      return;
+    }
+    try {
+      const source = await file.text();
+      const graph = readDraftGraph(source);
+      if (!graph?.nodes.length) throw new Error('Choose an OpenJarvis workflow JSON export.');
+      const { name, edges, nodes } = JSON.parse(source);
+      if (typeof name !== 'string' || !name.trim()) {
+        throw new Error('The workflow JSON needs a name.');
+      }
+      setWorkflowName(name);
+      setWorkflowGraph(JSON.stringify({ nodes, edges }, null, 2));
+      setEdgeSource('');
+      setEdgeTarget('');
+      setDefinitionMessage('Draft loaded. Review its steps before saving.');
+    } catch (error) {
+      setDefinitionMessage(error instanceof Error ? error.message : 'Could not read workflow JSON.');
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
     listConnectors()
@@ -418,6 +454,14 @@ export function SoftwareEngineeringWorkspace() {
             </button>
             <details className="workflow-graph-editor">
               <summary>Edit workflow definition</summary>
+              <label>Replace draft from OpenJarvis JSON
+                <input type="file" accept=".json,application/json" disabled={savingDefinition}
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0];
+                    event.currentTarget.value = '';
+                    if (file) void importDraft(file);
+                  }} />
+              </label>
               {draftGraph && (
                 <fieldset>
                   <legend>Workflow steps</legend>
@@ -514,6 +558,9 @@ export function SoftwareEngineeringWorkspace() {
               <button type="button" disabled={!selectedDefinition || savingDefinition}
                 onClick={editSaved} title="Replaces the current editor draft">
                 Load saved workflow into editor
+              </button>
+              <button type="button" disabled={!selectedDefinition} onClick={exportSaved}>
+                Download saved workflow JSON
               </button>
             </form>
           )}
