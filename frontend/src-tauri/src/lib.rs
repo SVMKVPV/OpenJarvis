@@ -8,6 +8,7 @@ use tokio::sync::Mutex;
 
 const OLLAMA_PORT: u16 = 11434;
 const JARVIS_PORT: u16 = 8000;
+const PACKAGED_BACKEND_DIR: &str = concat!("command-center-backend-", env!("CARGO_PKG_VERSION"));
 #[cfg(not(all(target_os = "windows", target_arch = "aarch64")))]
 const DESKTOP_UV_SYNC_COMMAND: &str =
     "uv sync --extra desktop --extra inference-cloud --extra inference-google --group desktop-native";
@@ -373,10 +374,7 @@ fn project_root_near_executable(exe: &std::path::Path) -> Option<std::path::Path
     }
 
     // Command Center installers ship a version-matched backend beside the app.
-    let packaged_backend = exe_dir.join(concat!(
-        "command-center-backend-",
-        env!("CARGO_PKG_VERSION")
-    ));
+    let packaged_backend = exe_dir.join(PACKAGED_BACKEND_DIR);
     if packaged_backend.join("pyproject.toml").is_file() {
         return Some(packaged_backend);
     }
@@ -594,6 +592,8 @@ async fn endpoint_reachable(host: &str, timeout: Duration) -> bool {
 enum JarvisStartResult {
     /// `/health` returned 2xx.
     Ready,
+    /// A healthy listener does not support the bundled Command Center API.
+    Incompatible,
     /// Server replied 503. The body is the actionable message (typically
     /// "engine not ready" or a model-load error).
     ServiceUnavailable(String),
@@ -653,6 +653,7 @@ async fn wait_for_jarvis_health(
     url: &str,
     timeout: Duration,
     backend: &SharedBackend,
+    require_command_center_api: bool,
 ) -> JarvisStartResult {
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(2))
@@ -687,7 +688,11 @@ async fn wait_for_jarvis_health(
             Ok(resp) => {
                 let status = resp.status();
                 if status.is_success() {
-                    return JarvisStartResult::Ready;
+                    return if !require_command_center_api || supports_command_center_api(&resp) {
+                        JarvisStartResult::Ready
+                    } else {
+                        JarvisStartResult::Incompatible
+                    };
                 }
                 if status == reqwest::StatusCode::SERVICE_UNAVAILABLE {
                     // Server is up but the inference engine is not. This
@@ -710,6 +715,20 @@ async fn wait_for_jarvis_health(
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
+}
+
+fn supports_command_center_api(response: &reqwest::Response) -> bool {
+    response
+        .headers()
+        .get("x-openjarvis-command-center-api")
+        .is_some_and(|version| version == "1")
+}
+
+fn incompatible_command_center_api_message() -> String {
+    format!(
+        "The service on port {} does not report the Command Center API needed by +         this desktop build. Stop that service, then relaunch so OpenJarvis can +         start its bundled backend.",
+        JARVIS_PORT,
+    )
 }
 
 async fn ollama_has_model(model: &str) -> bool {
@@ -1375,6 +1394,11 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         }
     }
 
+    let require_command_center_api = project_root
+        .as_deref()
+        .and_then(std::path::Path::file_name)
+        .is_some_and(|name| name == PACKAGED_BACKEND_DIR);
+
     // If something is already serving on our port, decide what to do based
     // on what it actually responds with — don't blindly kill it (#455).
     //
@@ -1385,8 +1409,8 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
     // own, sometimes losing the race and hanging.
     //
     // New behaviour, by response shape:
-    //   * 2xx /health        — healthy jarvis serve. Attach to it; skip the
-    //                          uv-sync + spawn dance entirely. Done.
+    //   * 2xx /health        — attach when compatible with this desktop.
+    //                          Bundled backends require the Command Center API.
     //   * 503                — server is up but engine isn't ready. Surface
     //                          an actionable message; don't kill (matches
     //                          our wait_for_jarvis_health 503 contract).
@@ -1414,18 +1438,17 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
                 // etc.) and we don't want to claim ready off a 2-second
                 // snapshot. Small sleep between to give the server room.
                 tokio::time::sleep(Duration::from_millis(500)).await;
-                let confirm = client
+                let confirmation = client
                     .get(format!("http://127.0.0.1:{}/health", JARVIS_PORT))
                     .send()
                     .await
-                    .map(|r| r.status().is_success())
-                    .unwrap_or(false);
-                if !confirm {
-                    // First probe was 2xx but the second wasn't — fall
-                    // through to the spawn path. The server probably went
-                    // away between probes.
-                    // (No early return — we want to spawn our own.)
-                } else {
+                    .ok()
+                    .filter(|response| response.status().is_success());
+                if let Some(response) = confirmation {
+                    if require_command_center_api && !supports_command_center_api(&response) {
+                        status.lock().await.error = Some(incompatible_command_center_api_message());
+                        return;
+                    }
                     // A newly staged key may only enter a child process that
                     // this desktop instance launched. A listener that merely
                     // answers /health could be a port squatter; never POST or
@@ -1653,8 +1676,19 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
     }
 
     let server_url = format!("http://127.0.0.1:{}/health", JARVIS_PORT);
-    match wait_for_jarvis_health(&server_url, Duration::from_secs(600), &backend).await {
+    match wait_for_jarvis_health(
+        &server_url,
+        Duration::from_secs(600),
+        &backend,
+        require_command_center_api,
+    )
+    .await
+    {
         JarvisStartResult::Ready => {}
+        JarvisStartResult::Incompatible => {
+            status.lock().await.error = Some(incompatible_command_center_api_message());
+            return;
+        }
         JarvisStartResult::ServiceUnavailable(body) => {
             let mut s = status.lock().await;
             s.error = Some(format!(

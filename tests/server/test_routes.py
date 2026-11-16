@@ -1767,6 +1767,7 @@ class TestHealthEndpoint:
         resp = client.get("/health")
         assert resp.status_code == 200
         assert resp.json()["status"] == "ok"
+        assert resp.headers["x-openjarvis-command-center-api"] == "1"
 
     def test_unhealthy(self):
         engine = _make_engine()

@@ -10,7 +10,7 @@ import weakref
 from dataclasses import replace
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
 from openjarvis import __version__
@@ -1455,12 +1455,13 @@ async def server_info(request: Request):
 
 
 @router.get("/health")
-async def health(request: Request):
+async def health(request: Request, response: Response):
     """Health check endpoint."""
     engine = request.app.state.engine
     healthy = engine.health()
     if not healthy:
         raise HTTPException(status_code=503, detail="Engine unhealthy")
+    response.headers["X-OpenJarvis-Command-Center-API"] = "1"
     return {"status": "ok"}
 
 
