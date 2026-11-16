@@ -117,9 +117,12 @@ class WorkflowEngine:
                             self._execute_node,
                             graph.get_node(nid),
                             dict(outputs),
-                            {**ctx, "_workflow_approvals": dict(
-                                ctx.get("_workflow_approvals", {})
-                            )},
+                            {
+                                **ctx,
+                                "_workflow_approvals": dict(
+                                    ctx.get("_workflow_approvals", {})
+                                ),
+                            },
                             system,
                             graph,
                         ): nid
@@ -201,11 +204,18 @@ class WorkflowEngine:
             elif node.node_type == NodeType.CONDITION:
                 result = self._run_condition_node(node, outputs)
             elif node.node_type == NodeType.TRANSFORM:
-                result = self._run_transform_node(node, outputs)
+                result = self._run_transform_node(
+                    node,
+                    self._get_node_input(node, outputs, graph, fallback_on_empty=False),
+                )
             elif node.node_type == NodeType.LOOP:
                 result = self._run_loop_node(node, outputs, system, graph)
             elif node.node_type == NodeType.APPROVAL:
-                result = self._run_approval_node(node, ctx)
+                result = self._run_approval_node(
+                    node,
+                    ctx,
+                    self._get_node_input(node, outputs, graph, fallback_on_empty=False),
+                )
             else:
                 result = WorkflowStepResult(
                     node_id=node.id,
@@ -237,6 +247,7 @@ class WorkflowEngine:
         self,
         node: WorkflowNode,
         context: Dict[str, Any],
+        input_text: str,
     ) -> WorkflowStepResult:
         if self._approval_store is None:
             return WorkflowStepResult(
@@ -269,7 +280,7 @@ class WorkflowEngine:
             if action.status == STATUS_APPROVED:
                 return WorkflowStepResult(
                     node_id=node.id,
-                    output="Approved",
+                    output=input_text,
                     metadata={
                         "approval_id": approval_id,
                         "approval_status": "approved",
@@ -322,12 +333,15 @@ class WorkflowEngine:
         node: WorkflowNode,
         outputs: Dict[str, str],
         graph: WorkflowGraph,
+        *,
+        fallback_on_empty: bool = True,
     ) -> str:
         """Get input for a node from predecessor outputs."""
         preds = graph.predecessors(node.id)
         if preds:
             parts = [outputs.get(p, "") for p in preds if outputs.get(p)]
-            return "\n\n".join(parts) if parts else outputs.get("_input", "")
+            if parts or not fallback_on_empty:
+                return "\n\n".join(parts)
         return outputs.get("_input", "")
 
     def _run_agent_node(
@@ -424,12 +438,10 @@ class WorkflowEngine:
     def _run_transform_node(
         self,
         node: WorkflowNode,
-        outputs: Dict[str, str],
+        combined: str,
     ) -> WorkflowStepResult:
         """Apply a text transformation."""
         expr = node.transform_expr
-        preds = [outputs.get(p, "") for p in outputs if p != "_input"]
-        combined = "\n\n".join(preds) if preds else ""
         if expr == "concatenate":
             return WorkflowStepResult(node_id=node.id, output=combined)
         if expr == "first_line":

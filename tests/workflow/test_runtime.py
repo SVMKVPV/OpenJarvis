@@ -21,9 +21,7 @@ def _wait_for_terminal(store: WorkflowRunStore, run_id: str) -> dict:
     raise AssertionError("workflow run did not reach a terminal state")
 
 
-def _wait_for_status(
-    store: WorkflowRunStore, run_id: str, expected: str
-) -> dict:
+def _wait_for_status(store: WorkflowRunStore, run_id: str, expected: str) -> dict:
     deadline = time.monotonic() + 3
     while time.monotonic() < deadline:
         run = store.get_run(run_id, include_graph=True)
@@ -65,9 +63,7 @@ def test_store_persists_run_and_step_history(tmp_path) -> None:
 def test_runtime_executes_and_checkpoints_steps(tmp_path) -> None:
     store = WorkflowRunStore(str(tmp_path / "workflow.db"))
     approvals = ApprovalStore(str(tmp_path / "approvals.db"))
-    runtime = WorkflowRuntime(
-        system=None, store=store, approval_store=approvals
-    )
+    runtime = WorkflowRuntime(system=None, store=store, approval_store=approvals)
     graph = (
         WorkflowBuilder("checkpointed")
         .add_transform("first", transform="concatenate")
@@ -80,6 +76,7 @@ def test_runtime_executes_and_checkpoints_steps(tmp_path) -> None:
     completed = _wait_for_terminal(store, submitted["id"])
 
     assert completed["status"] == "succeeded"
+    assert completed["final_output"] == "one"
     assert [step["node_id"] for step in completed["steps"]] == ["first", "second"]
     runtime.close()
     approvals.close()
@@ -88,9 +85,7 @@ def test_runtime_executes_and_checkpoints_steps(tmp_path) -> None:
 def test_runtime_pauses_for_approval_and_resumes_without_replay(tmp_path) -> None:
     store = WorkflowRunStore(str(tmp_path / "workflow.db"))
     approvals = ApprovalStore(str(tmp_path / "approvals.db"))
-    runtime = WorkflowRuntime(
-        system=None, store=store, approval_store=approvals
-    )
+    runtime = WorkflowRuntime(system=None, store=store, approval_store=approvals)
     graph = (
         WorkflowBuilder("guarded")
         .add_transform("prepare")
@@ -117,6 +112,7 @@ def test_runtime_pauses_for_approval_and_resumes_without_replay(tmp_path) -> Non
     completed = _wait_for_terminal(store, submitted["id"])
 
     assert completed["status"] == "succeeded"
+    assert completed["final_output"] == "campaign"
     assert [step["node_id"] for step in completed["steps"]] == [
         "prepare",
         "approve",

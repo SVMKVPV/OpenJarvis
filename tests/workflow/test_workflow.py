@@ -141,6 +141,19 @@ class TestWorkflowEngine:
         wf = WorkflowBuilder("test").add_transform("t", transform="concatenate").build()
         result = engine.run(wf, initial_input="hello")
         assert result.success
+        assert result.final_output == "hello"
+
+    def test_transform_only_reads_connected_predecessor(self):
+        graph = (
+            WorkflowBuilder("test")
+            .add_transform("connected", transform="first_line")
+            .add_transform("unconnected", transform="concatenate")
+            .add_transform("result", transform="concatenate")
+            .connect("connected", "result")
+            .build()
+        )
+        result = WorkflowEngine().run(graph, initial_input="first\nsecond")
+        assert result.final_output == "first"
 
     def test_events_emitted(self):
         bus = EventBus(record_history=True)
