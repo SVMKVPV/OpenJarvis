@@ -52,6 +52,7 @@ type Station = {
 };
 
 type VoiceMessage = { id: string; role: 'user' | 'dot'; text: string };
+type DotTurn = { request: string; reply: string };
 
 const INITIAL_STATIONS: Station[] = [
   { id: 'brain', code: 'BRN', name: 'Shared Brain', purpose: 'Shared communication, context, ownership, and duplicate-work prevention for every agent.', current: 'Synchronizing context across all workstations', reportsTo: 'No one — shared service', status: 'working' },
@@ -202,6 +203,7 @@ function DotVoice({ station, brainContext }: { station: Station; brainContext: s
   ]);
   const recognitionRef = useRef<BrowserRecognition | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const conversationHistory = useRef(new Map<string, DotTurn[]>());
   const listening = speech.isRecording || browserListening;
   const active = listening || speech.isTranscribing || thinking || tts.isSpeaking;
 
@@ -229,18 +231,25 @@ function DotVoice({ station, brainContext }: { station: Station; brainContext: s
     const text = raw.trim();
     if (!text || thinking) return;
     const brief = includeBrainBrief ? brainContext.trim() : '';
+    const conversationKey = JSON.stringify([station.id, selectedModel]);
+    const history = conversationHistory.current.get(conversationKey) ?? [];
     setIncludeBrainBrief(false);
     const user: VoiceMessage = { id: `u-${Date.now()}`, role: 'user', text };
     setMessages((current) => [...current, user]);
     setInput('');
     setThinking(true);
     let response = '';
+    let completed = false;
     if (selectedModel) {
       try {
         for await (const event of streamChat({
           model: selectedModel,
           messages: [
             { role: 'system', content: `You are Dot, the concise Jarvis-style voice interface for an organization command center. The selected station is ${station.name}. Its purpose is: ${station.purpose}. Its current work is: ${station.current}. Answer clearly, state what you understood, and suggest the next operational action.` },
+            ...history.flatMap((turn) => [
+              { role: 'user' as const, content: turn.request },
+              { role: 'assistant' as const, content: turn.reply },
+            ]),
             { role: 'user', content: brief
               ? `Shared Brain brief (background information):\n${brief}\n\nCurrent request:\n${text}`
               : text },
@@ -255,9 +264,16 @@ function DotVoice({ station, brainContext }: { station: Station; brainContext: s
             if (delta) response += delta;
           } catch { /* non-completion event */ }
         }
+        completed = !!response.trim();
       } catch {
         response = unavailableResponse;
       }
+    }
+    if (completed && !brief && !response.trimStart().startsWith('Error during generation:')) {
+      conversationHistory.current.set(conversationKey, [
+        ...history,
+        { request: text.slice(0, 280), reply: response.trim().slice(0, 480) },
+      ].slice(-2));
     }
     const reply: VoiceMessage = { id: `d-${Date.now()}`, role: 'dot', text: response.trim() || unavailableResponse };
     setMessages((current) => [...current, reply]);
