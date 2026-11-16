@@ -315,12 +315,18 @@ export function SoftwareEngineeringWorkspace({
     setInspectedRunId(id);
   };
 
+  const pendingRetryKeys = useRef(new Map<string, string>());
   const actOnRun = async (id: string, action: WorkflowRunAction, retryInput?: string) => {
     if (runActionPending) return;
     setRunActionPending(true);
     setRunActionMessage(null);
+    const retryAttempt = action === 'retry' ? JSON.stringify([id, retryInput]) : undefined;
+    const previousKey = retryAttempt && pendingRetryKeys.current.get(retryAttempt);
+    const retryKey = retryAttempt ? previousKey || crypto.randomUUID() : undefined;
+    if (retryAttempt && retryKey) pendingRetryKeys.current.set(retryAttempt, retryKey);
     try {
-      const retry = await requestWorkflowRunAction(id, action, retryInput);
+      const retry = await requestWorkflowRunAction(id, action, retryInput, retryKey);
+      if (retryAttempt) pendingRetryKeys.current.delete(retryAttempt);
       if (action === 'cancel') {
         setRunDetail((current) => current?.id === id
           ? { ...current, cancel_requested: true }
@@ -334,7 +340,7 @@ export function SoftwareEngineeringWorkspace({
       }
       const messages = {
         cancel: 'Cancellation requested.',
-        retry: 'Retry queued as a new run.',
+        retry: previousKey ? 'Retry run confirmed.' : 'Retry queued as a new run.',
         resume: 'Resume requested. Any pending approval still applies.',
       };
       setRunActionMessage({ id: retry?.id ?? id, text: messages[action] });

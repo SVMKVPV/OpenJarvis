@@ -163,11 +163,18 @@ def create_workflow_runs_router() -> APIRouter:
     @router.post("/{run_id}/retry", status_code=status.HTTP_202_ACCEPTED)
     @router.post("/{run_id}/retry-with-input", status_code=status.HTTP_202_ACCEPTED)
     async def retry_run(
-        run_id: str, request: Request, payload: RetryWorkflowInput | None = None
+        run_id: str,
+        request: Request,
+        payload: RetryWorkflowInput | None = None,
+        launch_key: str | None = Header(
+            None, alias="Idempotency-Key", min_length=1, max_length=128
+        ),
     ) -> dict:
         try:
             return _runtime(request).retry(
-                run_id, initial_input=payload.initial_input if payload else None
+                run_id,
+                initial_input=payload.initial_input if payload else None,
+                launch_key=launch_key,
             )
         except KeyError as exc:
             raise HTTPException(

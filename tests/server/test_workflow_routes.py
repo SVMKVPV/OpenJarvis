@@ -492,11 +492,24 @@ def test_retry_with_input_preserves_original_run_and_graph(tmp_path, monkeypatch
             })
             original_id = started.json()["id"]
             original = wait(original_id, "failed")
+            retry_path = f"{base}/{original_id}/retry-with-input"
+            headers = {"Idempotency-Key": "correction-attempt"}
             retried = client.post(
-                f"{base}/{original_id}/retry-with-input",
-                json={"initial_input": "Kestrel"},
+                retry_path, json={"initial_input": "Kestrel"}, headers=headers
             )
             assert retried.status_code == 202
+            repeat = client.post(
+                retry_path, json={"initial_input": "Kestrel"}, headers=headers
+            )
+            assert repeat.status_code == 202
+            assert repeat.json()["id"] == retried.json()["id"]
+            conflict = client.post(
+                retry_path, json={"initial_input": "Other"}, headers=headers
+            )
+            assert conflict.status_code == 409
+            runs = client.get(base).json()["runs"]
+            children = [run for run in runs if run["parent_run_id"] == original_id]
+            assert len(children) == 1
             updated = wait(retried.json()["id"], "succeeded")
             assert updated["parent_run_id"] == original_id
             assert updated["initial_input"] == "Kestrel"
