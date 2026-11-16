@@ -242,10 +242,16 @@ class MonitorOperativeAgent(ToolUsingAgent):
 
         # 5. Run function-calling tool loop
         openai_tools = self._executor.get_openai_tools() if self._tools else []
+        knowledge_search_available = any(
+            tool.get("function", {}).get("name") == "knowledge_search"
+            for tool in openai_tools
+        )
         all_tool_results: list[ToolResult] = []
         turns = 0
         content = ""
         state_stored_by_tool = False
+        recovered_search = False
+        used_json_search = False
         total_usage: dict[str, int] = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -256,7 +262,7 @@ class MonitorOperativeAgent(ToolUsingAgent):
             turns += 1
 
             gen_kwargs: dict[str, Any] = {}
-            if openai_tools:
+            if openai_tools and not recovered_search:
                 gen_kwargs["tools"] = openai_tools
 
             result = self._generate(messages, **gen_kwargs)
@@ -267,6 +273,13 @@ class MonitorOperativeAgent(ToolUsingAgent):
             # Strip think tags so they don't interfere with parsing
             content = self._strip_think_tags(content)
             raw_tool_calls = result.get("tool_calls", [])
+            if recovered_search and (
+                raw_tool_calls
+                or self._extract_json_knowledge_search(content)
+                or self._extract_tool_call(content)
+            ):
+                content = "The model did not provide an answer after searching."
+                break
 
             # --- Native function-calling path ---
             if raw_tool_calls:
@@ -288,6 +301,11 @@ class MonitorOperativeAgent(ToolUsingAgent):
             else:
                 # --- Text-based fallback ---
                 tool_info = self._extract_tool_call(content)
+                json_search = False
+                if tool_info is None and knowledge_search_available:
+                    tool_info = self._extract_json_knowledge_search(content)
+                    json_search = tool_info is not None
+                    used_json_search |= json_search
                 if tool_info:
                     action, action_input = tool_info
                     messages.append(Message(role=Role.ASSISTANT, content=content))
@@ -301,6 +319,18 @@ class MonitorOperativeAgent(ToolUsingAgent):
                     observation_content = self._compress_observation(
                         tool_result.content
                     )
+                    if json_search and tool_result.metadata.get("num_results") == 0:
+                        observation_content += (
+                            "\n\nTry a shorter keyword query. Omit guessed filters, "
+                            "but preserve filters required by the user."
+                        )
+                    elif json_search:
+                        recovered_search = True
+                        observation_content += (
+                            "\n\nWrite the final answer to the original request using "
+                            "the evidence above. Report missing evidence if needed. "
+                            "Do not issue another tool call."
+                        )
                     messages.append(
                         Message(
                             role=Role.USER,
@@ -373,6 +403,8 @@ class MonitorOperativeAgent(ToolUsingAgent):
                 self._extract_and_store(tc.name, tool_result.content)
         else:
             # Max turns exceeded
+            if used_json_search:
+                content = ""
             self._save_session(input, content)
             msg_dicts = [_message_to_dict(m) for m in messages]
             return self._max_turns_result(
@@ -401,6 +433,27 @@ class MonitorOperativeAgent(ToolUsingAgent):
     # ------------------------------------------------------------------
     # Text-based tool call extraction (fallback for non-function-calling models)
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_json_knowledge_search(text: str) -> tuple[str, str] | None:
+        """Recover a standalone read-only search request emitted as JSON text."""
+        if not text.lstrip().startswith("{"):
+            return None
+        try:
+            call = json.loads(text)
+        except (ValueError, RecursionError):
+            return None
+        if (
+            not isinstance(call, dict)
+            or set(call) != {"name", "arguments"}
+            or call["name"] != "knowledge_search"
+            or not isinstance(call["arguments"], dict)
+        ):
+            return None
+        query = call["arguments"].get("query")
+        if not isinstance(query, str) or not query.strip():
+            return None
+        return "knowledge_search", json.dumps(call["arguments"])
 
     @staticmethod
     def _extract_tool_call(text: str) -> tuple[str, str] | None:

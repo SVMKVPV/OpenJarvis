@@ -1,9 +1,11 @@
 """Tests for MonitorOperativeAgent."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from openjarvis.agents.monitor_operative import MonitorOperativeAgent
 from openjarvis.core.registry import AgentRegistry
+from openjarvis.core.types import ToolResult
+from openjarvis.tools.knowledge_search import KnowledgeSearchTool
 
 
 def _make_engine(content: str = "Hello") -> MagicMock:
@@ -76,3 +78,53 @@ class TestMonitorOperativeAgent:
         agent._auto_persist_state(" \n\t")
 
         memory.store.assert_not_called()
+
+    def test_recovers_plain_json_knowledge_search_when_configured(self) -> None:
+        call = '{"name":"knowledge_search","arguments":{"query":"Acacia","top_k":1}}'
+        engine = _make_engine()
+        engine.generate.side_effect = [
+            {"content": call},
+            {"content": "Invoice FIN-742"},
+        ]
+        tool = KnowledgeSearchTool()
+        agent = MonitorOperativeAgent(engine, "test-model", tools=[tool])
+        with patch.object(
+            tool, "execute", return_value=ToolResult("knowledge_search", "FIN-742")
+        ) as search:
+            assert agent.run("Find the invoice.").content == "Invoice FIN-742"
+        search.assert_called_once_with(query="Acacia", top_k=1)
+        assert "tools" in engine.generate.call_args_list[0].kwargs
+        assert not engine.generate.call_args_list[1].kwargs.get("tools")
+
+        unconfigured = MonitorOperativeAgent(_make_engine(call), "test-model")
+        assert unconfigured.run("Show a JSON example.").content == call
+
+    def test_repeated_json_search_is_not_saved_as_the_answer(self) -> None:
+        call = '{"name":"knowledge_search","arguments":{"query":"Acacia"}}'
+        tool = KnowledgeSearchTool()
+        agent = MonitorOperativeAgent(_make_engine(call), "test-model", tools=[tool])
+        with patch.object(
+            tool, "execute", return_value=ToolResult("knowledge_search", "FIN-742")
+        ) as search:
+            result = agent.run("Find the invoice.")
+        assert "did not provide an answer" in result.content
+        search.assert_called_once_with(query="Acacia")
+
+    def test_empty_json_search_can_retry_before_final_answer(self) -> None:
+        engine = _make_engine()
+        engine.generate.side_effect = [
+            {"content": '{"name":"knowledge_search","arguments":'
+             '{"query":"Acacia","doc_type":"invoice"}}'},
+            {"content": '{"name":"knowledge_search","arguments":{"query":"Acacia"}}'},
+            {"content": "Invoice FIN-742"},
+        ]
+        tool = KnowledgeSearchTool()
+        agent = MonitorOperativeAgent(engine, "test-model", tools=[tool])
+        with patch.object(tool, "execute", side_effect=[
+            ToolResult("knowledge_search", "No results", metadata={"num_results": 0}),
+            ToolResult("knowledge_search", "FIN-742", metadata={"num_results": 1}),
+        ]) as search:
+            assert agent.run("Find the invoice.").content == "Invoice FIN-742"
+        assert search.call_count == 2
+        assert "tools" in engine.generate.call_args_list[1].kwargs
+        assert "tools" not in engine.generate.call_args_list[2].kwargs

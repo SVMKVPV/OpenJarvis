@@ -63,8 +63,10 @@ class KnowledgeSearchTool(BaseTool):
                     "doc_type": {
                         "type": "string",
                         "description": (
-                            "Filter by document type"
+                            "Filter by indexed record type"
                             " (e.g. 'email', 'message', 'document')."
+                            " Search for topics such as invoices in query."
+                            " Omit this filter if the indexed type is unknown."
                         ),
                     },
                     "author": {
