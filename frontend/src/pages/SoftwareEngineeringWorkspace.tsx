@@ -155,6 +155,7 @@ export function SoftwareEngineeringWorkspace() {
   const [stepId, setStepId] = useState('');
   const [stepType, setStepType] = useState<NewStepType>('transform');
   const [stepSetting, setStepSetting] = useState('');
+  const [jsonField, setJsonField] = useState('');
   const [workflowApprovals, setWorkflowApprovals] = useState<PendingApproval[]>([]);
   const [decidingApprovalId, setDecidingApprovalId] = useState('');
   const [approvalMessage, setApprovalMessage] = useState('');
@@ -233,7 +234,7 @@ export function SoftwareEngineeringWorkspace() {
   const newStepId = stepId.trim();
   const canAddStep = draftGraph && newStepId && newStepId !== '_input' &&
     !draftGraph.nodes.some((node) => node.id === newStepId) &&
-    (stepType === 'transform' || stepSetting.trim());
+    (stepType === 'transform' ? stepSetting !== 'json_field' || jsonField.trim() : stepSetting.trim());
   const addStep = () => {
     if (!draftGraph || !canAddStep) return;
     const node = { id: newStepId, type: stepType };
@@ -246,11 +247,15 @@ export function SoftwareEngineeringWorkspace() {
         definition = { ...node, config: { description: stepSetting.trim(), tier: 'high' } };
         break;
       default:
-        definition = { ...node, transform_expr: stepSetting || 'concatenate' };
+        definition = {
+          ...node,
+          transform_expr: stepSetting === 'json_field' ? `json_field:${jsonField.trim()}` : stepSetting || 'concatenate',
+        };
     }
     setWorkflowGraph(JSON.stringify({ ...draftGraph, nodes: [...draftGraph.nodes, definition] }, null, 2));
     setStepId('');
     setStepSetting('');
+    setJsonField('');
   };
   const canAddEdge = draftGraph && edgeSource !== edgeTarget &&
     draftGraph.nodes.some((node) => node.id === edgeSource) &&
@@ -493,7 +498,7 @@ export function SoftwareEngineeringWorkspace() {
                       setStepType(event.target.value as NewStepType);
                       setStepSetting('');
                     }}>
-                      <option value="transform">Text transform</option>
+                      <option value="transform">Transform</option>
                       <option value="condition">Condition</option>
                       <option value="approval">Approval</option>
                     </select>
@@ -503,12 +508,18 @@ export function SoftwareEngineeringWorkspace() {
                       <select value={stepSetting || 'concatenate'} onChange={(event) => setStepSetting(event.target.value)}>
                         <option value="concatenate">Combine input</option>
                         <option value="first_line">Keep first line</option>
+                        <option value="json_field">Extract JSON field</option>
                       </select>
                     </label>
                   ) : (
                     <label>{stepType === 'condition' ? 'Condition expression' : 'Approval request'}
                       <input value={stepSetting} onChange={(event) => setStepSetting(event.target.value)}
                         placeholder={stepType === 'condition' ? "outputs['_input'] == 'yes'" : 'Review the prepared result'} />
+                    </label>
+                  )}
+                  {stepType === 'transform' && stepSetting === 'json_field' && (
+                    <label>JSON field name
+                      <input value={jsonField} onChange={(event) => setJsonField(event.target.value)} />
                     </label>
                   )}
                   <button type="button" onClick={addStep} disabled={!canAddStep}>Add step</button>

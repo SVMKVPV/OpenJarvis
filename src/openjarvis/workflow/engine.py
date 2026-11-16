@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import json
 import time
 from typing import Any, Callable, Dict, List, Optional
 
@@ -468,7 +469,7 @@ class WorkflowEngine:
         node: WorkflowNode,
         combined: str,
     ) -> WorkflowStepResult:
-        """Apply a text transformation."""
+        """Apply a transformation to the connected input."""
         expr = node.transform_expr
         if expr == "concatenate":
             return WorkflowStepResult(node_id=node.id, output=combined)
@@ -477,6 +478,27 @@ class WorkflowEngine:
                 node_id=node.id,
                 output=combined.split("\n")[0] if combined else "",
             )
+        if expr.startswith("json_field:"):
+            key = expr.removeprefix("json_field:")
+            try:
+                data = json.loads(combined)
+                if not isinstance(data, dict) or key not in data:
+                    raise ValueError("Expected a JSON object with the requested field")
+                value = data[key]
+                output = (
+                    value
+                    if isinstance(value, str)
+                    else json.dumps(value, allow_nan=False)
+                )
+            except (ValueError, RecursionError):
+                return WorkflowStepResult(
+                    node_id=node.id,
+                    success=False,
+                    output=(
+                        "JSON field extraction failed. Check the input and field name."
+                    ),
+                )
+            return WorkflowStepResult(node_id=node.id, output=output)
         return WorkflowStepResult(node_id=node.id, output=combined)
 
     def _run_loop_node(

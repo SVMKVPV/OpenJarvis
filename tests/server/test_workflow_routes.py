@@ -112,7 +112,14 @@ def test_saved_definition_survives_runtime_restart(tmp_path, monkeypatch) -> Non
     with TestClient(app) as client:
         response = client.post(
             "/v1/workflows/definitions",
-            json={"name": "Reusable", "nodes": [{"id": "format", "type": "transform"}]},
+            json={
+                "name": "Reusable",
+                "nodes": [{
+                    "id": "format",
+                    "type": "transform",
+                    "transform_expr": "json_field:email",
+                }],
+            },
         )
         assert response.status_code == 201
         saved = response.json()
@@ -121,11 +128,21 @@ def test_saved_definition_survives_runtime_restart(tmp_path, monkeypatch) -> Non
         assert client.get("/v1/workflows/definitions").json()["definitions"] == [saved]
         response = client.post(
             f"/v1/workflows/definitions/{saved['id']}/runs",
-            json={"initial_input": "new input"},
+            json={"initial_input": '{"email":"lead@example.com"}'},
         )
         assert response.status_code == 202
         assert response.json()["workflow_name"] == "Reusable"
-        assert response.json()["initial_input"] == "new input"
+        run_id = response.json()["id"]
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            run = client.get(f"/v1/workflows/runs/{run_id}").json()
+            if run["status"] == "succeeded":
+                assert run["final_output"] == "lead@example.com"
+                break
+            assert run["status"] in {"queued", "running"}, run
+            time.sleep(0.01)
+        else:
+            pytest.fail("Saved workflow did not finish")
         app.state.workflow_runtime.close()
 
 

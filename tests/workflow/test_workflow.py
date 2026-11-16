@@ -164,6 +164,34 @@ class TestWorkflowEngine:
         assert EventType.WORKFLOW_START in event_types
         assert EventType.WORKFLOW_END in event_types
 
+    @pytest.mark.parametrize(
+        ("source", "expected"),
+        [
+            ('{"value":"lead@example.com"}', "lead@example.com"),
+            ('{"value":false}', "false"),
+            ('{"value":null}', "null"),
+            ('{"value":[1,2]}', "[1, 2]"),
+            ('{"other":1}', None),
+            ("[1,2]", None),
+            ("malformed", None),
+        ],
+    )
+    def test_extract_json_field_from_connected_output(self, source, expected):
+        graph = (
+            WorkflowBuilder("extract")
+            .add_transform("record", transform="first_line")
+            .add_transform("field", transform="json_field:value")
+            .connect("record", "field")
+            .build()
+        )
+        result = WorkflowEngine().run(graph, initial_input=f"{source}\ntrailing text")
+        if expected is None:
+            assert result.status == "failed"
+            assert "JSON field extraction failed" in result.final_output
+        else:
+            assert result.success
+            assert result.final_output == expected
+
     def test_conditional_edges_skip_unselected_branch(self):
         graph = (
             WorkflowBuilder("conditional")
