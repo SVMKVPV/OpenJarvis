@@ -22,12 +22,18 @@ def test_social_draft_review_planning_persists_and_checks_revision(
     }
     headers = {"Authorization": "Bearer test-content-key"}
     base = "/v1/social-content/drafts"
+    summary_path = "/v1/social-content/summary"
 
     def session():
         return TestClient(create_app(MagicMock(), "test", api_key="test-content-key"))
 
     with session() as client:
         assert client.get(base).status_code == 401
+        assert client.get(summary_path).status_code == 401
+        assert client.get(summary_path, headers=headers).json() == {
+            "review_count": 0,
+            "items": [],
+        }
         assert client.post(base, json=fields).status_code == 401
         new = client.post(base, json=fields, headers=headers)
         assert new.status_code == 201
@@ -59,6 +65,18 @@ def test_social_draft_review_planning_persists_and_checks_revision(
         assert revised.status_code == 200
         pending = decide("submit_review", 2)
         assert pending.status_code == 200 and pending.json()["state"] == "review"
+        summary = client.get(summary_path, headers=headers)
+        assert summary.headers["Cache-Control"] == "no-store"
+        assert summary.json() == {
+            "review_count": 1,
+            "items": [{
+                "id": draft["id"],
+                "title": fields["title"],
+                "channels": fields["channels"],
+                "state": "review",
+                "scheduled_at": None,
+            }],
+        }
         assert decide("approve", 2).status_code == 409
         accepted = decide("approve", 3)
         assert accepted.status_code == 200 and accepted.json()["state"] == "approved"
@@ -75,6 +93,9 @@ def test_social_draft_review_planning_persists_and_checks_revision(
         assert item["id"] == draft["id"]
         assert item["caption"] == "Edited caption"
         assert item["state"] == "planned" and item["scheduled_at"] == start
+        summary = restarted.get(summary_path, headers=headers).json()
+        assert summary["review_count"] == 0
+        assert summary["items"][0]["scheduled_at"] == start
         returned = restarted.post(
             path + "/actions",
             headers=headers,

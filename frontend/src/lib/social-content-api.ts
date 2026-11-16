@@ -40,6 +40,19 @@ async function readResponse(response: Response) {
   return payload;
 }
 
+export interface SocialContentSummary {
+  review_count: number;
+  items: Pick<SocialDraft, 'id' | 'title' | 'channels' | 'state' | 'scheduled_at'>[];
+}
+
+export async function fetchSocialContentSummary(signal?: AbortSignal): Promise<SocialContentSummary> {
+  const data = await readResponse(await apiFetch('/v1/social-content/summary', { signal }));
+  if (!Number.isInteger(data.review_count) || !Array.isArray(data.items)) {
+    throw new Error('The Marketing draft queue is unavailable.');
+  }
+  return data;
+}
+
 export async function listSocialDrafts(signal?: AbortSignal): Promise<SocialDraft[]> {
   const data = await readResponse(await apiFetch(base, { signal }));
   if (!Array.isArray(data.drafts)) throw new Error('The Marketing draft queue is unavailable.');

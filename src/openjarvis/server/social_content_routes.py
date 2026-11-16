@@ -98,6 +98,29 @@ def _serialize(row: sqlite3.Row) -> dict:
     return {**dict(row), "channels": json.loads(row["channels"])}
 
 
+@router.get("/summary")
+def summarize_drafts(response: Response) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    with closing(_connect()) as conn:
+        _initialize(conn)
+        rows = conn.execute(
+            """
+            SELECT id, title, channels, state, scheduled_at,
+                   (SELECT COUNT(*) FROM social_drafts WHERE state = 'review')
+                       AS review_count
+            FROM social_drafts
+            ORDER BY CASE state WHEN 'review' THEN 0 WHEN 'planned' THEN 1 ELSE 2 END,
+                     updated_at DESC, id
+            LIMIT 4
+            """
+        ).fetchall()
+    items = [_serialize(row) for row in rows]
+    review_count = rows[0]["review_count"] if rows else 0
+    for item in items:
+        del item["review_count"]
+    return {"review_count": review_count, "items": items}
+
+
 @router.get("/drafts")
 def list_drafts(response: Response) -> dict:
     response.headers["Cache-Control"] = "no-store"

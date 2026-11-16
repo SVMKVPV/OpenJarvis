@@ -5,6 +5,9 @@ import {
   fetchIndexedCalendarEvents, fetchPendingApprovals, fetchWorkflowRuns,
   type IndexedCalendarEvent, type PendingApproval, type WorkflowRunSummary,
 } from '../lib/api';
+import {
+  fetchSocialContentSummary, SOCIAL_CHANNELS, type SocialContentSummary,
+} from '../lib/social-content-api';
 import './custom-dashboard.css';
 
 export type DashboardWidget = { id: string; stationId: string; station: string; name: string; value: string; detail: string; kind: 'metric' | 'calendar' | 'queue' | 'trend' | 'content' };
@@ -12,8 +15,8 @@ export const DASHBOARD_WIDGETS: DashboardWidget[] = [
   { id: 'dot-briefing', stationId: 'dot', station: 'DOT', name: 'CEO briefing', value: '7', detail: 'DECISIONS + UPDATES', kind: 'queue' },
   { id: 'brain-health', stationId: 'brain', station: 'SHARED BRAIN', name: 'Communication health', value: '98.4%', detail: '10 STATIONS SYNCHRONIZED', kind: 'metric' },
   { id: 'leads-found', stationId: 'growth', station: 'LEADS + GROWTH', name: 'Leads found', value: '148', detail: '+23 THIS WEEK', kind: 'metric' },
-  { id: 'content-approval', stationId: 'marketing', station: 'MARKETING', name: 'Content to approve', value: '12', detail: '4 HIGH PRIORITY', kind: 'queue' },
-  { id: 'social-pipeline', stationId: 'marketing', station: 'MARKETING', name: 'Social content pipeline', value: '4', detail: 'GENERATED → REVIEW → POSTED', kind: 'content' },
+  { id: 'content-approval', stationId: 'marketing', station: 'MARKETING', name: 'Content to approve', value: '', detail: 'Waiting for review', kind: 'queue' },
+  { id: 'social-pipeline', stationId: 'marketing', station: 'MARKETING', name: 'Social content pipeline', value: '', detail: 'Recent drafts and planned content', kind: 'content' },
   { id: 'analytics-views', stationId: 'marketing', station: 'MARKETING', name: 'Google Analytics views', value: '24.8K', detail: '+18.6% VS PRIOR PERIOD', kind: 'trend' },
   { id: 'email-replies', stationId: 'email', station: 'EMAIL REPLY', name: 'Email replies due', value: '19', detail: '6 REQUIRE APPROVAL', kind: 'queue' },
   { id: 'comment-replies', stationId: 'email', station: 'EMAIL REPLY', name: 'Comment replies due', value: '31', detail: 'SOCIAL + COMMUNITY', kind: 'queue' },
@@ -109,6 +112,44 @@ export function CustomDashboard({ widgetIds, setWidgetIds, onOpenStation, onOpen
     };
   }, [showCalendar]);
 
+  const [socialQueue, setSocialQueue] = useState<SocialContentSummary | null>(null);
+  const [socialUnavailable, setSocialUnavailable] = useState(false);
+  const showSocialQueue = widgetIds.includes('content-approval') || widgetIds.includes('social-pipeline');
+
+  useEffect(() => {
+    if (!showSocialQueue) return;
+    const controller = new AbortController();
+    let timer: number | undefined;
+    const refresh = async () => {
+      try {
+        const summary = await fetchSocialContentSummary(controller.signal);
+        if (controller.signal.aborted) return;
+        setSocialQueue(summary);
+        setSocialUnavailable(false);
+      } catch {
+        if (controller.signal.aborted) return;
+        setSocialQueue(null);
+        setSocialUnavailable(true);
+      } finally {
+        if (!controller.signal.aborted) timer = window.setTimeout(() => void refresh(), 15000);
+      }
+    };
+    void refresh();
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [showSocialQueue]);
+
+  const socialMessage = socialUnavailable ? 'Marketing queue unavailable.' : 'Checking Marketing queue…';
+  const queueMetrics: Record<string, { value: string | number; detail: string }> = {
+    approvals: { value: approvalCount ?? '—', detail: approvalDetail },
+    'content-approval': {
+      value: socialQueue?.review_count ?? '—',
+      detail: socialQueue ? 'Waiting for review' : socialMessage,
+    },
+  };
+
   const [sizes, setSizes] = useLocalPreference<Record<string, 'small' | 'medium' | 'large'>>(
     'openjarvis.command-center.widget-sizes.v1',
     () => ({ calendar: 'large', 'analytics-views': 'medium', 'social-pipeline': 'large' }),
@@ -120,7 +161,7 @@ export function CustomDashboard({ widgetIds, setWidgetIds, onOpenStation, onOpen
   const move = (index: number, delta: number) => { const next = [...widgetIds]; const target = index + delta; if (target < 0 || target >= next.length) return; [next[index], next[target]] = [next[target], next[index]]; setWidgetIds(next); };
   return <main className="custom-dashboard"><div className="dashboard-title"><div><span>CUSTOM DASHBOARD</span><h2>CEO operating picture</h2><p>Station-owned widgets. Add what matters, remove what does not.</p></div><button className={editing ? 'active' : ''} onClick={() => setEditing(!editing)}><Settings2 size={13}/>{editing ? 'DONE EDITING' : 'EDIT DASHBOARD'}</button></div>
     {editing && <section className="widget-catalog"><header><div><span>ADD WIDGET</span><strong>AVAILABLE FROM WORKSTATIONS</strong></div><em>{available.length} AVAILABLE</em></header><div>{available.length ? available.map((widget) => <button key={widget.id} onClick={() => setWidgetIds([...widgetIds, widget.id])}><Plus size={11}/><span><b>{widget.name}</b><small>{widget.station}</small></span></button>) : <p>All available widgets are already on the dashboard.</p>}</div></section>}
-    {widgets.length ? <section className="widget-grid">{widgets.map((widget,index) => <article key={widget.id} className={`dashboard-widget ${sizes[widget.id] ?? (widget.kind === 'calendar' ? 'large' : 'small')}`}><header><button onClick={() => onOpenStation(widget.stationId)}>{widget.station}</button><span>{widget.id === 'approvals' ? (approvalCount !== null ? 'LIVE DATA' : 'BACKEND') : widget.kind === 'calendar' ? (scheduledRuns !== null ? 'LIVE WORKFLOWS' : 'BACKEND') : 'DEMO DATA'}</span></header><div className="widget-content"><span>{widget.name}</span>{widget.kind !== 'content' && widget.kind !== 'calendar' && <><strong>{widget.id === 'approvals' ? (approvalCount ?? '—') : widget.value}</strong><small>{widget.id === 'approvals' ? approvalDetail : widget.detail}</small></>}{widget.id === 'approvals' && workflowApprovals.length > 0 && (
+    {widgets.length ? <section className="widget-grid">{widgets.map((widget,index) => <article key={widget.id} className={`dashboard-widget ${sizes[widget.id] ?? (widget.kind === 'calendar' ? 'large' : 'small')}`}><header><button onClick={() => onOpenStation(widget.stationId)}>{widget.station}</button><span>{widget.id === 'approvals' ? (approvalCount !== null ? 'LIVE DATA' : 'BACKEND') : widget.kind === 'calendar' ? (scheduledRuns !== null ? 'LIVE WORKFLOWS' : 'BACKEND') : widget.id === 'content-approval' || widget.id === 'social-pipeline' ? (socialQueue ? 'LIVE QUEUE' : 'BACKEND') : 'DEMO DATA'}</span></header><div className="widget-content"><span>{widget.name}</span>{widget.kind !== 'content' && widget.kind !== 'calendar' && <><strong>{queueMetrics[widget.id]?.value ?? widget.value}</strong><small>{queueMetrics[widget.id]?.detail ?? widget.detail}</small></>}{widget.id === 'approvals' && workflowApprovals.length > 0 && (
       <ul className="dashboard-workflow-approvals" aria-label="Workflow approvals">
         {workflowApprovals.slice(0, 3).map(({ approval, runId }) => (
           <li key={approval.id}>
@@ -166,6 +207,23 @@ export function CustomDashboard({ widgetIds, setWidgetIds, onOpenStation, onOpen
           </ul>
         )}
       </>
-    )}{widget.kind === 'content' && <div className="content-pipeline"><article><div className="content-thumb">IG</div><div><b>Spring launch carousel</b><small>ChatGPT + Marketing · Instagram</small></div><em data-content-state="review">REVIEW</em></article><article><div className="content-thumb">TT</div><div><b>Behind-the-scenes reel</b><small>Gemini + Marketing · TikTok</small></div><em data-content-state="scheduled">SCHEDULED</em></article><article><div className="content-thumb">LI</div><div><b>Customer result story</b><small>Claude + Marketing · LinkedIn</small></div><em data-content-state="approved">APPROVED</em></article><article><div className="content-thumb posted">ALL</div><div><b>Weekly founder update</b><small>Dot + Marketing · multi-channel</small></div><em data-content-state="posted">POSTED · 2.8K</em></article></div>}</div>{editing && <footer><button aria-label={`Move ${widget.name} left`} onClick={() => move(index,-1)}><ChevronLeft size={11}/></button><button aria-label={`Move ${widget.name} right`} onClick={() => move(index,1)}><ChevronRight size={11}/></button><button aria-label={`Resize ${widget.name}`} onClick={() => setSizes((current) => ({...current,[widget.id]: current[widget.id] === 'large' ? 'small' : current[widget.id] === 'medium' ? 'large' : 'medium'}))}><Grip size={11}/>{(sizes[widget.id] ?? 'SMALL').toUpperCase()}</button><button aria-label={`Remove ${widget.name}`} onClick={() => setWidgetIds(widgetIds.filter((id) => id !== widget.id))}><X size={11}/></button></footer>}</article>)}</section> : <section className="dashboard-empty"><CalendarDays size={25}/><h3>Your dashboard is empty</h3><p>Add any widget from a workstation without changing that workstation's capability.</p><button onClick={() => setEditing(true)}><Plus size={12}/> ADD WIDGET</button></section>}
+    )}{widget.kind === 'content' && (
+      <div className="content-pipeline">
+        {!socialQueue && <p role="status">{socialMessage}</p>}
+        {socialQueue?.items.length === 0 && <p>No saved social content yet.</p>}
+        {socialQueue?.items.map((item) => (
+          <article key={item.id}>
+            <div>
+              <b>{item.title}</b>
+              <small>{item.channels.map((channel) => SOCIAL_CHANNELS[channel]).join(' · ')}</small>
+              {item.state === 'planned' && item.scheduled_at !== null && (
+                <small>{new Date(item.scheduled_at * 1000).toLocaleString()}</small>
+              )}
+            </div>
+            <em data-content-state={item.state}>{item.state === 'review' ? 'IN REVIEW' : item.state.toUpperCase()}</em>
+          </article>
+        ))}
+      </div>
+    )}</div>{editing && <footer><button aria-label={`Move ${widget.name} left`} onClick={() => move(index,-1)}><ChevronLeft size={11}/></button><button aria-label={`Move ${widget.name} right`} onClick={() => move(index,1)}><ChevronRight size={11}/></button><button aria-label={`Resize ${widget.name}`} onClick={() => setSizes((current) => ({...current,[widget.id]: current[widget.id] === 'large' ? 'small' : current[widget.id] === 'medium' ? 'large' : 'medium'}))}><Grip size={11}/>{(sizes[widget.id] ?? 'SMALL').toUpperCase()}</button><button aria-label={`Remove ${widget.name}`} onClick={() => setWidgetIds(widgetIds.filter((id) => id !== widget.id))}><X size={11}/></button></footer>}</article>)}</section> : <section className="dashboard-empty"><CalendarDays size={25}/><h3>Your dashboard is empty</h3><p>Add any widget from a workstation without changing that workstation's capability.</p><button onClick={() => setEditing(true)}><Plus size={12}/> ADD WIDGET</button></section>}
   </main>;
 }
