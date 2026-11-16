@@ -72,6 +72,32 @@ const CONNECTOR_REVIEW = {
   edges: [{ source: 'search', target: 'review' }],
 } satisfies SavedWorkflowDefinition['graph'];
 
+const FINANCE_EVIDENCE_REVIEW = {
+  name: 'Prepare a finance workpaper',
+  nodes: [
+    { id: 'finance-source', type: 'tool', config: {
+      tool_name: 'knowledge_search', query_from_input: true, source: 'upload', require_match: true,
+    } },
+    { id: 'finance-workpaper', type: 'agent', agent: 'none', config: {
+      instruction: [
+        'Prepare a draft finance workpaper from the indexed evidence for a human reviewer.',
+        'List source references, document dates, vendor, currency, total and any explicitly stated GST or tax amounts.',
+        'Cite the relevant source beside each figure. Mark unavailable fields as unknown.',
+        'Flag conflicting, duplicate or incomplete evidence. Keep distinct records separate and avoid guessing financial figures or giving filing advice.',
+      ].join(' '),
+    } },
+    { id: 'finance-review', type: 'approval', config: {
+      description: 'Compare the draft workpaper with the source documents. Check figures, currency, duplicates, and missing evidence before approving.',
+      tier: 'high',
+    } },
+  ],
+  edges: [
+    { source: 'finance-source', target: 'finance-workpaper' },
+    { source: 'finance-source', target: 'finance-review' },
+    { source: 'finance-workpaper', target: 'finance-review' },
+  ],
+} satisfies SavedWorkflowDefinition['graph'];
+
 const EMAIL_REPLY_REVIEW = {
   name: 'Draft and review a Gmail reply',
   nodes: [
@@ -832,6 +858,10 @@ export function SoftwareEngineeringWorkspace({
               loadWorkflowEditor(CONNECTOR_REVIEW);
               setDefinitionMessage('Document review draft loaded. Select an indexed source, then save and run with a search query.');
             }}>Load document review starter</button>
+            <button type="button" disabled={savingDefinition} onClick={() => {
+              loadWorkflowEditor(FINANCE_EVIDENCE_REVIEW);
+              setDefinitionMessage('Finance workpaper loaded. Choose the indexed source, save the workflow, then run it with a vendor name or document reference.');
+            }}>Load finance workpaper starter</button>
             <button type="button" disabled={savingDefinition} onClick={() => {
               loadWorkflowEditor(EMAIL_REPLY_REVIEW);
               setDefinitionMessage('Gmail reply workflow loaded. Save it, then run it with a distinctive subject or the indexed Gmail reference (gmail:…).');
