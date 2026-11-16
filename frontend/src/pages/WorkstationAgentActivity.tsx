@@ -6,11 +6,15 @@ export function WorkstationAgentActivity({
   agentId,
   stationName,
   templateId,
+  brainContext,
+  onShare,
   onSelect,
 }: {
   agentId: string;
   stationName: string;
   templateId?: string;
+  brainContext: string;
+  onShare: (text: string) => string;
   onSelect: (id: string) => void;
 }) {
   const [agents, setAgents] = useState<ManagedAgent[] | null>(null);
@@ -116,7 +120,8 @@ export function WorkstationAgentActivity({
             {starting ? 'Starting…' : 'Run linked agent'}
           </button>
           {runMessage?.id === selected.id && <p role="status">{runMessage.text}</p>}
-          <WorkstationAgentInbox key={selected.id} agentId={selected.id} />
+          <WorkstationAgentInbox key={selected.id} agentId={selected.id}
+            brainContext={brainContext} onShare={onShare} />
           {selected.summary_memory && (
             <details>
               <summary>Latest agent summary</summary>

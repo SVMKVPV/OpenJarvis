@@ -1,12 +1,18 @@
 import { type FormEvent, useEffect, useState } from 'react';
 import { askAgent, fetchAgentMessages, type AgentMessage } from '../lib/api';
 
-export function WorkstationAgentInbox({ agentId }: { agentId: string }) {
+export function WorkstationAgentInbox({ agentId, brainContext, onShare }: {
+  agentId: string;
+  brainContext: string;
+  onShare: (text: string) => string;
+}) {
   const [draft, setDraft] = useState('');
+  const [includeBrief, setIncludeBrief] = useState(false);
   const [queueOnly, setQueueOnly] = useState(false);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [sending, setSending] = useState(false);
   const [sendStatus, setSendStatus] = useState('');
+  const [shareStatus, setShareStatus] = useState<{ id: string; text: string } | null>(null);
   const [inboxUnavailable, setInboxUnavailable] = useState(false);
   const [refreshVersion, setRefreshVersion] = useState(0);
 
@@ -34,8 +40,12 @@ export function WorkstationAgentInbox({ agentId }: { agentId: string }) {
 
   const send = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const content = draft.trim();
-    if (!content || sending) return;
+    const instruction = draft.trim();
+    if (!instruction || sending) return;
+    const brief = includeBrief ? brainContext.trim() : '';
+    const content = brief
+      ? `Shared Brain brief (background information):\n${brief}\n\nCurrent request:\n${instruction}`
+      : instruction;
     setSending(true);
     setSendStatus('');
     try {
@@ -45,6 +55,7 @@ export function WorkstationAgentInbox({ agentId }: { agentId: string }) {
         : [...current, message].slice(-6));
       setRefreshVersion((version) => version + 1);
       setDraft('');
+      setIncludeBrief(false);
       setSendStatus(queueOnly ? 'Queued for the next agent run.' : 'Message submitted and a run requested.');
     } catch {
       setSendStatus('Could not send the message. Check the agent in Agents before retrying.');
@@ -65,6 +76,15 @@ export function WorkstationAgentInbox({ agentId }: { agentId: string }) {
               <small>{message.status === 'pending' ? 'Waiting for agent' : 'Picked up by agent'}</small>
             )}
             <p>{message.content}</p>
+            {message.direction === 'agent_to_user' && message.content.trim() && (
+              <button type="button" onClick={() => setShareStatus({
+                id: message.id,
+                text: onShare(message.content),
+              })}>
+                Add reply to Shared Brain
+              </button>
+            )}
+            {shareStatus?.id === message.id && <p role="status">{shareStatus.text}</p>}
           </li>
         ))}
       </ol>
@@ -73,6 +93,14 @@ export function WorkstationAgentInbox({ agentId }: { agentId: string }) {
           <textarea value={draft} onChange={(event) => setDraft(event.target.value)}
             maxLength={4000} disabled={sending} required />
         </label>
+        {brainContext.trim() && (
+          <label>
+            <input type="checkbox" checked={includeBrief} disabled={sending}
+              onChange={(event) => setIncludeBrief(event.target.checked)} />
+            Include Shared Brain brief in this message
+            <small>The brief is saved with the message and sent to the linked agent’s model when it runs.</small>
+          </label>
+        )}
         <label>
           <input type="checkbox" checked={queueOnly} disabled={sending}
             onChange={(event) => setQueueOnly(event.target.checked)} />

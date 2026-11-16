@@ -59,7 +59,7 @@ export function SharedBrainPanel({ context, onContextChange, onShare }: {
         <button type="submit" disabled={!update.trim()}>Add to shared brief</button>
         {shareStatus && <p role="status">{shareStatus}</p>}
       </form>
-      <p>Saved on this device. When included in a Dot message, the brief goes to the selected model.</p>
+      <p>The brief is saved on this device. When you include it in a message to Dot or a linked agent, it goes to that message’s model.</p>
     </section>
   </>;
 }

@@ -671,6 +671,8 @@ export function CommandCenterPage() {
             agentId={stationAgentIds[selected.id] ?? ''}
             stationName={selected.name}
             templateId={STATION_AGENT_TEMPLATES[selected.id]}
+            brainContext={brainContext}
+            onShare={(text) => addBrainUpdate(selected.name, text)}
             onSelect={(id) => setStationAgentIds((previous) => ({ ...previous, [selected.id]: id }))}
           />
           <WorkflowBlueprint
