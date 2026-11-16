@@ -616,7 +616,7 @@ export async function createManagedAgent(body: {
 
 export async function updateManagedAgent(
   agentId: string,
-  body: Partial<{ name: string; agent_type: string; model: string; config: Record<string, unknown> }>,
+  body: Partial<{ name: string; agent_type: string; model: string; use_shared_brain: boolean; config: Record<string, unknown> }>,
 ): Promise<ManagedAgent> {
   const res = await apiFetch(`/v1/managed-agents/${agentId}`, {
     method: 'PATCH',

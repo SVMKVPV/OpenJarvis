@@ -40,6 +40,35 @@ def test_manual_agent_full_lifecycle(scenario_harness: ScenarioHarness) -> None:
     assert "Tick 1 completed." in agent["summary_memory"]
 
 
+def test_agent_tick_reads_latest_shared_brief_on_opt_in(
+    scenario_harness: ScenarioHarness, tmp_path, monkeypatch
+) -> None:
+    from openjarvis.core.shared_brain import update_brief
+
+    monkeypatch.setattr(
+        "openjarvis.core.shared_brain.get_config_dir", lambda: tmp_path
+    )
+    h = scenario_harness
+    agent = h.manager.create_agent("Brief reader", config={"schedule_type": "manual"})
+    aid = agent["id"]
+    revision = update_brief("Initial workspace context", 0)
+    h.executor.execute_tick(aid)
+    assert not any(
+        "Initial workspace context" in msg.content for msg in h.engine.last_messages
+    )
+
+    updated = h.manager.update_agent(aid, use_shared_brain=True)
+    assert updated["config"]["schedule_type"] == "manual"
+    update_brief("Latest workspace context", revision)
+    h.executor.execute_tick(aid)
+    assert any(
+        "Latest workspace context" in msg.content for msg in h.engine.last_messages
+    )
+    assert not any(
+        "Initial workspace context" in msg.content for msg in h.engine.last_messages
+    )
+
+
 # ---------------------------------------------------------------------------
 # Scenario 2: Interval-scheduled agent
 # ---------------------------------------------------------------------------

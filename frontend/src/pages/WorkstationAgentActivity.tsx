@@ -26,8 +26,8 @@ export function WorkstationAgentActivity({
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [starting, setStarting] = useState(false);
   const [recovering, setRecovering] = useState(false);
-  const [savingModel, setSavingModel] = useState(false);
-  const [modelMessage, setModelMessage] = useState<{ id: string; text: string } | null>(null);
+  const [savingOption, setSavingOption] = useState(false);
+  const [optionMessage, setOptionMessage] = useState<{ id: string; text: string } | null>(null);
   const models = useAppStore((state) => state.models);
   const [creating, setCreating] = useState(false);
   const [creationError, setCreationError] = useState('');
@@ -59,21 +59,23 @@ export function WorkstationAgentActivity({
   const selected = agents?.find((agent) => agent.id === agentId);
   const model = typeof selected?.config?.model === 'string' ? selected.config.model : '';
   const modelIds = [...new Set(models.map((item) => item.id).filter((id) => !isEmbedOnlyModel(id)))];
-  const changeModel = async (value: string) => {
-    if (!selected || savingModel || starting || recovering) return;
-    setSavingModel(true);
-    setModelMessage(null);
+  const useSharedBrain = selected?.config?.use_shared_brain === true;
+  const saveAgentOption = async (option: { model: string } | { use_shared_brain: boolean }) => {
+    if (!selected || savingOption || starting || recovering) return;
+    setSavingOption(true);
+    setOptionMessage(null);
     try {
-      const updated = await updateManagedAgent(selected.id, { model: value });
-      if ((updated.config?.model ?? '') !== value) {
-        throw new Error('This backend did not save the model. Update the backend and try again.');
-      }
+      const updated = await updateManagedAgent(selected.id, option);
+      const saved = 'model' in option
+        ? (updated.config?.model ?? '') === option.model
+        : updated.config?.use_shared_brain === option.use_shared_brain;
+      if (!saved) throw new Error('This backend did not save the setting. Update the backend and try again.');
       setAgents((current) => current?.map((agent) => agent.id === updated.id ? updated : agent) ?? null);
-      setModelMessage({ id: selected.id, text: 'Agent model saved.' });
+      setOptionMessage({ id: selected.id, text: 'Agent setting saved.' });
     } catch (error) {
-      setModelMessage({ id: selected.id, text: error instanceof Error ? error.message : 'Could not save the agent model.' });
+      setOptionMessage({ id: selected.id, text: error instanceof Error ? error.message : 'Could not save the agent setting.' });
     } finally {
-      setSavingModel(false);
+      setSavingOption(false);
       setRefreshVersion((version) => version + 1);
     }
   };
@@ -165,17 +167,24 @@ export function WorkstationAgentActivity({
         <div>
           <label>
             Linked agent model
-            <select value={model} disabled={savingModel || starting || recovering || selected.status === 'running'}
-              onChange={(event) => void changeModel(event.target.value)}>
+            <select value={model} disabled={savingOption || starting || recovering || selected.status === 'running'}
+              onChange={(event) => void saveAgentOption({ model: event.target.value })}>
               <option value="">Backend default</option>
               {model && !modelIds.includes(model) && <option value={model}>{model} (configured)</option>}
               {modelIds.map((id) => <option key={id} value={id}>{id}</option>)}
             </select>
           </label>
-          {modelMessage?.id === selected.id && <p role="status">{modelMessage.text}</p>}
+          <label>
+            <input type="checkbox" checked={useSharedBrain}
+              disabled={savingOption || starting || recovering || selected.status === 'running'}
+              onChange={(event) => void saveAgentOption({ use_shared_brain: event.target.checked })} />
+            Include the saved Shared Brain brief in agent runs
+          </label>
+          {useSharedBrain && <small>The brief is sent to the model used by this agent.</small>}
+          {optionMessage?.id === selected.id && <p role="status">{optionMessage.text}</p>}
           <p>Status: {selected.status.replace(/_/g, ' ')}</p>
           <p>{selected.current_activity || 'No active task reported.'}</p>
-          <button type="button" disabled={starting || recovering || savingModel || selected.status !== 'idle'}
+          <button type="button" disabled={starting || recovering || savingOption || selected.status !== 'idle'}
             onClick={() => void startRun()}>
             {starting ? 'Starting…' : 'Run linked agent'}
           </button>

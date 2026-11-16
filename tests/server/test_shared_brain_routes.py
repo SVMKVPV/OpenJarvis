@@ -15,7 +15,7 @@ def test_shared_brief_is_authenticated_persistent_and_revisioned(
     tmp_path, monkeypatch
 ) -> None:
     monkeypatch.setattr(
-        "openjarvis.server.shared_brain_routes.get_config_dir", lambda: tmp_path
+        "openjarvis.core.shared_brain.get_config_dir", lambda: tmp_path
     )
     path = "/v1/shared-brain/brief"
     headers = {"Authorization": "Bearer test-shared-brain-key"}

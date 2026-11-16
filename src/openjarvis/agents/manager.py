@@ -245,15 +245,18 @@ class AgentManager:
             if key in kwargs:
                 sets.append(f"{key} = ?")
                 vals.append(kwargs[key])
-        if "model" in kwargs:
+        if "model" in kwargs or "use_shared_brain" in kwargs:
             existing = self.get_agent(agent_id)
             if existing is None:
                 raise KeyError(agent_id)
             config = dict(kwargs.get("config", existing["config"]))
-            if kwargs["model"]:
-                config["model"] = kwargs["model"]
-            else:
-                config.pop("model", None)
+            if "model" in kwargs:
+                if kwargs["model"]:
+                    config["model"] = kwargs["model"]
+                else:
+                    config.pop("model", None)
+            if "use_shared_brain" in kwargs:
+                config["use_shared_brain"] = kwargs["use_shared_brain"]
             kwargs["config"] = config
         if "config" in kwargs:
             sets.append("config_json = ?")

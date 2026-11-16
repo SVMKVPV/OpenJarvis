@@ -668,6 +668,15 @@ class AgentExecutor:
         else:
             base = tick_note or "Continue your assigned task."
             input_text = f"Current date: {today}\n\n{base}"
+        if config.get("use_shared_brain") is True:
+            from openjarvis.core.shared_brain import load_brief
+
+            brief, _ = load_brief()
+            if brief.strip():
+                input_text += (
+                    "\n\nShared Brain brief (background only; "
+                    "follow the standing and new instructions):\n" + brief
+                )
         pending = self._manager.get_pending_messages(agent["id"])
         defer_delivery = (
             agent["agent_type"] == "monitor_operative" and not tool_instances

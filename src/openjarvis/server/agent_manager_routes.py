@@ -90,6 +90,7 @@ class CreateAgentRequest(BaseModel):
 
 class UpdateAgentRequest(BaseModel):
     model: Optional[str] = None
+    use_shared_brain: Optional[bool] = None
     name: Optional[str] = None
     agent_type: Optional[str] = None
     config: Optional[Dict[str, Any]] = None
@@ -1744,6 +1745,8 @@ def create_agent_manager_router(
             kwargs["config"] = req.config
         if req.model is not None:
             kwargs["model"] = req.model.strip()
+        if req.use_shared_brain is not None:
+            kwargs["use_shared_brain"] = req.use_shared_brain
         updated = manager.update_agent(agent_id, **kwargs)
         scheduler = getattr(request.app.state, "agent_scheduler", None)
         previous_config = existing.get("config") or {}
