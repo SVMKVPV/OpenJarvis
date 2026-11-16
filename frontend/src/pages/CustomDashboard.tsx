@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, Grip, Plus, Settings2, X } from 'lucide-react';
 import { useLocalPreference } from '../hooks/useLocalPreference';
-import { fetchPendingApprovals, fetchWorkflowRuns, type PendingApproval, type WorkflowRunSummary } from '../lib/api';
+import {
+  fetchIndexedCalendarEvents, fetchPendingApprovals, fetchWorkflowRuns,
+  type IndexedCalendarEvent, type PendingApproval, type WorkflowRunSummary,
+} from '../lib/api';
 import './custom-dashboard.css';
 
 export type DashboardWidget = { id: string; stationId: string; station: string; name: string; value: string; detail: string; kind: 'metric' | 'calendar' | 'queue' | 'trend' | 'content' };
@@ -65,6 +68,8 @@ export function CustomDashboard({ widgetIds, setWidgetIds, onOpenStation, onOpen
   }, [showApprovals]);
   const [scheduledRuns, setScheduledRuns] = useState<ScheduledRun[] | null>(null);
   const [calendarMessage, setCalendarMessage] = useState('Checking scheduled workflows…');
+  const [calendarEvents, setCalendarEvents] = useState<IndexedCalendarEvent[] | null>(null);
+  const [eventMessage, setEventMessage] = useState('Checking indexed events…');
   const showCalendar = widgetIds.includes('calendar');
 
   useEffect(() => {
@@ -72,21 +77,30 @@ export function CustomDashboard({ widgetIds, setWidgetIds, onOpenStation, onOpen
     let active = true;
     let timer: number | undefined;
     const refresh = async () => {
-      try {
-        const runs = await fetchWorkflowRuns('scheduled');
-        if (!active) return;
-        const scheduled = runs.filter((run): run is ScheduledRun =>
+      const now = new Date();
+      const localDay = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+      const [runs, events] = await Promise.allSettled([
+        fetchWorkflowRuns('scheduled'), fetchIndexedCalendarEvents(localDay),
+      ]);
+      if (!active) return;
+      if (runs.status === 'fulfilled') {
+        const scheduled = runs.value.filter((run): run is ScheduledRun =>
           typeof run.scheduled_at === 'number' &&
           Number.isFinite(new Date(run.scheduled_at * 1000).getTime()));
         setScheduledRuns(scheduled);
         setCalendarMessage(scheduled.length ? '' : 'No scheduled workflows.');
-      } catch {
-        if (!active) return;
+      } else {
         setScheduledRuns(null);
         setCalendarMessage('Workflow calendar unavailable.');
-      } finally {
-        if (active) timer = window.setTimeout(() => void refresh(), 15000);
       }
+      if (events.status === 'fulfilled') {
+        setCalendarEvents(events.value);
+        setEventMessage(events.value.length ? '' : 'No upcoming events in the index.');
+      } else {
+        setCalendarEvents(null);
+        setEventMessage('Indexed Google Calendar events unavailable.');
+      }
+      timer = window.setTimeout(() => void refresh(), 15000);
     };
     void refresh();
     return () => {
@@ -132,6 +146,23 @@ export function CustomDashboard({ widgetIds, setWidgetIds, onOpenStation, onOpen
                 </button>
               </li>
             ))}
+          </ul>
+        )}
+        <small>Indexed Google Calendar events</small>
+        {eventMessage && <p role="status">{eventMessage}</p>}
+        {!!calendarEvents?.length && (
+          <ul className="dashboard-indexed-calendar" aria-label="Indexed Google Calendar events">
+            {calendarEvents.map((event) => {
+              const allDay = event.all_day_date;
+              const date = new Date(allDay ? `${allDay}T00:00:00` : event.starts_at);
+              return <li key={event.id}>
+                <time dateTime={allDay ?? event.starts_at}>
+                  {date.toLocaleDateString([], { month: 'short', day: 'numeric' })}{' '}
+                  {allDay ? 'All day' : date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                </time>
+                <span>{event.title}</span>
+              </li>;
+            })}
           </ul>
         )}
       </>

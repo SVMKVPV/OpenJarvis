@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from datetime import date, datetime, timezone
+
+from fastapi import APIRouter, Response
 from fastapi.responses import HTMLResponse
 
 dashboard_router = APIRouter()
@@ -424,6 +426,19 @@ setInterval(refresh, 5000);
 </body>
 </html>
 """
+
+
+@dashboard_router.get("/v1/dashboard/calendar")
+def upcoming_calendar_events(response: Response, local_day: date | None = None) -> dict:
+    from openjarvis.connectors.store import KnowledgeStore
+
+    now = datetime.now(timezone.utc)
+    response.headers["Cache-Control"] = "no-store"
+    with KnowledgeStore() as store:
+        events = store.upcoming_calendar_events(
+            now.isoformat(), (local_day or now.date()).isoformat()
+        )
+    return {"events": events}
 
 
 @dashboard_router.get("/dashboard", response_class=HTMLResponse)

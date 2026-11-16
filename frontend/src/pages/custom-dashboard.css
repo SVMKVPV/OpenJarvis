@@ -40,3 +40,15 @@
   overflow-wrap: anywhere;
 }
 .dashboard-workflow-calendar time { color: #ad9b73; }
+
+.dashboard-indexed-calendar { margin: 8px 0 0; padding: 0; list-style: none; }
+.dashboard-indexed-calendar li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 8px 0;
+  border-top: 1px solid #352b19;
+  color: #e1c47d;
+  overflow-wrap: anywhere;
+}
+.dashboard-indexed-calendar time { color: #ad9b73; }

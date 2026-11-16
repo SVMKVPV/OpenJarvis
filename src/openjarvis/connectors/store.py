@@ -574,6 +574,40 @@ class KnowledgeStore(MemoryBackend):
         ).fetchall()
         return [r[0] for r in rows]
 
+    def upcoming_calendar_events(
+        self, now_iso: str, local_day: str, *, limit: int = 8
+    ) -> list[dict[str, Any]]:
+        """Return the minimal start and title fields from indexed calendar events."""
+        rows = self._conn.execute(
+            """
+            WITH events AS (
+                SELECT doc_id, title, timestamp,
+                    CASE WHEN json_valid(metadata)
+                        THEN json_extract(metadata, '$.all_day_date')
+                    END AS all_day_date
+                FROM knowledge_chunks
+                WHERE source = 'gcalendar' AND doc_type = 'event'
+                    AND chunk_index = 0 AND deleted_at IS NULL
+            )
+            SELECT doc_id, title, timestamp, all_day_date
+            FROM events
+            WHERE (all_day_date IS NOT NULL AND date(all_day_date) >= date(?))
+                OR (all_day_date IS NULL AND julianday(timestamp) >= julianday(?))
+            ORDER BY julianday(COALESCE(all_day_date, timestamp)), doc_id
+            LIMIT ?
+            """,
+            (local_day, now_iso, limit),
+        ).fetchall()
+        return [
+            {
+                "id": row[0],
+                "title": row[1] or "Untitled event",
+                "starts_at": row[2],
+                "all_day_date": row[3],
+            }
+            for row in rows
+        ]
+
     def close(self) -> None:
         """Close the underlying SQLite connection."""
         try:

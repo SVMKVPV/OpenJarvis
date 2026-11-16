@@ -413,6 +413,7 @@ class GCalendarConnector(BaseConnector):
                             "calendar_id": calendar_id,
                             "event_id": evt_id,
                             "response_status": self_status,
+                            "all_day_date": event.get("start", {}).get("date"),
                         },
                     )
                     synced += 1

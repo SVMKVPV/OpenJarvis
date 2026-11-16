@@ -1283,6 +1283,20 @@ export interface WorkflowRunInput {
   context?: Record<string, unknown>;
 }
 
+export type IndexedCalendarEvent = {
+  id: string;
+  title: string;
+  starts_at: string;
+  all_day_date: string | null;
+};
+
+export async function fetchIndexedCalendarEvents(localDay: string): Promise<IndexedCalendarEvent[]> {
+  const response = await apiFetch(`/v1/dashboard/calendar?local_day=${encodeURIComponent(localDay)}`);
+  if (!response.ok) throw new Error(`Calendar request failed (${response.status}).`);
+  const data = await response.json();
+  return data.events ?? [];
+}
+
 export async function fetchWorkflowRuns(status?: WorkflowRunStatus): Promise<WorkflowRunSummary[]> {
   const query = status ? `&status=${encodeURIComponent(status)}` : '';
   const res = await apiFetch(`/v1/workflows/runs?limit=8${query}`);
