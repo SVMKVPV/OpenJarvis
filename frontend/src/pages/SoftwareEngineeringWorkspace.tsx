@@ -246,7 +246,7 @@ export function SoftwareEngineeringWorkspace() {
     let definition;
     switch (stepType) {
       case 'agent':
-        definition = { ...node, agent: 'none' };
+        definition = { ...node, agent: 'none', config: { instruction: stepSetting.trim() } };
         break;
       case 'condition':
         definition = { ...node, condition_expr: stepSetting.trim() };
@@ -522,7 +522,11 @@ export function SoftwareEngineeringWorkspace() {
                       </select>
                     </label>
                   ) : stepType === 'agent' ? (
-                    <p>Send the connected input to the backend’s configured model.</p>
+                    <label>Model instructions (optional)
+                      <textarea value={stepSetting} maxLength={4000}
+                        placeholder="Summarize the input in three bullet points."
+                        onChange={(event) => setStepSetting(event.target.value)} />
+                    </label>
                   ) : (
                     <label>{stepType === 'condition' ? 'Condition expression' : 'Approval request'}
                       <input value={stepSetting} onChange={(event) => setStepSetting(event.target.value)}

@@ -381,11 +381,15 @@ class WorkflowEngine:
                 output="No system available for agent execution.",
             )
         try:
+            instruction = (
+                node.config.get("instruction", "") if node.agent == "none" else ""
+            )
             result = system.ask(
                 input_text,
                 agent=node.agent or None,
                 tools=node.tools or None,
                 context=node.agent != "none",
+                **({"system_prompt": instruction} if instruction else {}),
             )
             failed = bool(result.get("error"))
             return WorkflowStepResult(

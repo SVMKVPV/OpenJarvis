@@ -82,6 +82,8 @@ class QueryOrchestrator:
                 prior_messages=prior_messages,
             )
 
+        if system_prompt:
+            messages.insert(0, Message(role=Role.SYSTEM, content=system_prompt))
         result = s.engine.generate(
             messages,
             model=s.model,

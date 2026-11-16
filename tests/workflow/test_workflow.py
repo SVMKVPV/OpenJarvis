@@ -243,6 +243,32 @@ class TestWorkflowEngine:
         assert result.status == "failed"
         assert result.final_output == "Model unavailable"
 
+    def test_saved_model_instruction_is_separate_from_workflow_input(self):
+        from openjarvis.core.config import JarvisConfig
+        from openjarvis.core.types import Role
+        from openjarvis.system.core import JarvisSystem
+
+        graph = graph_from_dict({
+            "nodes": [{
+                "id": "model",
+                "type": "agent",
+                "agent": "none",
+                "config": {"instruction": "Summarize the record."},
+            }],
+        })
+        engine = Mock()
+        engine.generate.return_value = {"content": "Summary"}
+        system = JarvisSystem(JarvisConfig(), EventBus(), engine, "test", "test")
+
+        result = WorkflowEngine().run(graph, system, initial_input="Example record")
+
+        assert result.final_output == "Summary"
+        messages = engine.generate.call_args.args[0]
+        assert [(message.role, message.content) for message in messages] == [
+            (Role.SYSTEM, "Summarize the record."),
+            (Role.USER, "Example record"),
+        ]
+
     def test_loop_without_backend_reports_no_iterations(self):
         graph = WorkflowBuilder("review").add_loop("review").build()
         result = WorkflowEngine().run(graph)
