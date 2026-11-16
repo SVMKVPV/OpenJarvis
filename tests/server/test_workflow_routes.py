@@ -11,6 +11,64 @@ from fastapi.testclient import TestClient  # noqa: E402
 from openjarvis.server.workflow_routes import create_workflow_runs_router  # noqa: E402
 
 
+def test_workflow_reviews_only_the_selected_upload_batch(tmp_path, monkeypatch):
+    from openjarvis.core import config
+    from openjarvis.server import approval_routes, upload_router
+    from openjarvis.tools.approval_store import ApprovalStore
+
+    monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(tmp_path / "workflow.db"))
+    monkeypatch.setattr(config, "DEFAULT_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(upload_router, "DEFAULT_CONFIG_DIR", tmp_path)
+    approvals = ApprovalStore(str(tmp_path / "approvals.db"))
+    monkeypatch.setattr(approval_routes, "_store", approvals)
+    app = FastAPI()
+    app.state.workflow_system = None
+    app.include_router(create_workflow_runs_router())
+    app.include_router(upload_router.router)
+
+    with TestClient(app) as client:
+        url = "/v1/connectors/upload/ingest/files"
+        response = client.post(url, files=[
+            ("files", ("draft.txt", b"Draft promises delivery in 24 hours")),
+            ("files", ("approved.txt", b"Approved delivery target is 48 hours")),
+        ])
+        response.raise_for_status()
+        batch = response.json()
+        assert batch["chunks_added"] == 2
+        assert client.post(url, files=[
+            ("files", ("draft.txt", b"Unrelated delivery guarantee")),
+        ]).status_code == 200
+        result = client.post("/v1/workflows/runs", json={
+            "initial_input": batch["reference"],
+            "nodes": [
+                {"id": "source", "type": "tool", "config": {
+                    "tool_name": "knowledge_search", "query_from_input": True,
+                    "source": "upload", "require_match": True,
+                }},
+                {"id": "review", "type": "approval"},
+            ],
+            "edges": [{"source": "source", "target": "review"}],
+        })
+        assert result.status_code == 202
+        run_url = f"/v1/workflows/runs/{result.json()['id']}"
+        try:
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                run = client.get(run_url).json()
+                if run["status"] == "waiting_approval":
+                    break
+                time.sleep(0.01)
+            else:
+                pytest.fail(f"Upload review did not reach approval: {run}")
+            evidence = run["steps"][1]["metadata"]["review_input"]
+            assert "draft.txt" in evidence and "24 hours" in evidence
+            assert "approved.txt" in evidence and "48 hours" in evidence
+            assert "Unrelated" not in evidence
+        finally:
+            app.state.workflow_runtime.close()
+            approvals.close()
+
+
 def test_recurring_workflow_catches_up_once_after_restart(tmp_path, monkeypatch):
     from openjarvis.server import approval_routes
     from openjarvis.server.workflow_routes import start_workflow_scheduler

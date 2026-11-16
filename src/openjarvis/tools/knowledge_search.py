@@ -144,7 +144,17 @@ class KnowledgeSearchTool(BaseTool):
         until = filters["until"]
 
         try:
-            if self._retriever is not None:
+            if source == "upload" and query.startswith("upload:") and self._store:
+                # Fetch one extra chunk to detect incomplete evidence before review.
+                results = self._store.uploaded_evidence(query, limit=17)
+                if len(results) > 16:
+                    return ToolResult(
+                        tool_name="knowledge_search",
+                        content="This upload exceeds 16 excerpts. Split the evidence "
+                        "into smaller uploads or run a keyword search.",
+                        success=False,
+                    )
+            elif self._retriever is not None:
                 results = self._retriever.retrieve(
                     query,
                     top_k=top_k,

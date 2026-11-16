@@ -18,6 +18,21 @@ export async function listConnectors(): Promise<ConnectorInfo[]> {
   return data.connectors || [];
 }
 
+export async function indexWorkflowEvidence(files: File[]): Promise<{
+  chunks_added: number;
+  reference?: string | null;
+}> {
+  const body = new FormData();
+  for (const file of files) body.append('files', file);
+  const response = await apiFetch('/v1/connectors/upload/ingest/files', { method: 'POST', body });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(typeof payload?.detail === 'string'
+      ? payload.detail : `Evidence upload failed (${response.status}).`);
+  }
+  return response.json();
+}
+
 export async function getConnector(id: string, signal?: AbortSignal): Promise<ConnectorInfo> {
   const res = await apiFetch(`/v1/connectors/${encodeURIComponent(id)}`, { signal });
   if (!res.ok) throw new Error(`Failed to get connector ${id}: ${res.status}`);

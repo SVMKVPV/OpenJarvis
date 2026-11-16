@@ -120,6 +120,7 @@ class PasteRequest(BaseModel):
 class IngestResponse(BaseModel):
     chunks_added: int
     source: str = "upload"
+    reference: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -134,22 +135,24 @@ async def ingest_paste(body: PasteRequest) -> IngestResponse:
     if not text:
         raise HTTPException(status_code=400, detail="Content is empty")
 
-    store = _get_store()
     doc_id = str(uuid.uuid4())
+    reference = f"upload:{uuid.uuid4().hex}"
     chunks = _chunk_text(text)
 
-    for idx, chunk in enumerate(chunks):
-        store.store(
-            chunk,
-            source="upload",
-            doc_type="paste",
-            doc_id=doc_id,
-            title=body.title or "Pasted text",
-            chunk_index=idx,
-        )
+    with _get_store() as store:
+        for idx, chunk in enumerate(chunks):
+            store.store(
+                chunk,
+                source="upload",
+                source_id=reference,
+                doc_type="paste",
+                doc_id=doc_id,
+                title=body.title or "Pasted text",
+                chunk_index=idx,
+            )
 
     logger.info("Ingested %d chunks from pasted text (doc_id=%s)", len(chunks), doc_id)
-    return IngestResponse(chunks_added=len(chunks))
+    return IngestResponse(chunks_added=len(chunks), reference=reference)
 
 
 @router.post("/ingest/files", response_model=IngestResponse)
@@ -158,8 +161,8 @@ async def ingest_files(
     title: Optional[str] = Form(None),
 ) -> IngestResponse:
     """Ingest uploaded files into the knowledge store."""
-    store = _get_store()
-    total_chunks = 0
+    documents: list[tuple[str, str, list[str]]] = []
+    reference = f"upload:{uuid.uuid4().hex}"
 
     for upload in files:
         filename = upload.filename or "untitled"
@@ -193,26 +196,24 @@ async def ingest_files(
         if not text:
             continue
 
-        doc_id = str(uuid.uuid4())
-        doc_title = title or filename
-        chunks = _chunk_text(text)
+        documents.append((filename, ext.lstrip("."), _chunk_text(text)))
 
-        for idx, chunk in enumerate(chunks):
-            store.store(
-                chunk,
-                source="upload",
-                doc_type=ext.lstrip("."),
-                doc_id=doc_id,
-                title=doc_title,
-                chunk_index=idx,
-            )
+    total_chunks = 0
+    with _get_store() as store:
+        for filename, doc_type, chunks in documents:
+            doc_id = str(uuid.uuid4())
+            for idx, chunk in enumerate(chunks):
+                store.store(
+                    chunk,
+                    source="upload",
+                    source_id=reference,
+                    doc_type=doc_type,
+                    doc_id=doc_id,
+                    title=title or filename,
+                    chunk_index=total_chunks + idx,
+                )
+            total_chunks += len(chunks)
 
-        total_chunks += len(chunks)
-        logger.info(
-            "Ingested %d chunks from file %s (doc_id=%s)",
-            len(chunks),
-            filename,
-            doc_id,
-        )
-
-    return IngestResponse(chunks_added=total_chunks)
+    return IngestResponse(
+        chunks_added=total_chunks, reference=reference if total_chunks else None
+    )

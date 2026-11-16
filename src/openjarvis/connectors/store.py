@@ -641,6 +641,26 @@ class KnowledgeStore(MemoryBackend):
             "excerpts": [row[4] for row in rows],
         }
 
+    def uploaded_evidence(self, reference: str, *, limit: int) -> list[RetrievalResult]:
+        """Read ordered chunks belonging to an exact upload batch."""
+        rows = self._conn.execute(
+            "SELECT content, title, chunk_index FROM knowledge_chunks "
+            "WHERE source = 'upload' AND source_id = ? AND deleted_at IS NULL "
+            "ORDER BY chunk_index LIMIT ?",
+            (reference, limit),
+        ).fetchall()
+        return [
+            RetrievalResult(
+                content=row["content"],
+                score=1.0,
+                source="upload",
+                metadata={
+                    "title": f'{row["title"]} · excerpt {row["chunk_index"] + 1}',
+                },
+            )
+            for row in rows
+        ]
+
     def upcoming_calendar_events(
         self, now_iso: str, local_day: str, *, limit: int = 8
     ) -> list[dict[str, Any]]:

@@ -31,6 +31,7 @@ import { useAppStore } from '../lib/store';
 import type { ConnectorInfo, SyncStatus } from '../types/connectors';
 import { ReviewedLeadForm } from './ReviewedLeadForm';
 import { WorkflowDraftMap } from './WorkflowDraftMap';
+import { WorkflowEvidenceUpload } from './WorkflowEvidenceUpload';
 import { WorkflowRecurrenceEditor } from './WorkflowRecurrenceEditor';
 import './software-workspace.css';
 
@@ -1243,6 +1244,11 @@ export function SoftwareEngineeringWorkspace({
               <button type="button" onClick={() => setWorkflowGraph(GUARDED_GRAPH_JSON)}>Restore guarded delivery steps</button>
             </details>
           </form>
+          {(draftGraph?.nodes.some((node) => node.config?.source === 'upload') ||
+            selectedDefinition?.graph.nodes.some((node) =>
+              (node.config as DraftNode['config'])?.source === 'upload')) && (
+            <WorkflowEvidenceUpload onIndexed={setWorkflowInput} />
+          )}
           <p><a href="https://zie619.github.io/n8n-workflows/" target="_blank" rel="noopener noreferrer">Browse optional n8n templates ↗</a><br />Download JSON for manual import into n8n.</p>
           {definitions.length > 0 && (
             <form className="connector-editor" onSubmit={launchSaved}>
