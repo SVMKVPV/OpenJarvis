@@ -1662,7 +1662,7 @@ def create_agent_manager_router(
 
         # Register with scheduler if cron/interval
         scheduler = getattr(request.app.state, "agent_scheduler", None)
-        sched_type = (req.config or {}).get("schedule_type", "manual")
+        sched_type = (agent.get("config") or {}).get("schedule_type", "manual")
         if scheduler and sched_type in ("cron", "interval"):
             scheduler.register_agent(agent["id"])
 
