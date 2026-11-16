@@ -1725,6 +1725,11 @@ export async function getInferenceSource(): Promise<InferenceSource> {
   return { kind: 'ollama' };
 }
 
+export async function checkLocalOmniRoute(apiKey: string): Promise<number> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<number>('check_local_omniroute', { apiKey });
+}
+
 export async function setInferenceSource(
   src: InferenceSource & { apiKey?: string },
   options: { pending?: boolean } = {},

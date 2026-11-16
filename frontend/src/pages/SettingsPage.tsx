@@ -22,6 +22,7 @@ import { useAppStore, type ThemeMode } from '../lib/store';
 import { deviceTimeZone, listTimeZones, resolveTimeZone, utcOffsetLabel } from '../lib/timezone';
 import {
   checkHealth,
+  checkLocalOmniRoute,
   fetchSpeechHealth,
   fetchTtsHealth,
   getMemoryStats,
@@ -343,6 +344,22 @@ export function SettingsPage() {
   const [customEngine, setCustomEngine] = useState('lmstudio');
   const [customKey, setCustomKey] = useState('');
   const [srcMsg, setSrcMsg] = useState('');
+  const [checkingGateway, setCheckingGateway] = useState(false);
+
+  const checkGateway = async () => {
+    setCheckingGateway(true);
+    setSrcMsg('Checking OmniRoute…');
+    try {
+      const count = await checkLocalOmniRoute(customKey);
+      setSrcMsg(count === 0
+        ? 'OmniRoute accepted the key. No models are listed.'
+        : `OmniRoute accepted the key and listed ${count} ${count === 1 ? 'model' : 'models'}.`);
+    } catch (error) {
+      setSrcMsg(typeof error === 'string' ? error : 'Could not check OmniRoute.');
+    } finally {
+      setCheckingGateway(false);
+    }
+  };
 
   useEffect(() => {
     getInferenceSource().then((s) => {
@@ -647,14 +664,21 @@ export function SettingsPage() {
                   </select>
                 </SettingRow>
                 <SettingRow label="API key (optional)" description="Only if your server requires one">
-                  <input type="password" value={customKey} onChange={(e) => { setCustomKey(e.target.value); setSrcMsg(''); }} placeholder="leave blank if none"
+                  <input type="password" value={customKey} disabled={checkingGateway} onChange={(e) => { setCustomKey(e.target.value); setSrcMsg(''); }} placeholder="leave blank if none"
                     className="text-sm px-3 py-1.5 rounded-lg outline-none w-56"
                     style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }} />
                 </SettingRow>
+                {isTauri() && customHost.trim() === OMNIROUTE_LOCAL_URL && (
+                  <SettingRow label="Connection check" description="Check the gateway key and model catalog before saving.">
+                    <button type="button" disabled={checkingGateway || !customKey.trim()} onClick={checkGateway}>
+                      {checkingGateway ? 'Checking…' : 'Check OmniRoute'}
+                    </button>
+                  </SettingRow>
+                )}
               </>
             )}
             <SettingRow label="" description={srcMsg}>
-              <button onClick={saveSource}
+              <button onClick={saveSource} disabled={checkingGateway}
                 className="text-sm px-3 py-1.5 rounded-lg outline-none cursor-pointer"
                 style={{ background: 'var(--color-accent, var(--color-bg-tertiary))', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}>
                 Save inference source

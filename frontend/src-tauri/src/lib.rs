@@ -582,6 +582,44 @@ async fn endpoint_reachable(host: &str, timeout: Duration) -> bool {
     false
 }
 
+#[tauri::command]
+async fn check_local_omniroute(api_key: String) -> Result<usize, String> {
+    let api_key = api_key.trim();
+    if api_key.is_empty() {
+        return Err("Enter your OmniRoute gateway key.".into());
+    }
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|_| "Could not initialize the gateway connection.")?;
+    let response = client
+        .get("http://127.0.0.1:20128/v1/models")
+        .bearer_auth(api_key)
+        .send()
+        .await
+        .map_err(|_| "Could not reach the local OmniRoute gateway.")?;
+    match response.status().as_u16() {
+        401 | 403 => return Err("OmniRoute rejected this gateway key.".into()),
+        200 => {}
+        status => return Err(format!("OmniRoute returned HTTP {status}.")),
+    }
+    #[derive(serde::Deserialize)]
+    struct Model {
+        id: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct Models {
+        data: Vec<Model>,
+    }
+    let models = response
+        .json::<Models>()
+        .await
+        .map_err(|_| "OmniRoute did not return a valid model list.")?;
+    Ok(models.data.iter().filter(|model| !model.id.is_empty()).count())
+}
+
 /// Outcome of waiting for `jarvis serve` to become healthy.
 ///
 /// Unlike [`wait_for_url`] this differentiates "server is up but degraded"
@@ -3515,6 +3553,7 @@ pub fn run() {
             save_cloud_key,
             get_cloud_key_status,
             get_inference_source,
+            check_local_omniroute,
             set_inference_source,
             toggle_overlay,
             hide_overlay,
