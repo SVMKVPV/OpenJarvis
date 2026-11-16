@@ -50,6 +50,7 @@ const GUARDED_GRAPH_JSON = JSON.stringify({
 type DraftEdge = { source: string; target: string; condition?: string };
 
 type DraftGraph = { nodes: { id: string }[]; edges?: DraftEdge[] };
+type NewStepType = 'transform' | 'condition' | 'approval';
 
 function readDraftGraph(draft: string): DraftGraph | null {
   try {
@@ -112,6 +113,9 @@ export function SoftwareEngineeringWorkspace() {
   const draftGraph = useMemo(() => readDraftGraph(workflowGraph), [workflowGraph]);
   const [edgeSource, setEdgeSource] = useState('');
   const [edgeTarget, setEdgeTarget] = useState('');
+  const [stepId, setStepId] = useState('');
+  const [stepType, setStepType] = useState<NewStepType>('transform');
+  const [stepSetting, setStepSetting] = useState('');
   const [workflowApprovals, setWorkflowApprovals] = useState<PendingApproval[]>([]);
   const [workflowState, setWorkflowState] = useState<'online' | 'offline' | 'starting'>('offline');
   const [proposals, setProposals] = useState<Proposal[]>([
@@ -161,6 +165,28 @@ export function SoftwareEngineeringWorkspace() {
     if (draftGraph) setWorkflowGraph(JSON.stringify({ ...draftGraph, edges }, null, 2));
   };
   const draftEdges = draftGraph?.edges ?? [];
+  const newStepId = stepId.trim();
+  const canAddStep = draftGraph && newStepId && newStepId !== '_input' &&
+    !draftGraph.nodes.some((node) => node.id === newStepId) &&
+    (stepType === 'transform' || stepSetting.trim());
+  const addStep = () => {
+    if (!draftGraph || !canAddStep) return;
+    const node = { id: newStepId, type: stepType };
+    let definition;
+    switch (stepType) {
+      case 'condition':
+        definition = { ...node, condition_expr: stepSetting.trim() };
+        break;
+      case 'approval':
+        definition = { ...node, config: { description: stepSetting.trim(), tier: 'high' } };
+        break;
+      default:
+        definition = { ...node, transform_expr: stepSetting || 'concatenate' };
+    }
+    setWorkflowGraph(JSON.stringify({ ...draftGraph, nodes: [...draftGraph.nodes, definition] }, null, 2));
+    setStepId('');
+    setStepSetting('');
+  };
   const canAddEdge = draftGraph && edgeSource !== edgeTarget &&
     draftGraph.nodes.some((node) => node.id === edgeSource) &&
     draftGraph.nodes.some((node) => node.id === edgeTarget) &&
@@ -325,6 +351,39 @@ export function SoftwareEngineeringWorkspace() {
             </button>
             <details className="workflow-graph-editor">
               <summary>Edit workflow definition</summary>
+              {draftGraph && (
+                <fieldset>
+                  <legend>Workflow steps</legend>
+                  <ul>{draftGraph.nodes.map((node) => <li key={node.id}>{node.id}</li>)}</ul>
+                  <label>Step ID
+                    <input value={stepId} onChange={(event) => setStepId(event.target.value)} />
+                  </label>
+                  <label>Step type
+                    <select value={stepType} onChange={(event) => {
+                      setStepType(event.target.value as NewStepType);
+                      setStepSetting('');
+                    }}>
+                      <option value="transform">Text transform</option>
+                      <option value="condition">Condition</option>
+                      <option value="approval">Approval</option>
+                    </select>
+                  </label>
+                  {stepType === 'transform' ? (
+                    <label>Transform
+                      <select value={stepSetting || 'concatenate'} onChange={(event) => setStepSetting(event.target.value)}>
+                        <option value="concatenate">Combine input</option>
+                        <option value="first_line">Keep first line</option>
+                      </select>
+                    </label>
+                  ) : (
+                    <label>{stepType === 'condition' ? 'Condition expression' : 'Approval request'}
+                      <input value={stepSetting} onChange={(event) => setStepSetting(event.target.value)}
+                        placeholder={stepType === 'condition' ? "outputs['_input'] == 'yes'" : 'Review the prepared result'} />
+                    </label>
+                  )}
+                  <button type="button" onClick={addStep} disabled={!canAddStep}>Add step</button>
+                </fieldset>
+              )}
               <fieldset>
                 <legend>Branch conditions</legend>
                 {draftEdges.map((edge, index) => (
