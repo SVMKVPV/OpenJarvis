@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { AlertTriangle, Network, Radio, Users } from 'lucide-react';
 import './shared-brain.css';
 
-export function SharedBrainPanel({ context, onContextChange, onShare }: {
+export function SharedBrainPanel({ context, onContextChange, onShare, onOpenDot }: {
+  onOpenDot: () => void;
   context: string;
   onContextChange: (value: string) => void;
   onShare: (source: string, text: string) => string;
@@ -24,7 +25,7 @@ export function SharedBrainPanel({ context, onContextChange, onShare }: {
     <section aria-label="Shared Brain participants" className="station-details-editor">
       <h3>Shared Brain participants</h3>
       <ul>
-        <li><strong>Dot</strong> · Include the brief in a message or save a Dot reply here.</li>
+        <li><strong>Dot</strong> · Include the brief in a message or save a Dot reply here. <button type="button" onClick={onOpenDot}>Open Dot</button></li>
         <li><strong>ChatGPT</strong> · Copy the brief into your ChatGPT conversation and paste the result below.</li>
         <li><strong>Codex</strong> · Copy the brief into your Codex task and paste the result below.</li>
       </ul>
@@ -49,6 +50,7 @@ export function SharedBrainPanel({ context, onContextChange, onShare }: {
         <label>Update source
           <select value={source} onChange={(event) => setSource(event.target.value)}>
             <option>ChatGPT</option>
+            <option>Dot</option>
             <option>Codex</option>
           </select>
         </label>

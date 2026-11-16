@@ -393,17 +393,24 @@ function OrganizationStation({ data }: NodeProps<OrganizationNode>) {
   const isBrain = station.id === 'brain';
   return (
     <button className={`org-node ${isOwner ? 'owner-node' : ''} ${isBrain ? 'brain-node' : ''}`} data-station={station.id} disabled={isOwner} onClick={(event) => { event.stopPropagation(); if (!isOwner) data.onOpen(station.id); }} aria-label={isOwner ? 'CEO and Director owner node' : `Open ${station.name} workstation`}>
+      {BRAIN_COLLABORATORS.includes(station) && <Handle type="source" position={Position.Top} id="collaborator-out" />}
       {!isBrain && <Handle type="source" position={Position.Top} id="reports-out" />}
       {!isBrain && <Handle type="source" position={Position.Bottom} id="brain-out" />}
       {!isBrain && <Handle type="target" position={Position.Bottom} id="reports-in" />}
       {isBrain && <Handle type="target" position={Position.Top} id="brain-in" />}
+      {isBrain && <Handle type="target" position={Position.Bottom} id="collaborator-in" />}
       <div><span>{station.code}</span><i data-status={station.status} /></div>
       <strong>{station.name}</strong>
       <small>{station.current}</small>
-      <em>{isOwner ? 'ORGANIZATION OWNER' : isBrain ? 'SHARED BY EVERY AGENT' : `REPORTS TO ${station.reportsTo.toUpperCase()}`}</em>
+      <em>{BRAIN_COLLABORATORS.includes(station) ? 'SHARED BRAIN COLLABORATOR' : isOwner ? 'ORGANIZATION OWNER' : isBrain ? 'SHARED BY EVERY AGENT' : `REPORTS TO ${station.reportsTo.toUpperCase()}`}</em>
     </button>
   );
 }
+
+const BRAIN_COLLABORATORS: Station[] = [
+  { id: 'brain-chatgpt', code: 'GPT', name: 'ChatGPT', purpose: 'Shared Brain collaborator', current: 'Manual brief and update sharing', reportsTo: 'No one', status: 'ready' },
+  { id: 'brain-codex', code: 'CDX', name: 'Codex', purpose: 'Shared Brain collaborator', current: 'Manual brief and update sharing', reportsTo: 'No one', status: 'ready' },
+];
 
 const organizationNodeTypes = { organization: OrganizationStation };
 
@@ -413,6 +420,7 @@ const ORGANIZATION_POSITIONS: Record<string, { x: number; y: number }> = {
   finance: { x: 20, y: 455 }, growth: { x: 205, y: 455 }, marketing: { x: 390, y: 455 },
   research: { x: 650, y: 455 }, managers: { x: 835, y: 455 }, email: { x: 1020, y: 455 },
   brain: { x: 480, y: 625 },
+  'brain-chatgpt': { x: 295, y: 780 }, 'brain-codex': { x: 665, y: 780 },
   'system-builder': { x: 1205, y: 455 },
 };
 
@@ -424,13 +432,18 @@ const REPORTING_LINKS = [
 ] as const;
 
 function OrganizationOverview({ stations, onOpen }: { stations: Station[]; onOpen: (id: string) => void }) {
-  const organizationStations = useMemo(() => [{ id: 'ceo', code: 'CEO', name: 'You — CEO / Director', purpose: 'Organization owner', current: 'Direction, final approval, and accountability', reportsTo: 'No one', status: 'working' as const }, ...stations], [stations]);
+  const organizationStations = useMemo(() => [{ id: 'ceo', code: 'CEO', name: 'You — CEO / Director', purpose: 'Organization owner', current: 'Direction, final approval, and accountability', reportsTo: 'No one', status: 'working' as const }, ...stations, ...BRAIN_COLLABORATORS], [stations]);
   const nodes = useMemo<OrganizationNode[]>(() => organizationStations.map((station, index) => ({
     id: station.id,
     type: 'organization',
     position: ORGANIZATION_POSITIONS[station.id] ?? { x: 25 + (index % 5) * 185, y: 520 + Math.floor(index / 5) * 150 },
-    data: { station, onOpen },
-    ariaLabel: `${station.name}. Reports to ${station.reportsTo}. ${station.current}`,
+    data: {
+      station,
+      onOpen: BRAIN_COLLABORATORS.includes(station) ? () => onOpen('brain') : onOpen,
+    },
+    ariaLabel: BRAIN_COLLABORATORS.includes(station)
+      ? `${station.name}. Shared Brain collaborator. ${station.current}`
+      : `${station.name}. Reports to ${station.reportsTo}. ${station.current}`,
   })), [organizationStations, onOpen]);
   const existing = new Set(organizationStations.map((station) => station.id));
   const dynamicStations = stations.filter((station) => !ORGANIZATION_POSITIONS[station.id]);
@@ -448,14 +461,14 @@ function OrganizationOverview({ stations, onOpen }: { stations: Station[]; onOpe
       markerEnd: { type: MarkerType.ArrowClosed, color: '#d6ad52', width: 14, height: 14 },
       style: { stroke: '#a77c2e', strokeWidth: 1.5 },
     }));
-  const brainEdges: Edge[] = stations.filter((station) => station.id !== 'brain').map((station) => ({ id: `brain-${station.id}`, source: station.id, target: 'brain', sourceHandle: 'brain-out', targetHandle: 'brain-in', type: 'straight', animated: false, style: { stroke: '#8a7650', strokeWidth: 1.2, strokeDasharray: '5 7', opacity: .8 } }));
+  const brainEdges: Edge[] = [...stations, ...BRAIN_COLLABORATORS].filter((station) => station.id !== 'brain').map((station) => ({ id: `brain-${station.id}`, source: station.id, target: 'brain', sourceHandle: BRAIN_COLLABORATORS.includes(station) ? 'collaborator-out' : 'brain-out', targetHandle: BRAIN_COLLABORATORS.includes(station) ? 'collaborator-in' : 'brain-in', type: 'straight', animated: false, style: { stroke: '#8a7650', strokeWidth: 1.2, strokeDasharray: '5 7', opacity: .8 } }));
   const edges = [...reportingEdges, ...brainEdges];
 
   return (
     <main className="overview-page">
       <div className="view-heading"><div><span>ORGANIZATION OVERVIEW</span><h2>Chain of command + shared communication</h2><p>Solid arrows report upward to you. Dashed lines connect every agent to the same Shared Brain.</p></div><div className="overview-legend"><span><i data-kind="reporting" /> REPORTING</span><span><i data-kind="brain" /> SHARED BRAIN</span><span>CLICK A STATION TO OPEN</span></div></div>
       <section className="organization-map" aria-label="Organization connection overview">
-        <ReactFlow<OrganizationNode> nodes={nodes} edges={edges} nodeTypes={organizationNodeTypes} onNodeClick={(_, node) => onOpen(node.id)} fitView fitViewOptions={{ padding: 0.12, maxZoom: 1 }} minZoom={0.45} maxZoom={1.35} nodesDraggable={false} nodesConnectable={false} zoomOnDoubleClick={false}>
+        <ReactFlow<OrganizationNode> nodes={nodes} edges={edges} nodeTypes={organizationNodeTypes} onNodeClick={(_, node) => node.data.onOpen(node.id)} fitView fitViewOptions={{ padding: 0.12, maxZoom: 1 }} minZoom={0.45} maxZoom={1.35} nodesDraggable={false} nodesConnectable={false} zoomOnDoubleClick={false}>
           <Background color="#211a0c" gap={24} size={1} />
         </ReactFlow>
       </section>
@@ -639,7 +652,7 @@ export function CommandCenterPage() {
           <div className="rail-foot"><Activity size={13} /><span>LIVE WORK FEED</span><b>284</b></div>
         </aside>
 
-        {selected.id === 'brain' ? <section className="workflow-stage brain-stage"><SharedBrainPanel context={brainContext} onContextChange={setBrainContext} onShare={addBrainUpdate} /></section> : <main className="workflow-stage">
+        {selected.id === 'brain' ? <section className="workflow-stage brain-stage"><SharedBrainPanel context={brainContext} onContextChange={setBrainContext} onShare={addBrainUpdate} onOpenDot={() => openStation('dot')} /></section> : <main className="workflow-stage">
           <div className="station-header">
             <div><span>{selected.code} // SELECTED STATION</span><h2>{selected.name}</h2><p>{selected.purpose}</p></div>
             <div className="station-now"><span>CURRENT WORK</span><strong>{selected.current}</strong><small>Reports to {selected.reportsTo}</small></div>
