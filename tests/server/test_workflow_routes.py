@@ -11,6 +11,47 @@ from fastapi.testclient import TestClient  # noqa: E402
 from openjarvis.server.workflow_routes import create_workflow_runs_router  # noqa: E402
 
 
+def test_import_attachments_from_the_selected_gmail_message(tmp_path, monkeypatch):
+    import base64
+
+    from openjarvis.connectors import gmail
+    from openjarvis.connectors.store import KnowledgeStore
+    from openjarvis.server import upload_router
+
+    monkeypatch.setattr(upload_router, "DEFAULT_CONFIG_DIR", tmp_path)
+    db_path = tmp_path / "knowledge.db"
+    with KnowledgeStore(db_path) as store:
+        store.store(
+            "Please review the attached invoice", source="gmail",
+            source_id="abc123", doc_id="gmail:abc123", doc_type="email",
+        )
+
+    def provider(operation, credentials, message_id, *args):
+        assert message_id == "abc123"
+        if operation is gmail._gmail_api_get_message:
+            return {"payload": {"parts": [{
+                "filename": "invoice.csv",
+                "body": {"attachmentId": "invoice-id", "size": 32},
+            }]}}
+        assert operation is gmail._gmail_api_get_attachment and args == ("invoice-id",)
+        return base64.urlsafe_b64encode(b"Invoice M-42, total AUD 132.00").decode()
+
+    monkeypatch.setattr(gmail, "_call_with_refresh", provider)
+    app = FastAPI()
+    app.include_router(upload_router.router)
+    with TestClient(app) as client:
+        base = "/v1/connectors/upload/ingest/gmail"
+        assert client.post(f"{base}/other").status_code == 404
+        result = client.post(f"{base}/abc123")
+        result.raise_for_status()
+        assert result.json()["chunks_added"] == 1
+    with KnowledgeStore(db_path) as store:
+        evidence, = store.uploaded_evidence(result.json()["reference"], limit=5)
+        assert evidence.content == "Invoice M-42, total AUD 132.00"
+        assert evidence.metadata["title"].startswith("invoice.csv")
+        assert evidence.metadata["url"] == "https://mail.google.com/mail/u/0/#all/abc123"
+
+
 def test_workflow_reviews_only_the_selected_upload_batch(tmp_path, monkeypatch):
     from openjarvis.core import config
     from openjarvis.server import approval_routes, upload_router

@@ -16,6 +16,7 @@ import time
 from datetime import datetime
 from html.parser import HTMLParser
 from typing import Any, Dict, Iterator, List, Optional, Tuple
+from urllib.parse import quote
 
 import httpx
 
@@ -187,6 +188,54 @@ def _gmail_api_get_message(token: str, msg_id: str) -> Dict[str, Any]:
     resp = _gmail_get(f"{_GMAIL_API_BASE}/messages/{msg_id}", token, {"format": "full"})
     resp.raise_for_status()
     return resp.json()
+
+
+def _gmail_api_get_attachment(token: str, msg_id: str, attachment_id: str) -> str:
+    safe_id = quote(attachment_id, safe="")
+    url = f"{_GMAIL_API_BASE}/messages/{msg_id}/attachments/{safe_id}"
+    response = _gmail_get(url, token, {})
+    response.raise_for_status()
+    return response.json()["data"]
+
+
+def fetch_message_evidence(
+    msg_id: str, extensions: set[str]
+) -> Iterator[tuple[str, bytes]]:
+    """Fetch bounded file evidence for one selected Gmail message."""
+    if not re.fullmatch(r"[a-fA-F0-9]+", msg_id):
+        raise ValueError("Choose a valid indexed Gmail message.")
+    message = _call_with_refresh(
+        _gmail_api_get_message, _DEFAULT_CREDENTIALS_PATH, msg_id
+    )
+    parts = [message.get("payload", {})]
+    max_bytes = 5 * 1024 * 1024
+    selected = 0
+    while parts:
+        part = parts.pop()
+        parts.extend(reversed(part.get("parts") or []))
+        filename = part.get("filename", "")
+        extension = "." + filename.rsplit(".", 1)[-1].lower()
+        if not filename or extension not in extensions:
+            continue
+        body = part.get("body") or {}
+        selected += 1
+        if selected > 5 or body.get("size", 0) > max_bytes:
+            raise ValueError(
+                "Choose a message with at most five evidence files under 5 MB each."
+            )
+        encoded = body.get("data", "")
+        if body.get("attachmentId"):
+            encoded = _call_with_refresh(
+                _gmail_api_get_attachment, _DEFAULT_CREDENTIALS_PATH,
+                msg_id, body["attachmentId"],
+            )
+        if len(encoded) > (max_bytes + 2) // 3 * 4:
+            raise ValueError("An attachment exceeds the 5 MB evidence limit.")
+        data = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
+        if len(data) > max_bytes:
+            raise ValueError("An attachment exceeds the 5 MB evidence limit.")
+        if data:
+            yield filename, data
 
 
 # ---------------------------------------------------------------------------

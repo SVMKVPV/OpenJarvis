@@ -33,6 +33,20 @@ export async function indexWorkflowEvidence(files: File[]): Promise<{
   return response.json();
 }
 
+export async function indexGmailEvidence(messageId: string): Promise<{
+  chunks_added: number;
+  reference?: string | null;
+}> {
+  const response = await apiFetch(
+    `/v1/connectors/upload/ingest/gmail/${encodeURIComponent(messageId)}`, { method: 'POST' },
+  );
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data || !Number.isInteger(data.chunks_added)) {
+    throw new Error(typeof data?.detail === 'string' ? data.detail : 'Could not import Gmail evidence.');
+  }
+  return data;
+}
+
 export async function getConnector(id: string, signal?: AbortSignal): Promise<ConnectorInfo> {
   const res = await apiFetch(`/v1/connectors/${encodeURIComponent(id)}`, { signal });
   if (!res.ok) throw new Error(`Failed to get connector ${id}: ${res.status}`);

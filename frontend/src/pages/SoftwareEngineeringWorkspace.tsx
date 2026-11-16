@@ -328,11 +328,13 @@ export type WorkspaceEntry = {
   initialRunId?: string;
   initialDefinitionId?: string;
   initialGmailReference?: string;
+  initialUploadReference?: string;
   initialStarter?: 'finance' | 'leads' | 'competitor-ads' | 'delivery-quality' | 'builder-research';
 };
 
 export function SoftwareEngineeringWorkspace({
-  initialRunId = '', initialDefinitionId = '', initialGmailReference = '', initialStarter,
+  initialRunId = '', initialDefinitionId = '', initialGmailReference = '',
+  initialUploadReference = '', initialStarter,
   recipients = [], onOpenStation,
 }: WorkspaceEntry & {
   recipients?: WorkflowRecipient[];
@@ -480,7 +482,7 @@ export function SoftwareEngineeringWorkspace({
   const editingDefinitionId = editingDefinition?.id;
   const workflowNameInput = useRef<HTMLInputElement>(null);
   const selectedDefinition = definitions.find((item) => item.id === definitionId);
-  const [workflowInput, setWorkflowInput] = useState(initialGmailReference);
+  const [workflowInput, setWorkflowInput] = useState(initialUploadReference || initialGmailReference);
   const [workflowStart, setWorkflowStart] = useState('');
   const [definitionMessage, setDefinitionMessage] = useState('Loading saved workflows…');
   const [launchingSaved, setLaunchingSaved] = useState(false);
@@ -1093,6 +1095,7 @@ export function SoftwareEngineeringWorkspace({
                 then enter a topic as the run input to search the indexed feeds.</small>
             )}
             {initialGmailReference && <small>Gmail reference for this workflow run <code>{initialGmailReference}</code></small>}
+            {initialUploadReference && <small>Imported evidence selected for this workpaper.</small>}
             <label>Workflow name
               <input ref={workflowNameInput} value={workflowName}
                 onChange={(event) => setWorkflowName(event.target.value)} />

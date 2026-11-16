@@ -691,6 +691,7 @@ export function CommandCenterPage() {
             })}</div>
           </section>
           {selected.id === 'finance' && (
+            <>
             <section className="station-widget-options" aria-label="Finance workpapers">
               <div>
                 <strong>Finance workpapers</strong>
@@ -700,6 +701,9 @@ export function CommandCenterPage() {
               </div>
               <p>Search indexed invoices and receipts, then review the draft against its sources.</p>
             </section>
+            <GmailReviewList onOpenFinance={(initialUploadReference) =>
+              openWorkspace({ initialStarter: 'finance', initialUploadReference })} />
+            </>
           )}
           {selected.id === 'growth' && (
             <LeadRegister onOpenDiscovery={() => openWorkspace({ initialStarter: 'leads' })} />

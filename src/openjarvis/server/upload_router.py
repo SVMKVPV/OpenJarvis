@@ -7,6 +7,7 @@ import logging
 import uuid
 from typing import List, Optional
 
+import httpx
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
@@ -162,7 +163,6 @@ async def ingest_files(
 ) -> IngestResponse:
     """Ingest uploaded files into the knowledge store."""
     documents: list[tuple[str, str, list[str]]] = []
-    reference = f"upload:{uuid.uuid4().hex}"
 
     for upload in files:
         filename = upload.filename or "untitled"
@@ -177,27 +177,66 @@ async def ingest_files(
                 detail=(f"Unsupported file type: {ext}. Allowed: {allowed}"),
             )
 
-        data = await upload.read()
+        chunks = _file_chunks(ext, await upload.read())
+        if chunks:
+            documents.append((title or filename, ext.lstrip("."), chunks))
+    return _index_file_batch(documents)
 
-        # Parse content based on extension
-        if ext in (".txt", ".md", ".csv"):
-            try:
-                text = data.decode("utf-8")
-            except UnicodeDecodeError:
-                text = data.decode("latin-1")
-        elif ext == ".pdf":
-            text = _extract_text_from_pdf(data)
-        elif ext == ".docx":
-            text = _extract_text_from_docx(data)
-        else:
-            continue
 
-        text = text.strip()
-        if not text:
-            continue
+@router.post("/ingest/gmail/{message_id}", response_model=IngestResponse)
+def ingest_gmail_evidence(message_id: str) -> IngestResponse:
+    """Index supported attachments from a single selected Gmail message."""
+    from openjarvis.connectors.gmail import GmailAuthError, fetch_message_evidence
 
-        documents.append((filename, ext.lstrip("."), _chunk_text(text)))
+    with _get_store() as store:
+        if store.gmail_indexed_message(f"gmail:{message_id}") is None:
+            raise HTTPException(
+                status_code=404, detail="Gmail message is not indexed."
+            )
+    documents = []
+    try:
+        attachments = fetch_message_evidence(message_id, _ALLOWED_EXTENSIONS)
+        for filename, content in attachments:
+            ext = "." + filename.rsplit(".", 1)[-1].lower()
+            chunks = _file_chunks(ext, content)
+            if chunks:
+                documents.append((filename, ext.lstrip("."), chunks))
+    except GmailAuthError as exc:
+        raise HTTPException(
+            status_code=409, detail="Connect Gmail before importing attachments."
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502, detail="Gmail attachments could not be retrieved."
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not documents:
+        raise HTTPException(
+            status_code=422, detail="No readable evidence files were found."
+        )
+    return _index_file_batch(
+        documents, source_url=f"https://mail.google.com/mail/u/0/#all/{message_id}"
+    )
 
+
+def _file_chunks(ext: str, data: bytes) -> list[str]:
+    if ext == ".pdf":
+        text = _extract_text_from_pdf(data)
+    elif ext == ".docx":
+        text = _extract_text_from_docx(data)
+    else:
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            text = data.decode("latin-1")
+    return _chunk_text(text.strip())
+
+
+def _index_file_batch(
+    documents: list[tuple[str, str, list[str]]], *, source_url: str = ""
+) -> IngestResponse:
+    reference = f"upload:{uuid.uuid4().hex}"
     total_chunks = 0
     with _get_store() as store:
         for filename, doc_type, chunks in documents:
@@ -209,7 +248,8 @@ async def ingest_files(
                     source_id=reference,
                     doc_type=doc_type,
                     doc_id=doc_id,
-                    title=title or filename,
+                    title=filename,
+                    url=source_url or None,
                     chunk_index=total_chunks + idx,
                 )
             total_chunks += len(chunks)
