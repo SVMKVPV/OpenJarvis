@@ -285,6 +285,27 @@ class TestWorkflowEngine:
         assert "safety deposit is 250" in result.final_output
         assert "unrelated chat" not in result.final_output
 
+    def test_connector_review_requires_evidence(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("openjarvis.core.config.DEFAULT_CONFIG_DIR", tmp_path)
+        graph = graph_from_dict({
+            "nodes": [
+                {"id": "search", "type": "tool", "config": {
+                    "tool_name": "knowledge_search",
+                    "query_from_input": True,
+                    "source": "upload",
+                    "require_match": True,
+                }},
+                {"id": "review", "type": "approval"},
+            ],
+            "edges": [{"source": "search", "target": "review"}],
+        })
+
+        result = WorkflowEngine().run(graph, initial_input="unmatched document")
+
+        assert result.status == "failed"
+        assert [step.node_id for step in result.steps] == ["search"]
+        assert result.final_output == "No relevant results found."
+
     def test_saved_model_instruction_is_separate_from_workflow_input(self):
         from openjarvis.core.config import JarvisConfig
         from openjarvis.core.types import Role

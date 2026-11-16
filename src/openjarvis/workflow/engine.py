@@ -503,8 +503,12 @@ class WorkflowEngine:
                 rate_limiter=getattr(system, "rate_limiter", None),
             )
             result = executor.execute(call)
+        matched = result.metadata.get("num_results") != 0
+        require_match = node.config.get("require_match") is True
         return WorkflowStepResult(
-            node_id=node.id, success=result.success, output=result.content
+            node_id=node.id,
+            success=result.success and (matched or not require_match),
+            output=result.content,
         )
 
     def _run_condition_node(

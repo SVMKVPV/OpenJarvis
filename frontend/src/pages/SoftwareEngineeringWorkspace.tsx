@@ -51,6 +51,20 @@ const GUARDED_DELIVERY = {
   edges: [{ source: 'prepare', target: 'approval' }, { source: 'approval', target: 'release' }],
 };
 
+const CONNECTOR_REVIEW = {
+  name: 'Review indexed documents',
+  nodes: [
+    { id: 'search', type: 'tool', config: {
+      tool_name: 'knowledge_search', query_from_input: true, source: 'upload', require_match: true,
+    } },
+    { id: 'review', type: 'approval', config: {
+      description: 'Review the matching document excerpts and their sources',
+      tier: 'high',
+    } },
+  ],
+  edges: [{ source: 'search', target: 'review' }],
+} satisfies SavedWorkflowDefinition['graph'];
+
 const GUARDED_GRAPH_JSON = JSON.stringify({
   nodes: GUARDED_DELIVERY.nodes,
   edges: GUARDED_DELIVERY.edges,
@@ -180,11 +194,11 @@ export function SoftwareEngineeringWorkspace() {
   const [stepSetting, setStepSetting] = useState('');
   const models = useAppStore((state) => state.models);
   const workflowModels = [...new Set(models.map((entry) => entry.id).filter((id) => !isEmbedOnlyModel(id)))];
-  const setStepModel = (node: DraftNode, model: string) => {
+  const setStepConfig = (node: DraftNode, key: string, value: string) => {
     if (!draftGraph || savingDefinition) return;
     const config = { ...node.config };
-    if (model) config.model = model;
-    else delete config.model;
+    if (value) config[key] = value;
+    else delete config[key];
     const nodes = draftGraph.nodes.map((entry) => entry.id === node.id ? { ...entry, config } : entry);
     setWorkflowGraph(JSON.stringify({ ...draftGraph, nodes }, null, 2));
   };
@@ -638,7 +652,16 @@ export function SoftwareEngineeringWorkspace() {
             {launchingGuarded ? 'Starting…' : '+ Run guarded delivery'}
           </button>
           {guardedLaunchError && <p role="status">{guardedLaunchError}</p>}
+          <datalist id="indexed-workflow-sources">
+            <option value="upload" />
+            {liveConnectors?.filter((source) => source.connector_id !== 'upload')
+              .map((source) => <option key={source.connector_id} value={source.connector_id} />)}
+          </datalist>
           <form className="connector-editor" onSubmit={saveDefinition}>
+            <button type="button" disabled={savingDefinition} onClick={() => {
+              loadWorkflowEditor(CONNECTOR_REVIEW);
+              setDefinitionMessage('Document review draft loaded. Select an indexed source, then save and run with a search query.');
+            }}>Load document review starter</button>
             <label>Workflow name
               <input ref={workflowNameInput} value={workflowName}
                 onChange={(event) => setWorkflowName(event.target.value)} />
@@ -667,10 +690,18 @@ export function SoftwareEngineeringWorkspace() {
                   <ul>{draftGraph.nodes.map((node) => (
                     <li key={node.id}>
                       <span>{node.id}</span>
+                      {node.type === 'tool' && node.config?.tool_name === 'knowledge_search' &&
+                        node.config.query_from_input === true && (
+                          <label>Indexed source for {node.id}
+                            <input value={typeof node.config.source === 'string' ? node.config.source : ''}
+                              disabled={savingDefinition} list="indexed-workflow-sources"
+                              onChange={(event) => setStepConfig(node, 'source', event.target.value)} />
+                          </label>
+                        )}
                       {node.type === 'agent' && node.agent === 'none' && (() => {
                         const model = typeof node.config?.model === 'string' ? node.config.model : '';
                         return <label>Model for {node.id}
-                          <select value={model} disabled={savingDefinition} onChange={(event) => setStepModel(node, event.target.value)}>
+                          <select value={model} disabled={savingDefinition} onChange={(event) => setStepConfig(node, 'model', event.target.value)}>
                             <option value="">Backend default</option>
                             {model && !workflowModels.includes(model) && <option value={model}>{model} (configured)</option>}
                             {workflowModels.map((id) => <option key={id} value={id}>{id}</option>)}
@@ -732,9 +763,6 @@ export function SoftwareEngineeringWorkspace() {
                     <label>Indexed source
                       <input list="indexed-workflow-sources" value={stepSetting}
                         onChange={(event) => setStepSetting(event.target.value)} placeholder="gmail" />
-                      <datalist id="indexed-workflow-sources">
-                        {liveConnectors?.map((source) => <option key={source.connector_id} value={source.connector_id} />)}
-                      </datalist>
                       <small>Uses the incoming text as a query against the local index.</small>
                     </label>
                   ) : stepType === 'agent' ? (
