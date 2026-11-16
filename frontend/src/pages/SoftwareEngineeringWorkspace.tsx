@@ -49,16 +49,20 @@ const GUARDED_GRAPH_JSON = JSON.stringify({
 
 type DraftEdge = { source: string; target: string; condition?: string };
 
-function readDraftEdges(draft: string): DraftEdge[] | null {
+type DraftGraph = { nodes: { id: string }[]; edges?: DraftEdge[] };
+
+function readDraftGraph(draft: string): DraftGraph | null {
   try {
     const graph = JSON.parse(draft);
     if (!graph || !Array.isArray(graph.nodes)) return null;
+    if (!graph.nodes.every((node: unknown) => node && typeof node === 'object' &&
+      'id' in node && typeof node.id === 'string' && node.id.trim())) return null;
     const edges: unknown = graph.edges ?? [];
     if (!Array.isArray(edges)) return null;
     if (!edges.every((edge) => edge && typeof edge.source === 'string' &&
       typeof edge.target === 'string' &&
       (edge.condition === undefined || typeof edge.condition === 'string'))) return null;
-    return edges;
+    return graph;
   } catch {
     return null;
   }
@@ -105,7 +109,9 @@ export function SoftwareEngineeringWorkspace() {
   const [savingDefinition, setSavingDefinition] = useState(false);
   const [workflowName, setWorkflowName] = useState(GUARDED_DELIVERY.name);
   const [workflowGraph, setWorkflowGraph] = useState(GUARDED_GRAPH_JSON);
-  const draftEdges = useMemo(() => readDraftEdges(workflowGraph), [workflowGraph]);
+  const draftGraph = useMemo(() => readDraftGraph(workflowGraph), [workflowGraph]);
+  const [edgeSource, setEdgeSource] = useState('');
+  const [edgeTarget, setEdgeTarget] = useState('');
   const [workflowApprovals, setWorkflowApprovals] = useState<PendingApproval[]>([]);
   const [workflowState, setWorkflowState] = useState<'online' | 'offline' | 'starting'>('offline');
   const [proposals, setProposals] = useState<Proposal[]>([
@@ -151,13 +157,18 @@ export function SoftwareEngineeringWorkspace() {
     }
   };
 
+  const replaceEdges = (edges: DraftEdge[]) => {
+    if (draftGraph) setWorkflowGraph(JSON.stringify({ ...draftGraph, edges }, null, 2));
+  };
+  const draftEdges = draftGraph?.edges ?? [];
+  const canAddEdge = draftGraph && edgeSource !== edgeTarget &&
+    draftGraph.nodes.some((node) => node.id === edgeSource) &&
+    draftGraph.nodes.some((node) => node.id === edgeTarget) &&
+    !draftEdges.some((edge) => edge.source === edgeSource && edge.target === edgeTarget);
   const changeBranch = (index: number, condition: string) => {
-    if (!draftEdges?.[index]) return;
-    const graph = JSON.parse(workflowGraph);
-    const edges = draftEdges.map((edge, position) =>
+    replaceEdges(draftEdges.map((edge, position) =>
       position === index ? { ...edge, condition } : edge,
-    );
-    setWorkflowGraph(JSON.stringify({ ...graph, edges }, null, 2));
+    ));
   };
 
   const launchSaved = async (event: FormEvent) => {
@@ -316,19 +327,38 @@ export function SoftwareEngineeringWorkspace() {
               <summary>Edit workflow definition</summary>
               <fieldset>
                 <legend>Branch conditions</legend>
-                {draftEdges?.map((edge, index) => (
-                  <label key={index}>
-                    {edge.source} → {edge.target}
+                {draftEdges.map((edge, index) => (
+                  <div key={index}>
+                    <label>{edge.source} → {edge.target}
                     <select value={edge.condition?.trim().toLowerCase() ?? ''}
                       onChange={(event) => changeBranch(index, event.target.value)}>
                       <option value="">Always</option>
                       <option value="true">When true</option>
                       <option value="false">When false</option>
                     </select>
-                  </label>
+                    </label>
+                    <button type="button" aria-label={`Remove connection from ${edge.source} to ${edge.target}`}
+                      onClick={() => replaceEdges(draftEdges.filter((_, position) => position !== index))}>
+                      Remove connection
+                    </button>
+                  </div>
                 ))}
-                {draftEdges === null && <small>Fix the workflow JSON to edit its branch conditions here.</small>}
-                {draftEdges?.length === 0 && <small>Add edges in the workflow JSON to configure branches.</small>}
+                {!draftGraph && <small>Fix the workflow JSON to edit its connections here.</small>}
+                {draftGraph && (
+                  <div>
+                    <label>From <select value={edgeSource} onChange={(event) => setEdgeSource(event.target.value)}>
+                      <option value="">Choose a step</option>
+                      {draftGraph.nodes.map((node) => <option key={node.id} value={node.id}>{node.id}</option>)}
+                    </select></label>
+                    <label>To <select value={edgeTarget} onChange={(event) => setEdgeTarget(event.target.value)}>
+                      <option value="">Choose a step</option>
+                      {draftGraph.nodes.map((node) => <option key={node.id} value={node.id}>{node.id}</option>)}
+                    </select></label>
+                    <button type="button" disabled={!canAddEdge} onClick={() => {
+                      if (canAddEdge) replaceEdges([...draftEdges, { source: edgeSource, target: edgeTarget }]);
+                    }}>Add connection</button>
+                  </div>
+                )}
               </fieldset>
               <label>OpenJarvis workflow JSON
                 <textarea rows={12} spellCheck={false} value={workflowGraph}
