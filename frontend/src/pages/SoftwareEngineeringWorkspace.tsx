@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router';
 import { Check, ChevronRight, Folder, FolderPlus, Monitor, Plus, Settings2 } from 'lucide-react';
 import {
   approveAction,
@@ -10,6 +11,8 @@ import {
   type RuntimePlugin,
   type WorkflowRunSummary,
 } from '../lib/api';
+import { listConnectors } from '../lib/connectors-api';
+import type { ConnectorInfo } from '../types/connectors';
 import './software-workspace.css';
 
 type Connector = { id: string; code: string; provider: string; product: string; role: string; model: string; status: 'setup' | 'local'; enabled: boolean; contributions: number };
@@ -46,6 +49,7 @@ export function SoftwareEngineeringWorkspace() {
   const [showAddFolder, setShowAddFolder] = useState(false);
   const [warning, setWarning] = useState('');
   const [runtimePlugins, setRuntimePlugins] = useState<RuntimePlugin[]>([]);
+  const [liveConnectors, setLiveConnectors] = useState<ConnectorInfo[] | null>(null);
   const [pluginCatalogState, setPluginCatalogState] = useState<'loading' | 'online' | 'offline'>('loading');
   const [workflowRuns, setWorkflowRuns] = useState<WorkflowRunSummary[]>([]);
   const [workflowApprovals, setWorkflowApprovals] = useState<PendingApproval[]>([]);
@@ -55,6 +59,18 @@ export function SoftwareEngineeringWorkspace() {
   ]);
   const visibleItems = useMemo(() => ITEMS.filter((item) => item.folder === selectedFolder), [selectedFolder]);
   const selectedItem = ITEMS.find((item) => item.id === selectedItemId) ?? visibleItems[0] ?? ITEMS[0];
+
+  useEffect(() => {
+    let cancelled = false;
+    listConnectors()
+      .then((items) => {
+        if (!cancelled) setLiveConnectors(items);
+      })
+      .catch(() => {
+        if (!cancelled) setLiveConnectors(null);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -165,8 +181,16 @@ export function SoftwareEngineeringWorkspace() {
           <header><div><span>BUSINESS PLUGINS</span><strong>OPENJARVIS RUNTIME</strong></div><em data-state={pluginCatalogState}>{pluginCatalogState.toUpperCase()}</em></header>
           {pluginCatalogState === 'online' ? <>
             <div className="plugin-counts">{(['connector', 'channel', 'tool', 'agent', 'engine'] as const).map((kind) => <div key={kind}><strong>{pluginCounts[kind] ?? 0}</strong><span>{kind.toUpperCase()}S</span></div>)}</div>
-            <div className="plugin-sample">{runtimePlugins.filter((plugin) => plugin.kind === 'connector').slice(0, 8).map((plugin) => <span key={plugin.id}>{plugin.name}<i>{plugin.enabled ? 'READY' : 'REVIEW'}</i></span>)}</div>
+            <div className="plugin-sample">
+              {runtimePlugins.filter((plugin) => plugin.kind === 'connector').slice(0, 8).map((plugin) => {
+                const source = liveConnectors?.find((item) => item.connector_id === plugin.id);
+                const status = !plugin.enabled ? 'REVIEW' : source?.connected
+                  ? 'CONNECTED' : source ? 'DISCONNECTED' : 'UNVERIFIED';
+                return <span key={plugin.id}>{plugin.name}<i>{status}</i></span>;
+              })}
+            </div>
           </> : <p>{pluginCatalogState === 'loading' ? 'READING LOCAL PLUGIN CATALOG…' : 'START LOCAL AI OR CONNECT A BACKEND TO LOAD OPERATIONAL PLUGINS.'}</p>}
+          <p><Link to="/data-sources">Manage data source connections ↗</Link></p>
         </section>
         <section className="workflow-runtime">
           <header><div><span>WORKFLOW RUNTIME</span><strong>DURABLE EXECUTION LEDGER</strong></div><em data-state={workflowState}>{workflowState.toUpperCase()}</em></header>
