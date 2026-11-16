@@ -1353,6 +1353,8 @@ export interface WorkflowRunDetail extends WorkflowRunSummary {
     attempt: number;
     success: boolean;
     output: string;
+    duration_seconds?: number;
+    created_at?: number;
     metadata: Record<string, unknown>;
   }>;
 }

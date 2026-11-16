@@ -154,6 +154,11 @@ const GUARDED_GRAPH_JSON = JSON.stringify({
   edges: GUARDED_DELIVERY.edges,
 }, null, 2);
 
+function formatWorkflowDuration(seconds: number) {
+  if (seconds < 1) return `${Math.round(seconds * 1000)} ms`;
+  return `${seconds.toLocaleString(undefined, { maximumFractionDigits: 1 })} s`;
+}
+
 function downloadWorkflowJson(filename: string, data: object) {
   const file = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(file);
@@ -1229,6 +1234,15 @@ export function SoftwareEngineeringWorkspace({
                 <>
                   <h4>{runDetail.workflow_name}</h4>
                   <p>Run status: {cancellationPending ? 'cancelling' : runDetail.status.replace('_', ' ')}</p>
+                  <dl className="workflow-run-timing">
+                    <div><dt>Created</dt><dd>{new Date(runDetail.created_at * 1000).toLocaleString()}</dd></div>
+                    {runDetail.started_at !== null && (
+                      <div><dt>Latest start</dt><dd>{new Date(runDetail.started_at * 1000).toLocaleString()}</dd></div>
+                    )}
+                    {runDetail.finished_at !== null && (
+                      <div><dt>Finished</dt><dd>{new Date(runDetail.finished_at * 1000).toLocaleString()}</dd></div>
+                    )}
+                  </dl>
                   {runDetail.scheduled_at && (
                     <p>Scheduled time {new Date(runDetail.scheduled_at * 1000).toLocaleString()}</p>
                   )}
@@ -1309,6 +1323,10 @@ export function SoftwareEngineeringWorkspace({
                     }}>
                       <strong>{step.node_id} · Attempt {step.attempt}</strong>
                       <p>{step.metadata.workflow_status === 'waiting_approval' ? 'Waiting for approval' : step.success ? 'Succeeded' : 'Failed'}</p>
+                      {typeof step.duration_seconds === 'number' &&
+                        Number.isFinite(step.duration_seconds) && step.duration_seconds >= 0 && (
+                          <small>Step duration {formatWorkflowDuration(step.duration_seconds)}</small>
+                        )}
                       {typeof step.metadata.shared_brain_revision === 'number' && (
                         <small>Shared Brain revision {step.metadata.shared_brain_revision}</small>
                       )}
