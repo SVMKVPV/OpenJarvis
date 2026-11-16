@@ -10,9 +10,9 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
 from openjarvis.server.approval_routes import get_approval_store
-from openjarvis.workflow.runtime import WorkflowRuntime
+from openjarvis.workflow.runtime import WorkflowRuntime, WorkflowRuntimeStopping
 from openjarvis.workflow.serialization import graph_from_dict, graph_to_dict
-from openjarvis.workflow.store import WorkflowRunStore
+from openjarvis.workflow.store import WorkflowDefinitionConflict, WorkflowRunStore
 
 
 class WorkflowDefinition(BaseModel):
@@ -24,6 +24,10 @@ class WorkflowDefinition(BaseModel):
 class WorkflowInputs(BaseModel):
     initial_input: str = ""
     context: Dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowDefinitionUpdate(WorkflowDefinition):
+    expected_revision: str | None = None
 
 
 class WorkflowRunRequest(WorkflowDefinition, WorkflowInputs):
@@ -67,6 +71,8 @@ def create_workflow_runs_router() -> APIRouter:
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except WorkflowRuntimeStopping as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @router.get("")
     async def list_runs(
@@ -105,6 +111,8 @@ def create_workflow_runs_router() -> APIRouter:
             ) from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except WorkflowRuntimeStopping as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @router.post("/{run_id}/resume", status_code=status.HTTP_202_ACCEPTED)
     async def resume_run(run_id: str, request: Request) -> dict:
@@ -116,6 +124,8 @@ def create_workflow_runs_router() -> APIRouter:
             ) from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except WorkflowRuntimeStopping as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @root.post("/definitions", status_code=status.HTTP_201_CREATED)
     def save_definition(payload: WorkflowDefinition, request: Request) -> dict:
@@ -127,15 +137,23 @@ def create_workflow_runs_router() -> APIRouter:
 
     @root.put("/definitions/{definition_id}")
     def update_definition(
-        definition_id: str, payload: WorkflowDefinition, request: Request
+        definition_id: str, payload: WorkflowDefinitionUpdate, request: Request
     ) -> dict:
         try:
             graph = graph_from_dict(payload.model_dump())
         except (KeyError, TypeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        saved = _runtime(request).store.update_definition(
-            definition_id, graph_to_dict(graph)
-        )
+        try:
+            saved = _runtime(request).store.update_definition(
+                definition_id,
+                graph_to_dict(graph),
+                expected_revision=payload.expected_revision,
+            )
+        except WorkflowDefinitionConflict as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{exc} Reload the saved workflow or use Save as copy.",
+            ) from exc
         if saved is None:
             raise HTTPException(status_code=404, detail="Workflow definition not found")
         return saved
@@ -158,12 +176,18 @@ def create_workflow_runs_router() -> APIRouter:
     def run_definition(
         definition_id: str, payload: WorkflowInputs, request: Request
     ) -> dict:
-        definition = get_definition(definition_id, request)
-        return _runtime(request).submit(
-            graph_from_dict(definition["graph"]),
-            initial_input=payload.initial_input,
-            context=payload.context,
-        )
+        try:
+            return _runtime(request).submit_saved(
+                definition_id,
+                initial_input=payload.initial_input,
+                context=payload.context,
+            )
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=404, detail="Workflow definition not found"
+            ) from exc
+        except WorkflowRuntimeStopping as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     root.include_router(router)
     return root

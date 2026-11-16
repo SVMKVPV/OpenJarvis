@@ -6,6 +6,7 @@ import {
   denyAction,
   fetchPendingApprovals,
   fetchRuntimePlugins,
+  fetchWorkflowDefinition,
   fetchWorkflowDefinitions,
   fetchWorkflowRun,
   fetchWorkflowRuns,
@@ -149,7 +150,8 @@ export function SoftwareEngineeringWorkspace() {
   };
   const [definitions, setDefinitions] = useState<SavedWorkflowDefinition[]>([]);
   const [definitionId, setDefinitionId] = useState('');
-  const [editingDefinitionId, setEditingDefinitionId] = useState('');
+  const [editingDefinition, setEditingDefinition] = useState<SavedWorkflowDefinition>();
+  const editingDefinitionId = editingDefinition?.id;
   const workflowNameInput = useRef<HTMLInputElement>(null);
   const selectedDefinition = definitions.find((item) => item.id === definitionId);
   const [workflowInput, setWorkflowInput] = useState('');
@@ -228,12 +230,14 @@ export function SoftwareEngineeringWorkspace() {
         throw new Error('Provide a nonempty nodes array and an optional edges array.');
       }
       const saveAsCopy = (event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'copy';
-      const targetId = saveAsCopy ? undefined : editingDefinitionId;
-      const saved = await saveWorkflowDefinition({ name, nodes: graph.nodes, edges: graph.edges }, targetId);
+      const target = saveAsCopy ? undefined : editingDefinition;
+      const saved = await saveWorkflowDefinition(
+        { name, nodes: graph.nodes, edges: graph.edges }, target?.id, target?.revision,
+      );
       setDefinitions((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
       setDefinitionId(saved.id);
-      setEditingDefinitionId(saved.id);
-      setDefinitionMessage(targetId ? 'Saved changes to the workflow.' : 'Workflow saved.');
+      setEditingDefinition(saved);
+      setDefinitionMessage(target ? 'Saved changes to the workflow.' : 'Workflow saved.');
     } catch (error) {
       setDefinitionMessage(error instanceof Error ? error.message : 'Could not save workflow.');
     } finally {
@@ -315,20 +319,29 @@ export function SoftwareEngineeringWorkspace() {
 
   const loadWorkflowEditor = (
     { name, nodes, edges }: SavedWorkflowDefinition['graph'],
-    id = '',
+    definition?: SavedWorkflowDefinition,
   ) => {
     setWorkflowName(name);
-    setEditingDefinitionId(id);
+    setEditingDefinition(definition);
     setWorkflowGraph(JSON.stringify({ nodes, edges }, null, 2));
     setEdgeSource('');
     setEdgeTarget('');
     workflowNameInput.current?.focus();
   };
 
-  const editSaved = () => {
+  const editSaved = async () => {
     if (!selectedDefinition || savingDefinition) return;
-    loadWorkflowEditor(selectedDefinition.graph, selectedDefinition.id);
-    setDefinitionMessage('Saved workflow loaded into the editor.');
+    setSavingDefinition(true);
+    try {
+      const latest = await fetchWorkflowDefinition(selectedDefinition.id);
+      setDefinitions((current) => current.map((item) => item.id === latest.id ? latest : item));
+      loadWorkflowEditor(latest.graph, latest);
+      setDefinitionMessage('Saved workflow loaded into the editor.');
+    } catch (error) {
+      setDefinitionMessage(error instanceof Error ? error.message : 'Could not load workflow.');
+    } finally {
+      setSavingDefinition(false);
+    }
   };
 
   const exportSaved = () => {

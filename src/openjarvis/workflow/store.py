@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import threading
@@ -14,6 +15,10 @@ from openjarvis.core.paths import get_config_dir
 from openjarvis.workflow.types import WorkflowStepResult
 
 TERMINAL_STATUSES = {"succeeded", "failed", "cancelled"}
+
+
+class WorkflowDefinitionConflict(ValueError):
+    """The saved definition changed after an editor loaded it."""
 
 
 class WorkflowRunStore:
@@ -82,23 +87,44 @@ class WorkflowRunStore:
     def save_definition(self, graph: Mapping[str, Any]) -> dict[str, Any]:
         definition_id = uuid.uuid4().hex
         created_at = time.time()
+        source = json.dumps(dict(graph))
         with self._lock, self._conn:
             self._conn.execute(
                 "INSERT INTO workflow_definitions VALUES (?, ?, ?)",
-                (definition_id, json.dumps(dict(graph)), created_at),
+                (definition_id, source, created_at),
             )
-        return {"id": definition_id, "graph": dict(graph), "created_at": created_at}
+        return {
+            "id": definition_id,
+            "graph": dict(graph),
+            "created_at": created_at,
+            "revision": hashlib.sha256(source.encode()).hexdigest(),
+        }
 
     def update_definition(
-        self, definition_id: str, graph: Mapping[str, Any]
+        self,
+        definition_id: str,
+        graph: Mapping[str, Any],
+        *,
+        expected_revision: str | None = None,
     ) -> dict[str, Any] | None:
         with self._lock, self._conn:
+            current = self._conn.execute(
+                "SELECT graph_json FROM workflow_definitions WHERE id = ?",
+                (definition_id,),
+            ).fetchone()
+            if current is None:
+                return None
+            source = current["graph_json"]
+            revision = hashlib.sha256(source.encode()).hexdigest()
+            if expected_revision is not None and revision != expected_revision:
+                raise WorkflowDefinitionConflict("The saved workflow has changed.")
             updated = self._conn.execute(
-                "UPDATE workflow_definitions SET graph_json = ? WHERE id = ?",
-                (json.dumps(dict(graph)), definition_id),
+                "UPDATE workflow_definitions SET graph_json = ? "
+                "WHERE id = ? AND graph_json = ?",
+                (json.dumps(dict(graph)), definition_id, source),
             )
             if not updated.rowcount:
-                return None
+                raise WorkflowDefinitionConflict("The saved workflow has changed.")
             return self.get_definition(definition_id)
 
     def get_definition(self, definition_id: str) -> dict[str, Any] | None:
@@ -122,6 +148,7 @@ class WorkflowRunStore:
             "id": row["id"],
             "graph": json.loads(row["graph_json"]),
             "created_at": row["created_at"],
+            "revision": hashlib.sha256(row["graph_json"].encode()).hexdigest(),
         }
 
     def create_run(

@@ -199,6 +199,50 @@ def test_cancel_during_last_step_is_recorded(tmp_path, step_type) -> None:
         approvals.close()
 
 
+def test_shutdown_preserves_ledger_for_worker_past_deadline(tmp_path) -> None:
+    started = Event()
+    release = Event()
+    closed = Event()
+    path = str(tmp_path / "workflow.db")
+
+    class SlowAgent:
+        def ask(self, *_args, **_kwargs):
+            started.set()
+            assert release.wait(5)
+            return {"content": "Step output"}
+
+    class ObservedStore(WorkflowRunStore):
+        def close(self):
+            super().close()
+            closed.set()
+
+    store = ObservedStore(path)
+    approvals = ApprovalStore(str(tmp_path / "approvals.db"))
+    runtime = WorkflowRuntime(system=SlowAgent(), store=store, approval_store=approvals)
+    graph = WorkflowBuilder("shutdown").add_agent("step").build()
+    try:
+        run_id = runtime.submit(graph)["id"]
+        assert started.wait(3)
+        runtime.close(timeout=0)
+        assert not closed.is_set()
+        assert store.get_run(run_id)["cancel_requested"]
+        with pytest.raises(RuntimeError, match="runtime is stopping"):
+            runtime.submit(graph)
+        release.set()
+        assert closed.wait(3)
+        reopened = WorkflowRunStore(path)
+        try:
+            run = reopened.get_run(run_id)
+            assert run["status"] == "cancelled"
+            assert run["steps"][0]["output"] == "Step output"
+        finally:
+            reopened.close()
+    finally:
+        release.set()
+        runtime.close()
+        approvals.close()
+
+
 def test_running_run_is_marked_interrupted_after_reopen(tmp_path) -> None:
     path = tmp_path / "workflow.db"
     graph = WorkflowBuilder("interrupted").add_transform("step").build()

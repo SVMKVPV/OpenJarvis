@@ -148,7 +148,8 @@ def test_saved_definition_survives_runtime_restart(tmp_path, monkeypatch) -> Non
             "nodes": [{"id": "next", "type": "transform"}],
         }
         response = client.put(
-            f"/v1/workflows/definitions/{saved['id']}", json=replacement
+            f"/v1/workflows/definitions/{saved['id']}",
+            json={**replacement, "expected_revision": saved["revision"]},
         )
         assert response.status_code == 200
         revised = response.json()
@@ -156,6 +157,16 @@ def test_saved_definition_survives_runtime_restart(tmp_path, monkeypatch) -> Non
         assert revised["created_at"] == saved["created_at"]
         assert revised["graph"]["name"] == replacement["name"]
         definition_path = f"/v1/workflows/definitions/{saved['id']}"
+        stale = client.put(
+            definition_path,
+            json={
+                **replacement,
+                "name": "Stale",
+                "expected_revision": saved["revision"],
+            },
+        )
+        assert stale.status_code == 409
+        assert revised["revision"] != saved["revision"]
         invalid = client.put(
             definition_path,
             json={"nodes": [{"id": "bad", "type": "missing_type"}]},
@@ -218,6 +229,35 @@ def test_workflow_run_routes_persist_execution(tmp_path, monkeypatch) -> None:
         assert client.get("/v1/workflows/runs").json()["count"] == 1
 
     app.state.workflow_runtime.close()
+
+
+def test_workflow_launch_routes_return_503_after_runtime_closes(tmp_path) -> None:
+    from openjarvis.tools.approval_store import ApprovalStore
+    from openjarvis.workflow.runtime import WorkflowRuntime
+    from openjarvis.workflow.store import WorkflowRunStore
+
+    app = FastAPI()
+    approvals = ApprovalStore(str(tmp_path / "approvals.db"))
+    runtime = WorkflowRuntime(
+        system=None,
+        store=WorkflowRunStore(str(tmp_path / "workflow.db")),
+        approval_store=approvals,
+    )
+    app.state.workflow_runtime = runtime
+    app.include_router(create_workflow_runs_router())
+    runtime.close()
+    approvals.close()
+    with TestClient(app) as client:
+        requests = [
+            ("/v1/workflows/runs", {"nodes": [{"id": "a", "type": "transform"}]}),
+            ("/v1/workflows/runs/sample/retry", {}),
+            ("/v1/workflows/runs/sample/resume", {}),
+            ("/v1/workflows/definitions/sample/runs", {}),
+        ]
+        for path, body in requests:
+            response = client.post(path, json=body)
+            assert response.status_code == 503, path
+            assert response.json()["detail"] == "Workflow runtime is stopping"
 
 
 def test_workflow_run_route_rejects_empty_graph(tmp_path, monkeypatch) -> None:

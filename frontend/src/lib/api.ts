@@ -1273,18 +1273,20 @@ export async function requestWorkflowRunAction(
 
 export interface SavedWorkflowDefinition {
   id: string;
+  revision?: string;
   graph: Pick<WorkflowRunInput, 'name' | 'nodes' | 'edges'>;
 }
 
 export async function saveWorkflowDefinition(
   definition: Pick<WorkflowRunInput, 'name' | 'nodes' | 'edges'>,
   definitionId?: string,
+  expectedRevision?: string,
 ): Promise<SavedWorkflowDefinition> {
   const path = '/v1/workflows/definitions';
   const res = await apiFetch(definitionId ? `${path}/${encodeURIComponent(definitionId)}` : path, {
     method: definitionId ? 'PUT' : 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(definition),
+    body: JSON.stringify({ ...definition, expected_revision: expectedRevision }),
   });
   if (!res.ok) {
     if (definitionId && res.status === 405) {
@@ -1302,6 +1304,12 @@ export async function fetchWorkflowDefinitions(): Promise<SavedWorkflowDefinitio
   if (!res.ok) throw new Error(`Failed to load saved workflows (${res.status}).`);
   const data = await res.json();
   return data.definitions;
+}
+
+export async function fetchWorkflowDefinition(id: string): Promise<SavedWorkflowDefinition> {
+  const res = await apiFetch(`/v1/workflows/definitions/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error(`Failed to load saved workflow (${res.status}).`);
+  return res.json();
 }
 
 export async function runSavedWorkflow(id: string, initialInput: string): Promise<WorkflowRunSummary> {

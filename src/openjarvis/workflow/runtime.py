@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from typing import Any, Mapping
 
 from openjarvis.core.events import EventBus
@@ -14,6 +15,10 @@ from openjarvis.workflow.serialization import graph_from_dict, graph_to_dict
 from openjarvis.workflow.store import WorkflowRunStore
 
 logger = logging.getLogger(__name__)
+
+
+class WorkflowRuntimeStopping(RuntimeError):
+    """Raised when the workflow runtime cannot accept a new worker."""
 
 
 class WorkflowRuntime:
@@ -33,6 +38,7 @@ class WorkflowRuntime:
         self._threads: dict[str, threading.Thread] = {}
         self._lock = threading.RLock()
         self._stopping = False
+        self._stores_closed = False
 
     def submit(
         self,
@@ -42,29 +48,29 @@ class WorkflowRuntime:
         context: Mapping[str, Any] | None = None,
         parent_run_id: str | None = None,
     ) -> dict[str, Any]:
-        if self._stopping:
-            raise RuntimeError("Workflow runtime is stopping")
         context = {
             key: value for key, value in (context or {}).items()
             if key not in {"_workflow_run_id", "_workflow_approvals"}
         }
-        run = self.store.create_run(
-            workflow_name=graph.name,
-            graph=graph_to_dict(graph),
-            initial_input=initial_input,
-            context=dict(context or {}),
-            parent_run_id=parent_run_id,
-        )
-        run_id = run["id"]
-        worker = threading.Thread(
-            target=self._execute,
-            args=(run_id, graph, initial_input, dict(context or {})),
-            name=f"workflow-{run_id[:8]}",
-            daemon=True,
-        )
         with self._lock:
+            if self._stopping:
+                raise WorkflowRuntimeStopping("Workflow runtime is stopping")
+            run = self.store.create_run(
+                workflow_name=graph.name,
+                graph=graph_to_dict(graph),
+                initial_input=initial_input,
+                context=context,
+                parent_run_id=parent_run_id,
+            )
+            run_id = run["id"]
+            worker = threading.Thread(
+                target=self._execute,
+                args=(run_id, graph, initial_input, context),
+                name=f"workflow-{run_id[:8]}",
+                daemon=True,
+            )
             self._threads[run_id] = worker
-        worker.start()
+            worker.start()
         return run
 
     def _execute(
@@ -127,9 +133,32 @@ class WorkflowRuntime:
             with self._lock:
                 if self._threads.get(run_id) is threading.current_thread():
                     self._threads.pop(run_id, None)
+                self._close_stores_if_idle()
+
+    def submit_saved(
+        self,
+        definition_id: str,
+        *,
+        initial_input: str = "",
+        context: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        with self._lock:
+            if self._stopping:
+                raise WorkflowRuntimeStopping("Workflow runtime is stopping")
+            definition = self.store.get_definition(definition_id)
+            if definition is None:
+                raise KeyError(definition_id)
+            return self.submit(
+                graph_from_dict(definition["graph"]),
+                initial_input=initial_input,
+                context=context,
+            )
 
     def retry(self, run_id: str) -> dict[str, Any]:
-        previous = self.store.get_run(run_id, include_graph=True)
+        with self._lock:
+            if self._stopping:
+                raise WorkflowRuntimeStopping("Workflow runtime is stopping")
+            previous = self.store.get_run(run_id, include_graph=True)
         if previous is None:
             raise KeyError(run_id)
         if previous["status"] not in {"failed", "cancelled", "interrupted"}:
@@ -147,7 +176,7 @@ class WorkflowRuntime:
         """Resume a paused run without replaying completed nodes."""
         with self._lock:
             if self._stopping:
-                raise ValueError("Workflow runtime is stopping")
+                raise WorkflowRuntimeStopping("Workflow runtime is stopping")
             run = self.store.get_run(run_id, include_graph=True)
             if run is None:
                 raise KeyError(run_id)
@@ -200,17 +229,25 @@ class WorkflowRuntime:
             return True
 
     def close(self, *, timeout: float = 5.0) -> None:
-        self._stopping = True
         with self._lock:
-            run_ids = list(self._threads)
+            self._stopping = True
             workers = list(self._threads.values())
-        for run_id in run_ids:
-            self.store.request_cancel(run_id)
+            for run_id in self._threads:
+                self.store.request_cancel(run_id)
+        deadline = time.monotonic() + timeout
         for worker in workers:
-            worker.join(timeout=timeout)
+            if worker is not threading.current_thread():
+                worker.join(timeout=max(0, deadline - time.monotonic()))
+        with self._lock:
+            self._close_stores_if_idle()
+
+    def _close_stores_if_idle(self) -> None:
+        if not self._stopping or self._threads or self._stores_closed:
+            return
         self.store.close()
         if self._owns_approval_store:
             self.approval_store.close()
+        self._stores_closed = True
 
 
 __all__ = ["WorkflowRuntime"]
