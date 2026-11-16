@@ -483,6 +483,7 @@ export function CommandCenterPage() {
   );
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
+  const [stationEditMessage, setStationEditMessage] = useState<{ id: string; text: string } | null>(null);
   const [dashboardWidgetIds, setDashboardWidgetIds] = useLocalPreference(
     'openjarvis.command-center.widget-order.v1',
     () => DEFAULT_WIDGET_IDS,
@@ -512,12 +513,36 @@ export function CommandCenterPage() {
     const name = newName.trim();
     if (!name) return;
     const id = `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${Date.now()}`;
-    const station: Station = { id, code: name.slice(0, 3).toUpperCase(), name, purpose: 'A configurable specialist workstation connected to Shared Brain.', current: 'Waiting for its first objective', reportsTo: 'Operations Manager', status: 'ready' };
+    const managerName = stations.find((station) => station.id === 'operations-manager')?.name;
+    const station: Station = { id, code: name.slice(0, 3).toUpperCase(), name, purpose: 'A configurable specialist workstation connected to Shared Brain.', current: 'Waiting for its first objective', reportsTo: managerName ?? 'Operations Manager', status: 'ready' };
     setStations((current) => [...current, station]);
     setGraphs((current) => ({ ...current, [id]: makeGraph(station) }));
     setSelectedId(id);
     setNewName('');
     setAdding(false);
+  };
+
+  const editStation = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const fields = new FormData(event.currentTarget);
+    const name = String(fields.get('station-name') ?? '').trim();
+    const purpose = String(fields.get('station-purpose') ?? '').trim();
+    const current = String(fields.get('station-current') ?? '').trim();
+    if (!name || !purpose || !current) {
+      setStationEditMessage({ id: selected.id, text: 'Fill in all workstation fields.' });
+      return;
+    }
+    if (name !== selected.name && stations.some((station) =>
+      station.id !== selected.id && station.name.toLowerCase() === name.toLowerCase()
+    )) {
+      setStationEditMessage({ id: selected.id, text: 'A workstation with this name already exists.' });
+      return;
+    }
+    setStations((previous) => previous.map((station) => {
+      if (station.id === selected.id) return { ...station, name, purpose, current };
+      return station.reportsTo === selected.name ? { ...station, reportsTo: name } : station;
+    }));
+    setStationEditMessage({ id: selected.id, text: 'Workstation details saved.' });
   };
 
   return (
@@ -553,6 +578,16 @@ export function CommandCenterPage() {
             <div><span>{selected.code} // SELECTED STATION</span><h2>{selected.name}</h2><p>{selected.purpose}</p></div>
             <div className="station-now"><span>CURRENT WORK</span><strong>{selected.current}</strong><small>Reports to {selected.reportsTo}</small></div>
           </div>
+          <details className="station-details-editor" key={selected.id}>
+            <summary>Edit workstation details</summary>
+            <form onSubmit={editStation}>
+              <label>Name <input name="station-name" defaultValue={selected.name} maxLength={80} required /></label>
+              <label>Purpose <textarea name="station-purpose" defaultValue={selected.purpose} maxLength={400} required /></label>
+              <label>Current-work note <textarea name="station-current" defaultValue={selected.current} maxLength={400} required /></label>
+              <button type="submit">Save workstation</button>
+            </form>
+            {stationEditMessage?.id === selected.id && <p role="status">{stationEditMessage.text}</p>}
+          </details>
           <section className="station-widget-options">
             <div><span>DASHBOARD WIDGETS</span><strong>{stationWidgets.length ? `${stationWidgets.length} AVAILABLE FROM ${selected.name.toUpperCase()}` : 'NO WIDGETS REGISTERED'}</strong></div>
             <div>{stationWidgets.map((widget) => {

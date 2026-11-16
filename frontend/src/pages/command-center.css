@@ -24,3 +24,22 @@
   white-space: nowrap;
 }
 .command-accent-control + button:disabled { opacity: 0.6; }
+.station-details-editor { margin-block: 0.6rem; color: var(--text); }
+.station-details-editor summary { color: var(--gold); cursor: pointer; }
+.station-details-editor form { display: grid; gap: 0.6rem; margin-block: 0.6rem; }
+.station-details-editor label { display: grid; gap: 0.25rem; }
+.station-details-editor input,
+.station-details-editor textarea {
+  width: 100%;
+  padding: 0.4rem;
+  color: var(--text);
+  background: #080704;
+  border: 1px solid var(--line);
+}
+.station-details-editor button {
+  justify-self: start;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--line);
+  color: var(--gold);
+  cursor: pointer;
+}
