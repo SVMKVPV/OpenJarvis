@@ -12,7 +12,13 @@ export const SOCIAL_CHANNELS = {
 } as const;
 
 export type SocialChannel = keyof typeof SOCIAL_CHANNELS;
-export type SocialDraftState = 'draft' | 'review' | 'approved' | 'planned';
+export type SocialDraftState = 'draft' | 'review' | 'approved' | 'planned' | 'published';
+
+export interface SocialPublication {
+  channel: SocialChannel;
+  url: string;
+  posted_at: number;
+}
 
 export interface SocialDraftFields {
   title: string;
@@ -25,6 +31,7 @@ export interface SocialDraft extends SocialDraftFields {
   state: SocialDraftState;
   revision: number;
   scheduled_at: number | null;
+  publications?: SocialPublication[];
 }
 
 export type SocialDraftAction = 'submit_review' | 'return_to_draft' | 'approve' | 'plan';
@@ -42,7 +49,7 @@ async function readResponse(response: Response) {
 
 export interface SocialContentSummary {
   review_count: number;
-  items: Pick<SocialDraft, 'id' | 'title' | 'channels' | 'state' | 'scheduled_at'>[];
+  items: Pick<SocialDraft, 'id' | 'title' | 'channels' | 'state' | 'scheduled_at' | 'publications'>[];
 }
 
 export async function fetchSocialContentSummary(signal?: AbortSignal): Promise<SocialContentSummary> {
@@ -77,5 +84,15 @@ export async function updateSocialDraft(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, revision: draft.revision, scheduled_at: scheduledAt }),
+  }));
+}
+
+export async function recordSocialPublication(
+  draft: SocialDraft, publication: SocialPublication,
+): Promise<SocialDraft> {
+  return readResponse(await apiFetch(`${base}/${encodeURIComponent(draft.id)}/publications`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...publication, revision: draft.revision }),
   }));
 }

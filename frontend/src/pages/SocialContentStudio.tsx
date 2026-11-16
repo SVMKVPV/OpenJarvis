@@ -5,10 +5,12 @@ import {
   type SocialChannel, type SocialDraft, type SocialDraftAction,
   type SocialDraftFields, type SocialDraftState,
 } from '../lib/social-content-api';
+import { SocialPublicationForm } from './SocialPublicationForm';
 import './social-content-studio.css';
 
 const STATE_LABELS: Record<SocialDraftState, string> = {
   draft: 'Draft', review: 'In review', approved: 'Approved', planned: 'Planned',
+  published: 'Published',
 };
 const EMPTY_DRAFT: SocialDraftFields = { title: '', caption: '', channels: [] };
 
@@ -97,7 +99,7 @@ export function SocialContentStudio() {
         <button type="button" disabled={!available || busy}
           onClick={() => setEditor({ fields: EMPTY_DRAFT })}><Plus size={12} /> New draft</button>
       </header>
-      <p className="social-studio-note">Planning saves a time in this workspace. Channel publishing requires a separate connection.</p>
+      <p className="social-studio-note">Plan publication or record posts you’ve published on each channel.</p>
       {editor && (
         <form className="station-details-editor social-draft-editor" onSubmit={save}>
           <label>Draft title
@@ -144,6 +146,18 @@ export function SocialContentStudio() {
               <h3>{draft.title}</h3>
               <p className="social-caption-preview">{draft.caption}</p>
               <div>{draft.channels.map((channel) => <b key={channel}>{SOCIAL_CHANNELS[channel]}</b>)}</div>
+              {!!draft.publications?.length && (
+                <ul aria-label="Recorded posts">
+                  {draft.publications.map((post) => <li key={post.channel}>
+                    <a href={post.url} target="_blank" rel="noopener noreferrer">
+                      Open {SOCIAL_CHANNELS[post.channel]} post
+                    </a>{' '}
+                    <time dateTime={new Date(post.posted_at * 1000).toISOString()}>
+                      {new Date(post.posted_at * 1000).toLocaleString()}
+                    </time>
+                  </li>)}
+                </ul>
+              )}
             </div>
             <aside>
               <em data-state={draft.state.toUpperCase()}>{STATE_LABELS[draft.state]}</em>
@@ -155,7 +169,7 @@ export function SocialContentStudio() {
                   <button type="button" disabled={busy || !available}
                     onClick={() => void transition(draft, 'submit_review')}>Submit for review</button>
                 </>
-              ) : (
+              ) : draft.state !== 'published' && !draft.publications?.length && (
                 <button type="button" disabled={busy || !available}
                   onClick={() => void transition(draft, 'return_to_draft')}>Return to draft</button>
               )}
@@ -168,6 +182,13 @@ export function SocialContentStudio() {
                 }}>{draft.state === 'planned' ? 'Change planned time' : 'Plan publish time'}</button>
               )}
             </aside>
+            {(draft.state === 'approved' || draft.state === 'planned') && (
+              <SocialPublicationForm draft={draft} onRecorded={(updated) => {
+                saveResult(updated);
+                setFilter(updated.state);
+                setMessage('Publication recorded.');
+              }} />
+            )}
             {planningId === draft.id && (
               <form className="station-details-editor social-planning-form" onSubmit={(event) => {
                 event.preventDefault();

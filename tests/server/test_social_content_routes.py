@@ -75,6 +75,7 @@ def test_social_draft_review_planning_persists_and_checks_revision(
                 "channels": fields["channels"],
                 "state": "review",
                 "scheduled_at": None,
+                "publications": [],
             }],
         }
         assert decide("approve", 2).status_code == 409
@@ -107,3 +108,36 @@ def test_social_draft_review_planning_persists_and_checks_revision(
         assert returned.status_code == 200
         assert returned.json()["state"] == "draft"
         assert returned.json()["scheduled_at"] is None
+        publication_path = path + "/publications"
+        record = {
+            "channel": "instagram", "url": "https://www.instagram.com/p/example/",
+            "posted_at": time.time() - 60, "revision": returned.json()["revision"],
+        }
+        assert restarted.post(
+            publication_path, headers=headers, json=record
+        ).status_code == 409
+        for action in ("submit_review", "approve"):
+            result = restarted.post(path + "/actions", headers=headers, json={
+                "action": action, "revision": record["revision"],
+            })
+            assert result.status_code == 200
+            record["revision"] = result.json()["revision"]
+        assert restarted.post(publication_path, headers=headers, json={
+            **record, "url": "javascript:alert(1)",
+        }).status_code == 422
+        first = restarted.post(publication_path, headers=headers, json=record)
+        assert first.status_code == 200 and first.json()["state"] == "approved"
+        record["revision"] = first.json()["revision"]
+        duplicate = restarted.post(publication_path, headers=headers, json=record)
+        assert duplicate.status_code == 409
+        assert restarted.post(path + "/actions", headers=headers, json={
+            "action": "return_to_draft", "revision": record["revision"],
+        }).status_code == 409
+        final = restarted.post(publication_path, headers=headers, json={
+            **record, "channel": "linkedin", "url": "https://www.linkedin.com/posts/example",
+        })
+        assert final.status_code == 200 and final.json()["state"] == "published"
+        posted, = restarted.get(summary_path, headers=headers).json()["items"]
+        assert {entry["channel"] for entry in posted["publications"]} == {
+            "instagram", "linkedin",
+        }

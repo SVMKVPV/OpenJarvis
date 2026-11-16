@@ -353,6 +353,10 @@ export function CustomDashboard({
             <div>
               <b>{item.title}</b>
               <small>{item.channels.map((channel) => SOCIAL_CHANNELS[channel]).join(' · ')}</small>
+              {!!item.publications?.length && (
+                <small>Recorded on {item.publications.map((post) =>
+                  SOCIAL_CHANNELS[post.channel]).join(' · ')}</small>
+              )}
               {item.state === 'planned' && item.scheduled_at !== null && (
                 <small>{new Date(item.scheduled_at * 1000).toLocaleString()}</small>
               )}

@@ -10,7 +10,7 @@ from contextlib import closing
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Response
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AnyHttpUrl, BaseModel, Field, field_validator
 
 from openjarvis.core.paths import get_config_dir
 from openjarvis.security.file_utils import secure_create
@@ -60,6 +60,23 @@ class DraftAction(DraftRevision):
     scheduled_at: float | None = Field(default=None, gt=0, allow_inf_nan=False)
 
 
+class Publication(DraftRevision):
+    channel: Channel
+    url: AnyHttpUrl
+    posted_at: float = Field(gt=0, allow_inf_nan=False)
+
+    @field_validator("url")
+    @classmethod
+    def public_link(cls, url: AnyHttpUrl) -> AnyHttpUrl:
+        if (
+            url.scheme != "https"
+            or url.username is not None
+            or url.password is not None
+        ):
+            raise ValueError("Enter an HTTPS post link without credentials")
+        return url
+
+
 def _connect() -> sqlite3.Connection:
     path = secure_create(get_config_dir() / "social_content.db")
     conn = sqlite3.connect(path)
@@ -83,6 +100,11 @@ def _initialize(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS social_publications ("
+        "draft_id TEXT NOT NULL, channel TEXT NOT NULL, url TEXT NOT NULL, "
+        "posted_at REAL NOT NULL, PRIMARY KEY (draft_id, channel))"
+    )
 
 
 def _draft(conn: sqlite3.Connection, draft_id: str) -> dict:
@@ -91,11 +113,20 @@ def _draft(conn: sqlite3.Connection, draft_id: str) -> dict:
     ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="Content draft not found")
-    return _serialize(row)
+    return _serialize(conn, row)
 
 
-def _serialize(row: sqlite3.Row) -> dict:
-    return {**dict(row), "channels": json.loads(row["channels"])}
+def _serialize(conn: sqlite3.Connection, row: sqlite3.Row) -> dict:
+    publications = conn.execute(
+        "SELECT channel, url, posted_at FROM social_publications WHERE draft_id = ? "
+        "ORDER BY posted_at DESC, channel",
+        (row["id"],),
+    ).fetchall()
+    return {
+        **dict(row),
+        "channels": json.loads(row["channels"]),
+        "publications": [dict(record) for record in publications],
+    }
 
 
 @router.get("/summary")
@@ -114,7 +145,7 @@ def summarize_drafts(response: Response) -> dict:
             LIMIT 4
             """
         ).fetchall()
-    items = [_serialize(row) for row in rows]
+        items = [_serialize(conn, row) for row in rows]
     review_count = rows[0]["review_count"] if rows else 0
     for item in items:
         del item["review_count"]
@@ -129,7 +160,7 @@ def list_drafts(response: Response) -> dict:
         rows = conn.execute(
             "SELECT * FROM social_drafts ORDER BY updated_at DESC, id LIMIT 100"
         ).fetchall()
-        return {"drafts": [_serialize(row) for row in rows]}
+        return {"drafts": [_serialize(conn, row) for row in rows]}
 
 
 @router.post("/drafts", status_code=201)
@@ -192,13 +223,21 @@ def transition_draft(draft_id: str, decision: DraftAction) -> dict:
     if decision.action == "plan" and (start is None or start <= now):
         raise HTTPException(status_code=422, detail="Choose a future planning time.")
     progress_filter = ", ".join("?" for _ in previous)
+    publication_guard = (
+        " AND NOT EXISTS (SELECT 1 FROM social_publications WHERE draft_id = ?)"
+        if decision.action == "return_to_draft" else ""
+    )
+    params = (new_state, start, now, draft_id, decision.revision, *previous)
+    if publication_guard:
+        params += (draft_id,)
     with closing(_connect()) as conn, conn:
         _initialize(conn)
         result = conn.execute(
             "UPDATE social_drafts SET state = ?, scheduled_at = ?, "
             "revision = revision + 1, updated_at = ? "
-            f"WHERE id = ? AND revision = ? AND state IN ({progress_filter})",
-            (new_state, start, now, draft_id, decision.revision, *previous),
+            f"WHERE id = ? AND revision = ? AND state IN ({progress_filter})"
+            + publication_guard,
+            params,
         )
         draft = _draft(conn, draft_id)
         if not result.rowcount:
@@ -207,3 +246,47 @@ def transition_draft(draft_id: str, decision: DraftAction) -> dict:
                 detail="The draft changed or this decision is unavailable.",
             )
         return draft
+
+
+@router.post("/drafts/{draft_id}/publications")
+def record_publication(draft_id: str, publication: Publication) -> dict:
+    now = time.time()
+    if publication.posted_at > now:
+        raise HTTPException(
+            status_code=422, detail="Choose a published time in the past."
+        )
+    with closing(_connect()) as conn, conn:
+        _initialize(conn)
+        conn.execute("BEGIN IMMEDIATE")
+        draft = _draft(conn, draft_id)
+        if draft["revision"] != publication.revision:
+            raise HTTPException(
+                status_code=409, detail="The draft changed. Refresh drafts."
+            )
+        if draft["state"] not in {"approved", "planned"} or publication.channel not in (
+            draft["channels"]
+        ):
+            raise HTTPException(status_code=409, detail="This channel is not approved.")
+        published_channels = {item["channel"] for item in draft["publications"]}
+        if publication.channel in published_channels:
+            raise HTTPException(
+                status_code=409, detail="This channel already has a post."
+            )
+        conn.execute(
+            "INSERT INTO social_publications VALUES (?, ?, ?, ?)",
+            (
+                draft_id, publication.channel, str(publication.url),
+                publication.posted_at,
+            ),
+        )
+        all_published = len(draft["publications"]) + 1 == len(draft["channels"])
+        conn.execute(
+            "UPDATE social_drafts SET state = ?, scheduled_at = ?, "
+            "revision = revision + 1, updated_at = ? WHERE id = ?",
+            (
+                "published" if all_published else draft["state"],
+                None if all_published else draft["scheduled_at"],
+                now, draft_id,
+            ),
+        )
+        return _draft(conn, draft_id)
