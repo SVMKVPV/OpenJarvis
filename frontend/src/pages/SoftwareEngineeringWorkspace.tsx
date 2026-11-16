@@ -112,7 +112,7 @@ const ITEMS: WorkItem[] = [
   { id: 'tests', folder: '06-tests', name: 'command-center.spec.ts', type: 'QUALITY', state: 'COMPLETE', owner: 'Local AI', detail: 'Keyboard, mobile, disconnected-state, and no-network verification.' },
 ];
 
-export function SoftwareEngineeringWorkspace() {
+export function SoftwareEngineeringWorkspace({ initialRunId = '' }: { initialRunId?: string } = {}) {
   const [folders, setFolders] = useState(INITIAL_FOLDERS);
   const [selectedFolder, setSelectedFolder] = useState('04-frontend');
   const [selectedItemId, setSelectedItemId] = useState('shell');
@@ -148,7 +148,7 @@ export function SoftwareEngineeringWorkspace() {
     (source) => source.connector_id === syncConnectorId && source.connected,
   ) ?? false;
   const [workflowRuns, setWorkflowRuns] = useState<WorkflowRunSummary[]>([]);
-  const [inspectedRunId, setInspectedRunId] = useState('');
+  const [inspectedRunId, setInspectedRunId] = useState(initialRunId);
   const runInspector = useRef<HTMLElement>(null);
   const [runDetail, setRunDetail] = useState<WorkflowRunDetail | null>(null);
   const [runDetailError, setRunDetailError] = useState('');
@@ -997,7 +997,7 @@ export function SoftwareEngineeringWorkspace() {
                       <p>{step.metadata.workflow_status === 'waiting_approval' ? 'Waiting for approval' : step.success ? 'Succeeded' : 'Failed'}</p>
                       {step.output && <pre>{step.output}</pre>}
                       {typeof step.metadata.review_input === 'string' && (
-                        <details>
+                        <details open={initialRunId === inspectedRunId}>
                           <summary>Input presented for approval</summary>
                           {step.metadata.review_input
                             ? <pre>{step.metadata.review_input}</pre>

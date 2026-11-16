@@ -523,6 +523,11 @@ function BasicDashboard({ stations, onOpen }: { stations: Station[]; onOpen: (id
 
 export function CommandCenterPage() {
   const [view, setView] = useState<'overview' | 'workstations' | 'workspace' | 'dashboard'>('overview');
+  const [workspaceRunId, setWorkspaceRunId] = useState('');
+  const openWorkflowReview = (id: string) => {
+    setWorkspaceRunId(id);
+    setView('workspace');
+  };
   const [stations, setStations] = useLocalPreference(
     'openjarvis.command-center.stations.v1',
     () => INITIAL_STATIONS,
@@ -631,12 +636,12 @@ export function CommandCenterPage() {
         <nav className="command-view-nav" aria-label="Command center views">
           <button className={view === 'overview' ? 'active' : ''} onClick={() => setView('overview')}>OVERVIEW</button>
           <button className={view === 'workstations' ? 'active' : ''} onClick={() => setView('workstations')}>WORKSTATIONS</button>
-          <button className={view === 'workspace' ? 'active' : ''} onClick={() => setView('workspace')}>WORKSPACE</button>
+          <button className={view === 'workspace' ? 'active' : ''} onClick={() => { if (view !== 'workspace') openWorkflowReview(''); }}>WORKSPACE</button>
           <button className={view === 'dashboard' ? 'active' : ''} onClick={() => setView('dashboard')}>DASHBOARD</button>
         </nav>
         <div className="header-telemetry"><span><i /> SYSTEM ONLINE</span><span>{stations.length} STATIONS</span><span>LOCAL FIRST</span></div>
       </header>
-      {view === 'overview' ? <OrganizationOverview stations={stations} onOpen={openStation} /> : view === 'workspace' ? <SoftwareEngineeringWorkspace /> : view === 'dashboard' ? <CustomDashboard widgetIds={dashboardWidgetIds} setWidgetIds={setDashboardWidgetIds} onOpenStation={openStation} /> : <div className="command-grid">
+      {view === 'overview' ? <OrganizationOverview stations={stations} onOpen={openStation} /> : view === 'workspace' ? <SoftwareEngineeringWorkspace initialRunId={workspaceRunId} /> : view === 'dashboard' ? <CustomDashboard widgetIds={dashboardWidgetIds} setWidgetIds={setDashboardWidgetIds} onOpenStation={openStation} onOpenWorkflow={openWorkflowReview} /> : <div className="command-grid">
         <aside className="station-rail">
           <div className="rail-head"><div><span>WORKSTATIONS</span><strong>{stations.length} ACTIVE</strong></div><button onClick={() => setAdding((value) => !value)} aria-label="Add workstation"><Plus size={15} /></button></div>
           {adding && <form className="station-add" onSubmit={addStation}><input autoFocus value={newName} onChange={(event) => setNewName(event.target.value)} placeholder="Station name" /><button type="submit">ADD</button></form>}
