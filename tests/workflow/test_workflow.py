@@ -222,6 +222,27 @@ class TestWorkflowEngine:
         system.ask.assert_called_once()
         assert system.ask.call_args.args == ("",)
 
+    def test_model_step_uses_only_connected_input_and_reports_model_failure(self):
+        graph = (
+            WorkflowBuilder("model response")
+            .add_transform("field", transform="json_field:note")
+            .add_agent("model", agent="none")
+            .connect("field", "model")
+            .build()
+        )
+        system = Mock()
+        system.ask.return_value = {"content": "Model unavailable", "error": True}
+        result = WorkflowEngine().run(
+            graph,
+            system=system,
+            initial_input='{"note":"summarize","private":"internal"}',
+        )
+        system.ask.assert_called_once_with(
+            "summarize", agent="none", tools=None, context=False
+        )
+        assert result.status == "failed"
+        assert result.final_output == "Model unavailable"
+
     def test_loop_without_backend_reports_no_iterations(self):
         graph = WorkflowBuilder("review").add_loop("review").build()
         result = WorkflowEngine().run(graph)

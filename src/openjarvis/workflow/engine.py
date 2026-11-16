@@ -385,11 +385,15 @@ class WorkflowEngine:
                 input_text,
                 agent=node.agent or None,
                 tools=node.tools or None,
+                context=node.agent != "none",
             )
+            failed = bool(result.get("error"))
             return WorkflowStepResult(
                 node_id=node.id,
-                success=True,
-                output=result.get("content", ""),
+                success=not failed,
+                output=result.get("content") or (
+                    "Model execution failed." if failed else ""
+                ),
             )
         except Exception as exc:
             return WorkflowStepResult(

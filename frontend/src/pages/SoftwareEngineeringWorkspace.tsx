@@ -55,7 +55,7 @@ const GUARDED_GRAPH_JSON = JSON.stringify({
 type DraftEdge = { source: string; target: string; condition?: string };
 
 type DraftGraph = { nodes: { id: string }[]; edges?: DraftEdge[] };
-type NewStepType = 'transform' | 'condition' | 'approval';
+type NewStepType = 'transform' | 'condition' | 'approval' | 'agent';
 
 function readDraftGraph(draft: string): DraftGraph | null {
   try {
@@ -238,12 +238,16 @@ export function SoftwareEngineeringWorkspace() {
     : Boolean(jsonField.trim());
   const canAddStep = draftGraph && newStepId && newStepId !== '_input' &&
     !draftGraph.nodes.some((node) => node.id === newStepId) &&
-    (stepType === 'transform' ? !needsJsonFields || hasJsonFields : stepSetting.trim());
+    (stepType === 'agent' ||
+      (stepType === 'transform' ? !needsJsonFields || hasJsonFields : stepSetting.trim()));
   const addStep = () => {
     if (!draftGraph || !canAddStep) return;
     const node = { id: newStepId, type: stepType };
     let definition;
     switch (stepType) {
+      case 'agent':
+        definition = { ...node, agent: 'none' };
+        break;
       case 'condition':
         definition = { ...node, condition_expr: stepSetting.trim() };
         break;
@@ -503,6 +507,7 @@ export function SoftwareEngineeringWorkspace() {
                       setStepSetting('');
                     }}>
                       <option value="transform">Transform</option>
+                      <option value="agent">Model response</option>
                       <option value="condition">Condition</option>
                       <option value="approval">Approval</option>
                     </select>
@@ -516,6 +521,8 @@ export function SoftwareEngineeringWorkspace() {
                         <option value="json_select">Keep selected JSON fields</option>
                       </select>
                     </label>
+                  ) : stepType === 'agent' ? (
+                    <p>Send the connected input to the backend’s configured model.</p>
                   ) : (
                     <label>{stepType === 'condition' ? 'Condition expression' : 'Approval request'}
                       <input value={stepSetting} onChange={(event) => setStepSetting(event.target.value)}
