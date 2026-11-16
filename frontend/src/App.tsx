@@ -12,7 +12,7 @@ import { LogsPage } from './pages/LogsPage';
 import { CommandPalette } from './components/CommandPalette';
 import { Toaster } from './components/ui/sonner';
 import { useAppStore } from './lib/store';
-import { fetchModels, fetchServerInfo, fetchSavings, submitSavings, isTauri } from './lib/api';
+import { fetchModels, fetchServerInfo, fetchSavings, submitSavings, getSetupStatus, isTauri } from './lib/api';
 import { OptInModal } from './components/OptInModal';
 import { UpdateChecker } from './components/Desktop/UpdateChecker';
 import { track, hashId } from './lib/analytics';
@@ -59,22 +59,37 @@ export default function App() {
     return () => clearInterval(interval);
   }, [importOverlay]);
 
-  // Wait for desktop setup so a startup request cannot clear the models
-  // SetupScreen loaded before handing off to chat.
   useEffect(() => {
     if (!setupDone) return;
     let cancelled = false;
+    let timer: number | undefined;
+    const desktop = isTauri();
     setModelsLoading(true);
-    fetchModels()
-      .then((m) => {
-        if (!cancelled) setModels(m);
-      })
-      // Preserve models already loaded by setup if this refresh fails.
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setModelsLoading(false);
-      });
-    return () => { cancelled = true; };
+    const refresh = async () => {
+      try {
+        const status = desktop ? await getSetupStatus() : null;
+        if (cancelled) return;
+        if (status && status.source !== 'unconfigured' && !status.server_ready && !status.error) {
+          timer = window.setTimeout(check, 2000);
+          return;
+        }
+        const models = await fetchModels();
+        if (!cancelled && models.length) setModels(models);
+      } catch {
+        // Preserve models already loaded by setup if this refresh fails.
+      } finally {
+        if (!cancelled && timer === undefined) setModelsLoading(false);
+      }
+    };
+    const check = () => {
+      timer = undefined;
+      void refresh();
+    };
+    check();
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
   }, [setupDone, setModels, setModelsLoading]);
 
   // Fetch server info
