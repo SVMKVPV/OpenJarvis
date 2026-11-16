@@ -21,6 +21,7 @@ import {
   type RuntimePlugin,
   type SavedWorkflowDefinition,
   type WorkflowRunSummary,
+  type WorkflowRunStatus,
   type WorkflowRunDetail,
   type WorkflowRunAction,
 } from '../lib/api';
@@ -38,6 +39,17 @@ type Proposal = { id: string; connector: string; text: string; approved: boolean
 const ACTIVE_WORKFLOW_STATES = new Set<WorkflowRunDetail['status']>([
   'scheduled', 'queued', 'running', 'waiting_approval',
 ]);
+
+const WORKFLOW_STATUS_LABELS: Record<WorkflowRunStatus, string> = {
+  scheduled: 'Scheduled',
+  queued: 'Queued',
+  running: 'Running',
+  waiting_approval: 'Waiting for approval',
+  succeeded: 'Succeeded',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+  interrupted: 'Interrupted',
+};
 
 const GUARDED_DELIVERY = {
   name: 'CEO guarded delivery',
@@ -227,11 +239,13 @@ export function SoftwareEngineeringWorkspace({
     (source) => source.connector_id === syncConnectorId && source.connected,
   ) ?? false;
   const [workflowRuns, setWorkflowRuns] = useState<WorkflowRunSummary[]>([]);
+  const [historyStatus, setHistoryStatus] = useState<WorkflowRunStatus | ''>('');
   const [historyCursors, setHistoryCursors] = useState<string[]>(['']);
   const historyBefore = historyCursors[historyCursors.length - 1];
   const [historyPaging, setHistoryPaging] = useState(false);
   const [historyLoadedFor, setHistoryLoadedFor] = useState<string | null>(null);
-  const currentHistory = historyLoadedFor === historyBefore ? workflowRuns : [];
+  const historyKey = JSON.stringify([historyStatus, historyBefore]);
+  const currentHistory = historyLoadedFor === historyKey ? workflowRuns : [];
   const [inspectedRunId, setInspectedRunId] = useState(initialRunId);
   const runInspector = useRef<HTMLElement>(null);
   const [runDetail, setRunDetail] = useState<WorkflowRunDetail | null>(null);
@@ -303,6 +317,7 @@ export function SoftwareEngineeringWorkspace({
           : current);
       }
       if (retry) {
+        setHistoryStatus('');
         setHistoryCursors(['']);
         setWorkflowRuns((current) => [retry, ...current.filter((run) => run.id !== retry.id)]);
         inspectRun(retry.id);
@@ -565,6 +580,7 @@ export function SoftwareEngineeringWorkspace({
     try {
       const run = await runSavedWorkflow(attempt.definitionId, attempt.input, attempt.key, attempt.scheduledAt);
       savedLaunch.current = null;
+      setHistoryStatus('');
       setHistoryCursors(['']);
       setWorkflowRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
       setDefinitionMessage(repeated ? 'Workflow run confirmed.' : run.status === 'scheduled' ? 'Workflow scheduled.' : 'Workflow queued.');
@@ -677,11 +693,11 @@ export function SoftwareEngineeringWorkspace({
     let cancelled = false;
     const refresh = async () => {
       try {
-        const [history, approvals] = await Promise.all([fetchWorkflowHistory(historyBefore), fetchPendingApprovals()]);
+        const [history, approvals] = await Promise.all([fetchWorkflowHistory(historyBefore, historyStatus), fetchPendingApprovals()]);
         if (!cancelled) {
           setWorkflowRuns(history.runs);
           setHistoryPaging(history.supportsPaging);
-          setHistoryLoadedFor(historyBefore);
+          setHistoryLoadedFor(historyKey);
           setWorkflowApprovals(approvals.filter((item) => typeof item.payload.workflow_run_id === 'string'));
           setWorkflowState('online');
         }
@@ -692,7 +708,7 @@ export function SoftwareEngineeringWorkspace({
     void refresh();
     const timer = window.setInterval(refresh, 2500);
     return () => { cancelled = true; window.clearInterval(timer); };
-  }, [historyBefore]);
+  }, [historyBefore, historyKey, historyStatus]);
 
   const launchGuardedWorkflow = async () => {
     if (launchingGuarded) return;
@@ -704,6 +720,7 @@ export function SoftwareEngineeringWorkspace({
         initial_input: 'Prepare a reviewed command-center delivery',
         context: { owner: 'CEO Director', station: 'System Builder' },
       });
+      setHistoryStatus('');
       setHistoryCursors(['']);
       setWorkflowRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
       inspectRun(run.id);
@@ -1138,6 +1155,18 @@ export function SoftwareEngineeringWorkspace({
             );
           })}
           {approvalMessage && <p role="status">{approvalMessage}</p>}
+          <label>Run status filter
+            <select value={historyStatus} onChange={(event) => {
+              setHistoryStatus(event.target.value as WorkflowRunStatus | '');
+              setHistoryCursors(['']);
+            }}>
+              <option value="">All statuses</option>
+              {Object.entries(WORKFLOW_STATUS_LABELS).map(([status, label]) => (
+                <option key={status} value={status}>{label}</option>
+              ))}
+            </select>
+          </label>
+          {historyLoadedFor === historyKey && currentHistory.length === 0 && <p>No matching runs.</p>}
           <div className="workflow-runs">
             {currentHistory.slice(0, 5).map((run) => (
               <article key={run.id}>

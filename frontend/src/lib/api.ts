@@ -1329,11 +1329,12 @@ export async function fetchWorkflowRuns(status?: WorkflowRunStatus): Promise<Wor
   return data.runs || [];
 }
 
-export async function fetchWorkflowHistory(before: string): Promise<{
+export async function fetchWorkflowHistory(before: string, status: WorkflowRunStatus | ''): Promise<{
   runs: WorkflowRunSummary[];
   supportsPaging: boolean;
 }> {
-  const query = new URLSearchParams({ limit: '6' });
+  const query = new URLSearchParams({ limit: '6', recent: 'true' });
+  if (status) query.set('status', status);
   if (before) query.set('before', before);
   const response = await apiFetch(`/v1/workflows/runs?${query}`);
   if (!response.ok) throw new Error('Workflow history unavailable.');
@@ -1341,7 +1342,7 @@ export async function fetchWorkflowHistory(before: string): Promise<{
   if (!Array.isArray(page.runs) || (before && page.before !== before)) {
     throw new Error('Workflow history paging is unavailable on this backend.');
   }
-  return { runs: page.runs, supportsPaging: page.before === before };
+  return { runs: page.runs, supportsPaging: page.before === before && (status !== 'scheduled' || page.recent === true) };
 }
 
 export interface WorkflowRunDetail extends WorkflowRunSummary {

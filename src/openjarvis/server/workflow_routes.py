@@ -112,15 +112,16 @@ def create_workflow_runs_router() -> APIRouter:
         run_status: str = Query(default="", alias="status"),
         limit: int = Query(default=50, ge=1, le=200),
         before: str = Query(default="", max_length=128),
+        recent: bool = False,
     ) -> dict:
-        if before and run_status == "scheduled":
+        if before and run_status == "scheduled" and not recent:
             raise HTTPException(
                 status_code=400, detail="Scheduled runs are ordered by their start time"
             )
         runs = _runtime(request).store.list_runs(
-            status=run_status, limit=limit, before=before
+            status=run_status, limit=limit, before=before, recent=recent
         )
-        return {"runs": runs, "count": len(runs), "before": before}
+        return {"runs": runs, "count": len(runs), "before": before, "recent": recent}
 
     @router.get("/{run_id}")
     async def get_run(run_id: str, request: Request) -> dict:

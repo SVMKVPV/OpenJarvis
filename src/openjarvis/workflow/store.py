@@ -382,7 +382,12 @@ class WorkflowRunStore:
         return self._serialize_run(row, step_rows, include_graph=include_graph)
 
     def list_runs(
-        self, *, status: str = "", limit: int = 50, before: str = ""
+        self,
+        *,
+        status: str = "",
+        limit: int = 50,
+        before: str = "",
+        recent: bool = False,
     ) -> list[dict[str, Any]]:
         limit = max(1, min(int(limit), 200))
         filters: list[str] = []
@@ -399,7 +404,7 @@ class WorkflowRunStore:
         query = "SELECT * FROM workflow_runs"
         if filters:
             query += " WHERE " + " AND ".join(filters)
-        if status == "scheduled":
+        if status == "scheduled" and not recent:
             query += " ORDER BY scheduled_at, created_at, id LIMIT ?"
         else:
             query += " ORDER BY created_at DESC, id DESC LIMIT ?"

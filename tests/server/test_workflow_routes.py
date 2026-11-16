@@ -533,6 +533,20 @@ def test_workflow_history_cursor_is_stable_when_new_runs_arrive(tmp_path, monkey
             older = client.get(base, params={"limit": 2, "before": cursor}).json()
             assert older["before"] == cursor
             assert [run["id"] for run in older["runs"]] == ids[:2][::-1]
+            definition = client.post("/v1/workflows/definitions", json=payload).json()
+            schedule = f"/v1/workflows/definitions/{definition['id']}/schedule"
+            first_due = client.post(schedule, json={"scheduled_at": time.time() + 600})
+            second_due = client.post(
+                schedule, json={"scheduled_at": time.time() + 1200}
+            )
+            first_id, second_id = first_due.json()["id"], second_due.json()["id"]
+            due = client.get(base, params={"status": "scheduled"}).json()["runs"]
+            assert [run["id"] for run in due] == [first_id, second_id]
+            filtered = {"status": "scheduled", "recent": "true", "limit": 1}
+            newest = client.get(base, params=filtered).json()["runs"]
+            assert [run["id"] for run in newest] == [second_id]
+            earlier = client.get(base, params={**filtered, "before": second_id}).json()
+            assert [run["id"] for run in earlier["runs"]] == [first_id]
     finally:
         app.state.workflow_runtime.close()
         approvals.close()
