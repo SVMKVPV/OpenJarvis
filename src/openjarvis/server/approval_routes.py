@@ -68,28 +68,26 @@ async def list_pending_approvals() -> Dict[str, Any]:
     return {"actions": [_serialize(a) for a in actions], "count": len(actions)}
 
 
-@router.post("/v1/approvals/{action_id}/approve")
-async def approve_action(action_id: str, request: Request) -> Dict[str, Any]:
+def _decide(action_id: str, request: Request, decision: str) -> Dict[str, Any]:
     store = _get_store()
     action = store.get_action(action_id)
     if action is None:
         raise HTTPException(status_code=404, detail="Action not found")
-    store.update_status(action_id, STATUS_APPROVED)
+    if not store.decide_pending(action_id, decision):
+        raise HTTPException(status_code=409, detail="Action is no longer pending")
     _resume_workflow(request, action)
-    logger.info("Action %s approved via UI", action_id)
-    return {"status": "approved", "id": action_id}
+    logger.info("Action %s %s via UI", action_id, decision)
+    return {"status": decision, "id": action_id}
+
+
+@router.post("/v1/approvals/{action_id}/approve")
+async def approve_action(action_id: str, request: Request) -> Dict[str, Any]:
+    return _decide(action_id, request, STATUS_APPROVED)
 
 
 @router.post("/v1/approvals/{action_id}/deny")
 async def deny_action(action_id: str, request: Request) -> Dict[str, Any]:
-    store = _get_store()
-    action = store.get_action(action_id)
-    if action is None:
-        raise HTTPException(status_code=404, detail="Action not found")
-    store.update_status(action_id, STATUS_DENIED)
-    _resume_workflow(request, action)
-    logger.info("Action %s denied via UI", action_id)
-    return {"status": "denied", "id": action_id}
+    return _decide(action_id, request, STATUS_DENIED)
 
 
 __all__ = ["get_approval_store", "router"]

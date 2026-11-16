@@ -230,6 +230,17 @@ class TestApproveAction:
 
 @pytest.mark.skipif(not HAS_FASTAPI, reason="fastapi not installed")
 class TestDenyAction:
+    def test_cannot_reverse_approval(self, client, approval_store):
+        action_id = _queue(approval_store)
+        assert client.post(f"/v1/approvals/{action_id}/approve").status_code == 200
+        assert client.post(f"/v1/approvals/{action_id}/deny").status_code == 409
+        assert approval_store.get_action(action_id).status == STATUS_APPROVED
+
+    def test_cannot_decide_past_expiry(self, client, approval_store):
+        action_id = _queue(approval_store)
+        _expire(approval_store, action_id)
+        assert client.post(f"/v1/approvals/{action_id}/deny").status_code == 409
+
     def test_deny_returns_200(self, client, approval_store):
         action_id = _queue(approval_store)
         resp = client.post(f"/v1/approvals/{action_id}/deny")
