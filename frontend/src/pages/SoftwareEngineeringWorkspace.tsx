@@ -211,6 +211,7 @@ const BUILDER_RESEARCH_REVIEW = {
       ].join('\n'),
     } },
     { id: 'proposal-review', type: 'approval', config: {
+      action_type: 'system_builder_proposal',
       description: 'Review the proposal, source excerpts, and overlap with current work before assigning a prototype.',
       tier: 'high',
     } },

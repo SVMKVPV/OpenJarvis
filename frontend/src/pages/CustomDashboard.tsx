@@ -25,11 +25,30 @@ export const DASHBOARD_WIDGETS: DashboardWidget[] = [
   { id: 'revenue', stationId: 'finance', station: 'FINANCE', name: 'Revenue MTD', value: '$184K', detail: '72% OF MONTHLY TARGET', kind: 'trend' },
   { id: 'calendar', stationId: 'operations-manager', station: 'OPERATIONS MANAGER', name: 'Operating calendar', value: '', detail: 'Upcoming workflow runs', kind: 'calendar' },
   { id: 'approvals', stationId: 'managers', station: 'MANAGERS', name: 'Approval queue', value: '6', detail: '2 EXECUTIVE DECISIONS', kind: 'queue' },
-  { id: 'builder-proposals', stationId: 'system-builder', station: 'SYSTEM BUILDER', name: 'Improvement proposals', value: '3', detail: '1 READY FOR HUMAN REVIEW', kind: 'queue' },
+  { id: 'builder-proposals', stationId: 'system-builder', station: 'SYSTEM BUILDER', name: 'Improvement proposals', value: '', detail: 'Proposals awaiting review', kind: 'queue' },
 ];
 export const DEFAULT_WIDGET_IDS = ['dot-briefing','brain-health','leads-found','content-approval','social-pipeline','analytics-views','email-replies','revenue','calendar','builder-proposals'];
 
 type ScheduledRun = WorkflowRunSummary & { scheduled_at: number };
+
+function WorkflowApprovalLinks({ approvals, label, onOpen }: {
+  approvals: { approval: PendingApproval; runId: string }[];
+  label: string;
+  onOpen: (runId: string) => void;
+}) {
+  if (!approvals.length) return null;
+  return (
+    <ul className="dashboard-workflow-approvals" aria-label={label}>
+      {approvals.slice(0, 3).map(({ approval, runId }) => (
+        <li key={approval.id}>
+          <button type="button" onClick={() => onOpen(runId)}>
+            {approval.description || 'Review workflow run'}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 export function CustomDashboard({
   widgetIds, setWidgetIds, onOpenStation, onOpenWorkflow, onOpenRecurringWorkflow,
@@ -47,8 +66,12 @@ export function CustomDashboard({
     const runId = approval.payload.workflow_run_id;
     return typeof runId === 'string' && runId ? [{ approval, runId }] : [];
   });
+  const builderProposals = Array.from(new Map(workflowApprovals
+    .filter(({ approval }) => approval.action_type === 'system_builder_proposal' ||
+      (approval.action_type === 'workflow_action' && approval.payload.workflow_node_id === 'proposal-review'))
+    .map((item) => [item.runId, item])).values());
   const [approvalDetail, setApprovalDetail] = useState('Checking approval queue…');
-  const showApprovals = widgetIds.includes('approvals');
+  const showApprovals = widgetIds.includes('approvals') || widgetIds.includes('builder-proposals');
 
   useEffect(() => {
     if (!showApprovals) return;
@@ -238,6 +261,10 @@ export function CustomDashboard({
     },
     'email-replies': { value: gmail.count ?? '—', detail: gmail.detail },
     approvals: { value: approvalCount ?? '—', detail: approvalDetail },
+    'builder-proposals': {
+      value: pendingApprovals ? builderProposals.length : '—',
+      detail: pendingApprovals ? 'Proposals awaiting review' : approvalDetail,
+    },
     'content-approval': {
       value: socialQueue?.review_count ?? '—',
       detail: socialQueue ? 'Waiting for review' : socialMessage,
@@ -255,14 +282,11 @@ export function CustomDashboard({
   const move = (index: number, delta: number) => { const next = [...widgetIds]; const target = index + delta; if (target < 0 || target >= next.length) return; [next[index], next[target]] = [next[target], next[index]]; setWidgetIds(next); };
   return <main className="custom-dashboard"><div className="dashboard-title"><div><span>CUSTOM DASHBOARD</span><h2>CEO operating picture</h2><p>Station-owned widgets. Add what matters, remove what does not.</p></div><button className={editing ? 'active' : ''} onClick={() => setEditing(!editing)}><Settings2 size={13}/>{editing ? 'DONE EDITING' : 'EDIT DASHBOARD'}</button></div>
     {editing && <section className="widget-catalog"><header><div><span>ADD WIDGET</span><strong>AVAILABLE FROM WORKSTATIONS</strong></div><em>{available.length} AVAILABLE</em></header><div>{available.length ? available.map((widget) => <button key={widget.id} onClick={() => setWidgetIds([...widgetIds, widget.id])}><Plus size={11}/><span><b>{widget.name}</b><small>{widget.station}</small></span></button>) : <p>All available widgets are already on the dashboard.</p>}</div></section>}
-    {widgets.length ? <section className="widget-grid">{widgets.map((widget,index) => <article key={widget.id} className={`dashboard-widget ${sizes[widget.id] ?? (widget.kind === 'calendar' ? 'large' : 'small')}`}><header><button onClick={() => onOpenStation(widget.stationId)}>{widget.station}</button><span>{widget.id === 'approvals' ? (approvalCount !== null ? 'LIVE DATA' : 'BACKEND') : widget.kind === 'calendar' ? (scheduledRuns !== null ? 'LIVE WORKFLOWS' : 'BACKEND') : widget.id === 'content-approval' || widget.id === 'social-pipeline' ? (socialQueue ? 'LIVE QUEUE' : 'BACKEND') : widget.id === 'email-replies' ? 'GMAIL INDEX' : widget.id === 'analytics-views' ? (analytics?.status === 'live' ? 'LIVE GA4' : 'GA4') : widget.id === 'leads-found' ? 'LEAD REGISTER' : 'DEMO DATA'}</span></header><div className="widget-content"><span>{widget.name}</span>{widget.kind !== 'content' && widget.kind !== 'calendar' && <><strong>{queueMetrics[widget.id]?.value ?? widget.value}</strong><small>{queueMetrics[widget.id]?.detail ?? widget.detail}</small></>}{widget.id === 'approvals' && workflowApprovals.length > 0 && (
-      <ul className="dashboard-workflow-approvals" aria-label="Workflow approvals">
-        {workflowApprovals.slice(0, 3).map(({ approval, runId }) => (
-          <li key={approval.id}>
-            <button type="button" onClick={() => onOpenWorkflow(runId)}>{approval.description || 'Review workflow run'}</button>
-          </li>
-        ))}
-      </ul>
+    {widgets.length ? <section className="widget-grid">{widgets.map((widget,index) => <article key={widget.id} className={`dashboard-widget ${sizes[widget.id] ?? (widget.kind === 'calendar' ? 'large' : 'small')}`}><header><button onClick={() => onOpenStation(widget.stationId)}>{widget.station}</button><span>{widget.id === 'approvals' || widget.id === 'builder-proposals' ? (approvalCount !== null ? 'LIVE DATA' : 'BACKEND') : widget.kind === 'calendar' ? (scheduledRuns !== null ? 'LIVE WORKFLOWS' : 'BACKEND') : widget.id === 'content-approval' || widget.id === 'social-pipeline' ? (socialQueue ? 'LIVE QUEUE' : 'BACKEND') : widget.id === 'email-replies' ? 'GMAIL INDEX' : widget.id === 'analytics-views' ? (analytics?.status === 'live' ? 'LIVE GA4' : 'GA4') : widget.id === 'leads-found' ? 'LEAD REGISTER' : 'DEMO DATA'}</span></header><div className="widget-content"><span>{widget.name}</span>{widget.kind !== 'content' && widget.kind !== 'calendar' && <><strong>{queueMetrics[widget.id]?.value ?? widget.value}</strong><small>{queueMetrics[widget.id]?.detail ?? widget.detail}</small></>}
+    {widget.id === 'approvals' && (
+      <WorkflowApprovalLinks approvals={workflowApprovals} label="Workflow approvals" onOpen={onOpenWorkflow} />
+    )}{widget.id === 'builder-proposals' && (
+      <WorkflowApprovalLinks approvals={builderProposals} label="System Builder proposals" onOpen={onOpenWorkflow} />
     )}{widget.kind === 'trend' && <div className="mini-trend"><i/><i/><i/><i/><i/><i/></div>}{widget.kind === 'calendar' && (
       <>
         <small>{widget.detail}</small>

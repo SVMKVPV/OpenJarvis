@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { Check, GitBranch, Play, ShieldCheck, Wrench } from 'lucide-react';
+import { GitBranch, Play, ShieldCheck, Wrench } from 'lucide-react';
 import { Link } from 'react-router';
 import './system-builder-lab.css';
 
@@ -10,7 +9,6 @@ const IDEAS = [
 ];
 
 export function SystemBuilderLab({ onOpenResearch }: { onOpenResearch: () => void }) {
-  const [approved, setApproved] = useState<string[]>([]);
   return <section className="builder-lab"><header><div><span>SYSTEM BUILDER WORKSTATION</span><strong>Research and review improvement proposals</strong></div><button type="button" onClick={onOpenResearch}><Play size={11}/>Open research workflow</button></header>
     <div className="builder-sources">
       <article><GitBranch/><div><strong>GitHub release research</strong><small>Search indexed entries from configured public release feeds</small></div><em>RSS / ATOM</em></article>
@@ -22,6 +20,13 @@ export function SystemBuilderLab({ onOpenResearch }: { onOpenResearch: () => voi
     <p className="research-banner">The research workflow searches synced public feeds and sends citations
       and a proposal to the approval queue. <Link to="/data-sources">Configure News / RSS feeds</Link></p>
     <p>Example proposals</p>
-    <div className="builder-ideas">{IDEAS.map((idea) => <article key={idea.id}><div><span>{idea.source}</span><h3>{idea.title}</h3><p>{idea.evidence}. Shared Brain found no conflicting owner.</p></div><aside><em data-stage={idea.stage}>{idea.stage}</em><small>{idea.impact} IMPACT</small><button className={approved.includes(idea.id) ? 'approved' : ''} onClick={() => setApproved((current) => current.includes(idea.id) ? current : [...current,idea.id])}>{approved.includes(idea.id) ? <><Check size={10}/> APPROVED TO PLAN</> : 'REVIEW PROPOSAL'}</button></aside></article>)}</div>
+    <div className="builder-ideas">
+      {IDEAS.map((idea) => (
+        <article key={idea.id}>
+          <div><span>{idea.source}</span><h3>{idea.title}</h3><p>{idea.evidence}</p></div>
+          <aside><em data-stage={idea.stage}>{idea.stage}</em><small>{idea.impact} IMPACT</small></aside>
+        </article>
+      ))}
+    </div>
   </section>;
 }
