@@ -21,3 +21,25 @@
 .workflow-run-detail pre {
   white-space: pre-wrap;
 }
+
+.workflow-draft-map {
+  height: 260px;
+  min-width: 0;
+  border: 1px solid #49391c;
+  background: #0d0a06;
+}
+.workflow-draft-map .workflow-map-step {
+  display: grid;
+  gap: 3px;
+  width: 138px;
+  min-height: 44px;
+  padding: 6px 9px;
+  border: 1px solid #ad8740;
+  border-radius: 0;
+  background: #161006;
+  color: #edcf83;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.workflow-map-step small { color: #b19b70; text-transform: uppercase; }
+.workflow-graph-editor li[tabindex]:focus { outline: 1px solid #d6ad52; }

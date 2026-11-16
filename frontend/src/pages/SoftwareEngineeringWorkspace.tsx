@@ -27,6 +27,7 @@ import { getSyncStatus, listConnectors } from '../lib/connectors-api';
 import { isEmbedOnlyModel } from '../lib/model-capabilities';
 import { useAppStore } from '../lib/store';
 import type { ConnectorInfo, SyncStatus } from '../types/connectors';
+import { WorkflowDraftMap } from './WorkflowDraftMap';
 import './software-workspace.css';
 
 type Connector = { id: string; code: string; provider: string; product: string; role: string; model: string; status: 'setup' | 'local'; enabled: boolean; contributions: number };
@@ -203,6 +204,8 @@ export function SoftwareEngineeringWorkspace({ initialRunId = '' }: { initialRun
   const [workflowName, setWorkflowName] = useState(GUARDED_DELIVERY.name);
   const [workflowGraph, setWorkflowGraph] = useState(GUARDED_GRAPH_JSON);
   const draftGraph = useMemo(() => readDraftGraph(workflowGraph), [workflowGraph]);
+  const stepElements = useRef(new Map<string, HTMLLIElement>());
+  const openWorkflowStep = (id: string) => stepElements.current.get(id)?.focus();
   const [edgeSource, setEdgeSource] = useState('');
   const [edgeTarget, setEdgeTarget] = useState('');
   const [stepId, setStepId] = useState('');
@@ -725,8 +728,15 @@ export function SoftwareEngineeringWorkspace({ initialRunId = '' }: { initialRun
               {draftGraph && (
                 <fieldset>
                   <legend>Workflow steps</legend>
+                  {draftGraph.nodes.length > 0 && (
+                    <WorkflowDraftMap steps={draftGraph.nodes} connections={draftGraph.edges ?? []}
+                      onOpen={openWorkflowStep} />
+                  )}
                   <ul>{draftGraph.nodes.map((node) => (
-                    <li key={node.id}>
+                    <li key={node.id} tabIndex={-1} ref={(element) => {
+                      if (element) stepElements.current.set(node.id, element);
+                      else stepElements.current.delete(node.id);
+                    }}>
                       <span>{node.id}</span>
                       {node.type === 'tool' && node.config?.tool_name === 'knowledge_search' &&
                         node.config.query_from_input === true && (
