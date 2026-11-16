@@ -1,0 +1,88 @@
+import time
+from unittest.mock import MagicMock
+
+import pytest
+
+pytest.importorskip("fastapi")
+from fastapi.testclient import TestClient  # noqa: E402
+
+from openjarvis.server.app import create_app  # noqa: E402
+
+
+def test_social_draft_review_planning_persists_and_checks_revision(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "openjarvis.server.social_content_routes.get_config_dir", lambda: tmp_path
+    )
+    fields = {
+        "title": "Spring launch",
+        "caption": "Initial caption",
+        "channels": ["instagram", "linkedin"],
+    }
+    headers = {"Authorization": "Bearer test-content-key"}
+    base = "/v1/social-content/drafts"
+
+    def session():
+        return TestClient(create_app(MagicMock(), "test", api_key="test-content-key"))
+
+    with session() as client:
+        assert client.get(base).status_code == 401
+        assert client.post(base, json=fields).status_code == 401
+        new = client.post(base, json=fields, headers=headers)
+        assert new.status_code == 201
+        draft = new.json()
+        assert draft["state"] == "draft" and draft["revision"] == 1
+        path = f"{base}/{draft['id']}"
+
+        def decide(action, revision, **options):
+            return client.post(
+                path + "/actions",
+                headers=headers,
+                json={
+                    "action": action,
+                    "revision": revision,
+                    **options,
+                },
+            )
+
+        assert decide("approve", 1).status_code == 409
+        revised = client.put(
+            path,
+            headers=headers,
+            json={
+                **fields,
+                "caption": "Edited caption",
+                "revision": 1,
+            },
+        )
+        assert revised.status_code == 200
+        pending = decide("submit_review", 2)
+        assert pending.status_code == 200 and pending.json()["state"] == "review"
+        assert decide("approve", 2).status_code == 409
+        accepted = decide("approve", 3)
+        assert accepted.status_code == 200 and accepted.json()["state"] == "approved"
+        start = time.time() + 7200
+        assert decide("plan", 4, scheduled_at=time.time() - 1).status_code == 422
+        planned = decide("plan", 4, scheduled_at=start)
+        assert planned.status_code == 200 and planned.json()["state"] == "planned"
+
+    with session() as restarted:
+        listed = restarted.get(base, headers=headers)
+        assert listed.status_code == 200
+        assert listed.headers["Cache-Control"] == "no-store"
+        (item,) = listed.json()["drafts"]
+        assert item["id"] == draft["id"]
+        assert item["caption"] == "Edited caption"
+        assert item["state"] == "planned" and item["scheduled_at"] == start
+        returned = restarted.post(
+            path + "/actions",
+            headers=headers,
+            json={
+                "action": "return_to_draft",
+                "revision": item["revision"],
+            },
+        )
+        assert returned.status_code == 200
+        assert returned.json()["state"] == "draft"
+        assert returned.json()["scheduled_at"] is None
