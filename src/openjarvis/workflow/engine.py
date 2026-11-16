@@ -164,6 +164,10 @@ class WorkflowEngine:
         total = time.time() - t0
         # Final output is the output of the last executed node
         final_output = all_steps[-1].output if all_steps else ""
+        if not success and not waiting_approval:
+            final_output = next(
+                (step.output for step in all_steps if not step.success), final_output
+            )
 
         if self._bus:
             self._bus.publish(
@@ -434,14 +438,17 @@ class WorkflowEngine:
         # (9**9)**9. Use the shared allowlist AST interpreter instead: it has
         # no attribute access, no dunder names, and no reachable callables
         # beyond a fixed set of safe builtins, so escape vectors are
-        # unreachable by construction. Anything it cannot evaluate raises and
-        # is treated as a false condition (unchanged fail-safe behavior).
+        # unreachable by construction. Evaluation errors stop the workflow.
         from openjarvis.tools.templates.loader import safe_eval_expr
 
         try:
             result = str(safe_eval_expr(expr, {"outputs": outputs}))
         except Exception:
-            result = "false"
+            return WorkflowStepResult(
+                node_id=node.id,
+                success=False,
+                output="Condition evaluation failed. Check the workflow expression.",
+            )
         return WorkflowStepResult(
             node_id=node.id,
             success=True,

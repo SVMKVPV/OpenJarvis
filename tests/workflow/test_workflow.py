@@ -191,3 +191,16 @@ class TestWorkflowEngine:
             "rejected_followup",
             "merge",
         ]
+
+    def test_invalid_condition_does_not_run_false_branch(self):
+        graph = (
+            WorkflowBuilder("invalid condition")
+            .add_condition("check", expr="outputs['missing']")
+            .add_transform("fallback")
+            .connect("check", "fallback", condition="false")
+            .build()
+        )
+        result = WorkflowEngine().run(graph)
+        assert result.status == "failed"
+        assert [step.node_id for step in result.steps] == ["check"]
+        assert "Condition evaluation failed" in result.final_output
