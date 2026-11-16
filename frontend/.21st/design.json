@@ -1,0 +1,25 @@
+{
+  "product": "OpenJarvis Organization Command Center",
+  "decisions": [
+    {
+      "date": "2026-11-16",
+      "decision": "Use an obsidian, bronze, gold, and warm-ivory palette. All interface surfaces, nodes, controls, and navigation use square corners; only Dot's explicitly requested morphing voice shape may curve during animation."
+    },
+    {
+      "date": "2026-11-16",
+      "decision": "The OpenJarvis frontend is the primary application shell. Every workstation owns an editable React Flow connection map and a purpose-specific connection stack. Dot is the shared voice and conversational router, backed by OpenJarvis speech, TTS, model selection, and streaming chat when configured."
+    },
+    {
+      "date": "2026-11-16",
+      "decision": "Separate the command center into three top-level operating views: an organization overview for reporting and workflow relationships, focused workstation editors for configuration, and a basic dashboard for health, load, approvals, and priorities. Clicking a station anywhere opens its detailed editor."
+    },
+    {
+      "date": "2026-11-16",
+      "decision": "Merge the adapter-ready Software Engineering workspace into the original OpenJarvis shell as a fourth focused view. Treat Shared Brain as a communication/context service, render reporting and Brain connections as separate line systems, and make dashboard widgets removable, reorderable, resizable, and owned by workstations."
+    },
+    {
+      "date": "2026-11-16",
+      "decision": "Keep full social-content creation and channel management inside the Marketing workstation, with a removable dashboard summary. Show generation source, channel adaptations, approval, scheduling, and posted performance while all social connectors remain honestly marked as setup-required until authenticated."
+    }
+  ]
+}

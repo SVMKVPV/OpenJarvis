@@ -8,6 +8,7 @@ import App from './App';
 import { initApiBase } from './lib/api';
 import { initAnalytics } from './lib/analytics';
 import './index.css';
+import './sharp-theme.css';
 
 function applyTheme() {
   try {

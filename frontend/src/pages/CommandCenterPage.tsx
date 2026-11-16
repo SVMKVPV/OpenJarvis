@@ -1,0 +1,544 @@
+import { FormEvent, useMemo, useRef, useState } from 'react';
+import { Activity, ArrowUp, Mic, MicOff, Plus, Settings2, Square, Volume2 } from 'lucide-react';
+import {
+  Background,
+  Handle,
+  MarkerType,
+  Position,
+  ReactFlow,
+  type Edge,
+  type Node,
+  type NodeProps,
+} from '@xyflow/react';
+import WorkflowBlueprint, {
+  type WorkflowApp,
+  type WorkflowGraph,
+} from '../components/ui/interactive-workflow-blueprint';
+import { OrbLoader } from '../components/ui/orb-loader';
+import { useSpeech } from '../hooks/useSpeech';
+import { useTts } from '../hooks/useTts';
+import { streamChat } from '../lib/sse';
+import { useAppStore } from '../lib/store';
+import { SoftwareEngineeringWorkspace } from './SoftwareEngineeringWorkspace';
+import { CustomDashboard, DASHBOARD_WIDGETS, DEFAULT_WIDGET_IDS } from './CustomDashboard';
+import { SharedBrainPanel } from './SharedBrainPanel';
+import { SocialContentStudio } from './SocialContentStudio';
+import { SystemBuilderLab } from './SystemBuilderLab';
+import './command-center.css';
+import './overview-dashboard.css';
+
+type Station = {
+  id: string;
+  code: string;
+  name: string;
+  purpose: string;
+  current: string;
+  reportsTo: string;
+  status: 'working' | 'review' | 'ready';
+};
+
+type VoiceMessage = { id: string; role: 'user' | 'dot'; text: string };
+
+const INITIAL_STATIONS: Station[] = [
+  { id: 'brain', code: 'BRN', name: 'Shared Brain', purpose: 'Shared communication, context, ownership, and duplicate-work prevention for every agent.', current: 'Synchronizing context across all workstations', reportsTo: 'No one — shared service', status: 'working' },
+  { id: 'dot', code: 'DOT', name: 'Dot', purpose: 'Your personal agent, assistant, and executive command link.', current: 'Compiling the CEO organization status update', reportsTo: 'CEO / Director', status: 'working' },
+  { id: 'marketing', code: 'MKT', name: 'Marketing', purpose: 'Plans campaigns, produces creative, and monitors channel performance.', current: 'Preparing the spring campaign launch', reportsTo: 'General Manager', status: 'working' },
+  { id: 'research', code: 'RSC', name: 'Research', purpose: 'Builds source-grounded market, customer, and competitor intelligence.', current: 'Validating competitor positioning sources', reportsTo: 'Operations Manager', status: 'working' },
+  { id: 'managers', code: 'MGR', name: 'Managers', purpose: 'Reviews exceptions, assigns owners, and approves high-impact decisions.', current: 'Reviewing four approval requests', reportsTo: 'Operations Manager', status: 'review' },
+  { id: 'email', code: 'EML', name: 'Email Reply', purpose: 'Triages inbound mail and prepares contextual, approval-aware replies.', current: 'Drafting replies for qualified leads', reportsTo: 'Operations Manager', status: 'working' },
+  { id: 'finance', code: 'FIN', name: 'Finance', purpose: 'Tracks spend, forecasts cash, and flags variance before it grows.', current: 'Refreshing the monthly forecast', reportsTo: 'General Manager', status: 'working' },
+  { id: 'growth', code: 'GRW', name: 'Leads + Growth', purpose: 'Qualifies demand and coordinates the path from signal to revenue.', current: 'Qualifying the newest inbound leads', reportsTo: 'General Manager', status: 'working' },
+  { id: 'general-manager', code: 'GM', name: 'General Manager', purpose: 'Turns company goals into coordinated priorities and measurable decisions.', current: 'Aligning next week’s company priorities', reportsTo: 'Dot', status: 'review' },
+  { id: 'operations-manager', code: 'OPS', name: 'Operations Manager', purpose: 'Keeps delivery on track, resolves blockers, and improves operating systems.', current: 'Removing delivery blockers across teams', reportsTo: 'Dot', status: 'working' },
+  { id: 'system-builder', code: 'BLD', name: 'System Builder', purpose: 'Researches improvements, proposes features, prototypes safely, and requests approval before change.', current: 'Reviewing public dashboard and agent-workspace patterns', reportsTo: 'Operations Manager', status: 'working' },
+];
+
+const STACKS: Record<string, WorkflowApp[]> = {
+  brain: [
+    { id: 'orchestration', name: 'Orchestration', actions: [
+      { label: 'Route request', detail: 'Choose the best station for the job.', kind: 'agent', tool: 'Dynamic router' },
+      { label: 'Synthesize outputs', detail: 'Combine station results into one decision brief.', kind: 'agent', tool: 'Reasoning model' },
+      { label: 'Escalate risk', detail: 'Send uncertain or high-impact work to a human.', kind: 'review', tool: 'Approval gate' },
+    ] },
+    { id: 'memory', name: 'Memory + Audit', actions: [
+      { label: 'Recall context', detail: 'Load verified organizational memory.', kind: 'integration', tool: 'OpenJarvis memory' },
+      { label: 'Save decision', detail: 'Record the outcome and supporting evidence.', kind: 'delivery', tool: 'Audit ledger' },
+    ] },
+  ],
+  dot: [
+    { id: 'voice', name: 'Voice + Conversation', actions: [
+      { label: 'Listen', detail: 'Capture an owner voice command.', kind: 'trigger', tool: 'OpenJarvis speech' },
+      { label: 'Speak response', detail: 'Read the final response using Jarvis voice.', kind: 'delivery', tool: 'OpenJarvis TTS' },
+      { label: 'Broadcast', detail: 'Open an all-stations conversation.', kind: 'delivery', tool: 'Team room' },
+    ] },
+    { id: 'coordination', name: 'Coordination', actions: [
+      { label: 'Assign General Manager', detail: 'Route a strategic operating decision.', kind: 'agent', tool: 'GM station' },
+      { label: 'Assign Operations Manager', detail: 'Route an execution or process issue.', kind: 'agent', tool: 'OPS station' },
+      { label: 'Request status', detail: 'Collect current work from every station.', kind: 'integration', tool: 'Live station bus' },
+    ] },
+  ],
+  marketing: [
+    { id: 'campaign', name: 'Campaign Engine', actions: [
+      { label: 'Build brief', detail: 'Turn an objective into an executable campaign brief.', kind: 'agent', tool: 'Campaign planner' },
+      { label: 'Create variants', detail: 'Generate channel-specific creative variations.', kind: 'agent', tool: 'Creative studio' },
+      { label: 'Brand review', detail: 'Check voice, claims, and visual consistency.', kind: 'review', tool: 'Brand gate' },
+    ] },
+    { id: 'channels', name: 'Channels', actions: [
+      { label: 'Prepare social', detail: 'Package approved content for social channels.', kind: 'delivery', tool: 'Publisher' },
+      { label: 'Measure campaign', detail: 'Attach attribution and performance signals.', kind: 'integration', tool: 'Analytics' },
+    ] },
+  ],
+  research: [
+    { id: 'research-tools', name: 'Research Tools', actions: [
+      { label: 'Search sources', detail: 'Collect primary and authoritative sources.', kind: 'integration', tool: 'Web research' },
+      { label: 'Run experiment', detail: 'Test a hypothesis and retain the strongest result.', kind: 'agent', tool: 'Autoresearch loop' },
+      { label: 'Verify citations', detail: 'Check every material claim against its source.', kind: 'review', tool: 'Grounded citations' },
+    ] },
+  ],
+  managers: [
+    { id: 'management', name: 'Management', actions: [
+      { label: 'Assign owner', detail: 'Give a decision or task one accountable owner.', kind: 'agent', tool: 'Responsibility map' },
+      { label: 'Approve exception', detail: 'Review a high-impact or low-confidence action.', kind: 'review', tool: 'Human gate' },
+      { label: 'Escalate blocker', detail: 'Raise unresolved work to Operations or Dot.', kind: 'delivery', tool: 'Escalation bus' },
+    ] },
+  ],
+  email: [
+    { id: 'inbox', name: 'Inbox + Reach', actions: [
+      { label: 'Triage message', detail: 'Classify intent, urgency, and sensitivity.', kind: 'agent', tool: 'Inbox triage' },
+      { label: 'Draft reply', detail: 'Create a contextual answer without sending it.', kind: 'agent', tool: 'Reply writer' },
+      { label: 'Verify recipient', detail: 'Check channel, recipient, and approval state.', kind: 'review', tool: 'Agent Reach' },
+    ] },
+  ],
+  finance: [
+    { id: 'finance-tools', name: 'Finance Controls', actions: [
+      { label: 'Refresh forecast', detail: 'Update revenue, cost, and cash assumptions.', kind: 'agent', tool: 'Forecast model' },
+      { label: 'Check variance', detail: 'Compare actuals with plan and flag movement.', kind: 'integration', tool: 'Variance engine' },
+      { label: 'Budget approval', detail: 'Require review before committing spend.', kind: 'review', tool: 'Finance gate' },
+    ] },
+  ],
+  growth: [
+    { id: 'growth-tools', name: 'Growth Engine', actions: [
+      { label: 'Qualify lead', detail: 'Score fit, intent, evidence, and exclusions.', kind: 'agent', tool: 'Lead qualifier' },
+      { label: 'Enrich account', detail: 'Add lawful business context and activity.', kind: 'integration', tool: 'Agent Reach' },
+      { label: 'Measure conversion', detail: 'Connect activity to pipeline and revenue.', kind: 'delivery', tool: 'Attribution' },
+    ] },
+  ],
+  'general-manager': [
+    { id: 'gm-tools', name: 'Executive Control', actions: [
+      { label: 'Set priority', detail: 'Rank work by evidence, impact, effort, and risk.', kind: 'agent', tool: 'Decision matrix' },
+      { label: 'Review performance', detail: 'Read operating, growth, and financial signals.', kind: 'integration', tool: 'Executive scorecard' },
+      { label: 'Approve operating plan', detail: 'Submit the plan to Dot for coordination.', kind: 'review', tool: 'Dot checkpoint' },
+    ] },
+  ],
+  'operations-manager': [
+    { id: 'ops-tools', name: 'Operations Control', actions: [
+      { label: 'Map process', detail: 'Convert work into owners, stages, and controls.', kind: 'agent', tool: 'Process mapper' },
+      { label: 'Resolve blocker', detail: 'Diagnose the constraint and assign a recovery path.', kind: 'agent', tool: 'Execution debugger' },
+      { label: 'Report to Dot', detail: 'Return delivery status, risks, and next action.', kind: 'delivery', tool: 'Dot checkpoint' },
+    ] },
+  ],
+};
+
+const FALLBACK_STACK = [{ id: 'station-tools', name: 'Station Tools', actions: [
+  { label: 'Accept task', detail: 'Receive a routed assignment.', kind: 'trigger' as const, tool: 'Station bus' },
+  { label: 'Perform work', detail: 'Execute the station’s defined responsibility.', kind: 'agent' as const, tool: 'OpenJarvis agent' },
+  { label: 'Report outcome', detail: 'Return status and evidence to the parent station.', kind: 'delivery' as const, tool: 'Status channel' },
+] }];
+
+function makeGraph(station: Station): WorkflowGraph {
+  const checkpoint = station.id === 'dot' ? 'The Brain checkpoint' : station.reportsTo === 'Dot' ? 'Dot checkpoint' : `${station.reportsTo} checkpoint`;
+  return {
+    nodes: [
+      { id: `${station.id}-intake`, type: 'blueprint', position: { x: 20, y: 90 }, data: { label: 'Receive objective', detail: `Accept work routed to ${station.name}.`, kind: 'trigger', tool: 'Station bus' } },
+      { id: `${station.id}-work`, type: 'blueprint', position: { x: 280, y: 90 }, data: { label: station.name, detail: station.purpose, kind: 'agent', tool: 'OpenJarvis agent' } },
+      { id: `${station.id}-review`, type: 'blueprint', position: { x: 540, y: 90 }, data: { label: checkpoint, detail: 'Verify quality, evidence, permissions, and exceptions.', kind: 'review', tool: 'Approval policy' } },
+      { id: `${station.id}-deliver`, type: 'blueprint', position: { x: 800, y: 90 }, data: { label: 'Report outcome', detail: `Return current work and results to ${station.reportsTo}.`, kind: 'delivery', tool: 'Live status' } },
+    ],
+    edges: [
+      { id: `${station.id}-e1`, source: `${station.id}-intake`, target: `${station.id}-work`, type: 'blueprint' },
+      { id: `${station.id}-e2`, source: `${station.id}-work`, target: `${station.id}-review`, type: 'blueprint' },
+      { id: `${station.id}-e3`, source: `${station.id}-review`, target: `${station.id}-deliver`, type: 'blueprint' },
+    ],
+  };
+}
+
+type SpeechResultEvent = { results: { [index: number]: { [index: number]: { transcript: string } } } };
+type BrowserRecognition = {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  start: () => void;
+  stop: () => void;
+  onresult: ((event: SpeechResultEvent) => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+};
+type BrowserRecognitionConstructor = new () => BrowserRecognition;
+
+function DotVoice({ station }: { station: Station }) {
+  const speech = useSpeech();
+  const tts = useTts();
+  const selectedModel = useAppStore((state) => state.selectedModel);
+  const [input, setInput] = useState('');
+  const [browserListening, setBrowserListening] = useState(false);
+  const [thinking, setThinking] = useState(false);
+  const [messages, setMessages] = useState<VoiceMessage[]>([
+    { id: 'welcome', role: 'dot', text: 'Dot online. Select a station, speak, or type a command.' },
+  ]);
+  const recognitionRef = useRef<BrowserRecognition | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listening = speech.isRecording || browserListening;
+  const active = listening || speech.isTranscribing || thinking || tts.isSpeaking;
+
+  const speakResponse = async (id: string, text: string) => {
+    if (tts.available) {
+      await tts.speak(id, text);
+      return;
+    }
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      const voices = window.speechSynthesis.getVoices();
+      utterance.voice = voices.find((voice) => /Daniel|Ryan|George|UK English Male/i.test(voice.name)) ?? voices.find((voice) => voice.lang.startsWith('en')) ?? null;
+      utterance.rate = 0.92;
+      utterance.pitch = 0.82;
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+
+  const localResponse = (text: string) => `${station.name} is online through Dot. I’ve received “${text.slice(0, 90)}${text.length > 90 ? '…' : ''}”. The station is currently ${station.current.toLowerCase()}. I can route this into its workflow or return a status brief.`;
+
+  const send = async (raw: string) => {
+    const text = raw.trim();
+    if (!text || thinking) return;
+    const user: VoiceMessage = { id: `u-${Date.now()}`, role: 'user', text };
+    setMessages((current) => [...current, user]);
+    setInput('');
+    setThinking(true);
+    let response = '';
+    if (selectedModel) {
+      try {
+        for await (const event of streamChat({
+          model: selectedModel,
+          messages: [
+            { role: 'system', content: `You are Dot, the concise Jarvis-style voice interface for an organization command center. The selected station is ${station.name}. Its purpose is: ${station.purpose}. Its current work is: ${station.current}. Answer clearly, state what you understood, and suggest the next operational action.` },
+            { role: 'user', content: text },
+          ],
+          stream: true,
+          temperature: 0.5,
+          max_tokens: 320,
+        })) {
+          try {
+            const data = JSON.parse(event.data);
+            const delta = data.choices?.[0]?.delta?.content;
+            if (delta) response += delta;
+          } catch { /* non-completion event */ }
+        }
+      } catch {
+        response = localResponse(text);
+      }
+    } else {
+      await new Promise((resolve) => window.setTimeout(resolve, 450));
+      response = localResponse(text);
+    }
+    const reply: VoiceMessage = { id: `d-${Date.now()}`, role: 'dot', text: response || localResponse(text) };
+    setMessages((current) => [...current, reply]);
+    setThinking(false);
+    void speakResponse(reply.id, reply.text);
+  };
+
+  const startBrowserSpeech = () => {
+    const host = window as typeof window & {
+      SpeechRecognition?: BrowserRecognitionConstructor;
+      webkitSpeechRecognition?: BrowserRecognitionConstructor;
+    };
+    const Constructor = host.SpeechRecognition ?? host.webkitSpeechRecognition;
+    if (!Constructor) {
+      inputRef.current?.focus();
+      return;
+    }
+    const recognition = new Constructor();
+    recognition.lang = 'en-AU';
+    recognition.interimResults = false;
+    recognition.continuous = false;
+    recognition.onresult = (event) => {
+      const transcript = event.results[0]?.[0]?.transcript ?? '';
+      if (transcript) void send(transcript);
+    };
+    recognition.onend = () => setBrowserListening(false);
+    recognition.onerror = () => setBrowserListening(false);
+    recognitionRef.current = recognition;
+    recognition.start();
+    setBrowserListening(true);
+  };
+
+  const handleOrb = async () => {
+    if (tts.isSpeaking) {
+      tts.stop();
+      window.speechSynthesis?.cancel();
+      return;
+    }
+    if (speech.available) {
+      if (speech.isRecording) {
+        try {
+          const transcript = await speech.stopRecording();
+          if (transcript) await send(transcript);
+        } catch { /* hook exposes the error */ }
+      } else if (!speech.isTranscribing) {
+        await speech.startRecording();
+      }
+      return;
+    }
+    if (browserListening) {
+      recognitionRef.current?.stop();
+      setBrowserListening(false);
+    } else {
+      startBrowserSpeech();
+    }
+  };
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    void send(input);
+  };
+
+  const stateLabel = speech.isTranscribing ? 'TRANSCRIBING' : listening ? 'LISTENING' : thinking ? 'THINKING' : tts.isSpeaking ? 'SPEAKING' : 'CLICK TO SPEAK';
+
+  return (
+    <aside className="dot-console" aria-label="Dot voice console">
+      <div className="console-kicker"><span>DOT // VOICE LINK</span><span className={active ? 'live' : ''}>{active ? 'ACTIVE' : 'STANDBY'}</span></div>
+      <button className="orb-trigger" onClick={() => void handleOrb()} aria-label={listening ? 'Stop listening' : 'Talk to Dot'}>
+        <OrbLoader size={180} speed={active ? 1.75 : 0.55} label={`Dot ${stateLabel.toLowerCase()}`} />
+        <span>{listening ? <MicOff size={13} /> : <Mic size={13} />}{stateLabel}</span>
+      </button>
+      <div className="voice-target"><span>ROUTING TO</span><strong>{station.name}</strong><small>{station.current}</small></div>
+      <div className="voice-feed" aria-live="polite">
+        {messages.slice(-4).map((message) => (
+          <div key={message.id} className={`voice-message ${message.role}`}>
+            <span>{message.role === 'dot' ? 'DOT' : 'YOU'}</span>
+            <p>{message.text}</p>
+          </div>
+        ))}
+        {thinking && <div className="voice-message dot"><span>DOT</span><p>Processing through OpenJarvis…</p></div>}
+      </div>
+      <form className="voice-compose" onSubmit={submit}>
+        <input ref={inputRef} value={input} onChange={(event) => setInput(event.target.value)} placeholder={`Command ${station.name} through Dot…`} />
+        <button type="submit" aria-label="Send to Dot" disabled={!input.trim() || thinking}><ArrowUp size={15} /></button>
+      </form>
+      <div className="voice-meta"><span><Volume2 size={11} /> JARVIS VOICE</span><span>{selectedModel || 'LOCAL PREVIEW'}</span></div>
+    </aside>
+  );
+}
+
+type OrganizationNode = Node<{ station: Station; onOpen: (id: string) => void }, 'organization'>;
+
+function OrganizationStation({ data }: NodeProps<OrganizationNode>) {
+  const station = data.station;
+  const isOwner = station.id === 'ceo';
+  const isBrain = station.id === 'brain';
+  return (
+    <button className={`org-node ${isOwner ? 'owner-node' : ''} ${isBrain ? 'brain-node' : ''}`} data-station={station.id} disabled={isOwner} onClick={(event) => { event.stopPropagation(); if (!isOwner) data.onOpen(station.id); }} aria-label={isOwner ? 'CEO and Director owner node' : `Open ${station.name} workstation`}>
+      {!isBrain && <Handle type="source" position={Position.Top} id="reports-out" />}
+      {!isBrain && <Handle type="source" position={Position.Bottom} id="brain-out" />}
+      {!isBrain && <Handle type="target" position={Position.Bottom} id="reports-in" />}
+      {isBrain && <Handle type="target" position={Position.Top} id="brain-in" />}
+      <div><span>{station.code}</span><i data-status={station.status} /></div>
+      <strong>{station.name}</strong>
+      <small>{station.current}</small>
+      <em>{isOwner ? 'ORGANIZATION OWNER' : isBrain ? 'SHARED BY EVERY AGENT' : `REPORTS TO ${station.reportsTo.toUpperCase()}`}</em>
+    </button>
+  );
+}
+
+const organizationNodeTypes = { organization: OrganizationStation };
+
+const ORGANIZATION_POSITIONS: Record<string, { x: number; y: number }> = {
+  ceo: { x: 480, y: 15 }, dot: { x: 480, y: 150 },
+  'general-manager': { x: 235, y: 300 }, 'operations-manager': { x: 725, y: 300 },
+  finance: { x: 20, y: 455 }, growth: { x: 205, y: 455 }, marketing: { x: 390, y: 455 },
+  research: { x: 650, y: 455 }, managers: { x: 835, y: 455 }, email: { x: 1020, y: 455 },
+  brain: { x: 480, y: 625 },
+  'system-builder': { x: 1205, y: 455 },
+};
+
+const REPORTING_LINKS = [
+  ['dot', 'ceo'], ['general-manager', 'dot'], ['operations-manager', 'dot'],
+  ['finance', 'general-manager'], ['growth', 'general-manager'], ['marketing', 'general-manager'],
+  ['research', 'operations-manager'], ['managers', 'operations-manager'], ['email', 'operations-manager'],
+  ['system-builder', 'operations-manager'],
+] as const;
+
+function OrganizationOverview({ stations, onOpen }: { stations: Station[]; onOpen: (id: string) => void }) {
+  const organizationStations = useMemo(() => [{ id: 'ceo', code: 'CEO', name: 'You — CEO / Director', purpose: 'Organization owner', current: 'Direction, final approval, and accountability', reportsTo: 'No one', status: 'working' as const }, ...stations], [stations]);
+  const nodes = useMemo<OrganizationNode[]>(() => organizationStations.map((station, index) => ({
+    id: station.id,
+    type: 'organization',
+    position: ORGANIZATION_POSITIONS[station.id] ?? { x: 25 + (index % 5) * 185, y: 520 + Math.floor(index / 5) * 150 },
+    data: { station, onOpen },
+    ariaLabel: `${station.name}. Reports to ${station.reportsTo}. ${station.current}`,
+  })), [organizationStations, onOpen]);
+  const existing = new Set(organizationStations.map((station) => station.id));
+  const dynamicStations = stations.filter((station) => !ORGANIZATION_POSITIONS[station.id]);
+  const dynamicLinks = dynamicStations.map((station) => [station.id, 'operations-manager'] as const);
+  const reportingEdges: Edge[] = [...REPORTING_LINKS, ...dynamicLinks]
+    .filter(([source, target]) => existing.has(source) && existing.has(target))
+    .map(([source, target]) => ({
+      id: `org-${source}-${target}`,
+      source,
+      target,
+      sourceHandle: 'reports-out',
+      targetHandle: 'reports-in',
+      type: 'smoothstep',
+      animated: source === 'dot',
+      markerEnd: { type: MarkerType.ArrowClosed, color: '#d6ad52', width: 14, height: 14 },
+      style: { stroke: '#a77c2e', strokeWidth: 1.5 },
+    }));
+  const brainEdges: Edge[] = stations.filter((station) => station.id !== 'brain').map((station) => ({ id: `brain-${station.id}`, source: station.id, target: 'brain', sourceHandle: 'brain-out', targetHandle: 'brain-in', type: 'straight', animated: false, style: { stroke: '#8a7650', strokeWidth: 1.2, strokeDasharray: '5 7', opacity: .8 } }));
+  const edges = [...reportingEdges, ...brainEdges];
+
+  return (
+    <main className="overview-page">
+      <div className="view-heading"><div><span>ORGANIZATION OVERVIEW</span><h2>Chain of command + shared communication</h2><p>Solid arrows report upward to you. Dashed lines connect every agent to the same Shared Brain.</p></div><div className="overview-legend"><span><i data-kind="reporting" /> REPORTING</span><span><i data-kind="brain" /> SHARED BRAIN</span><span>CLICK A STATION TO OPEN</span></div></div>
+      <section className="organization-map" aria-label="Organization connection overview">
+        <ReactFlow<OrganizationNode> nodes={nodes} edges={edges} nodeTypes={organizationNodeTypes} onNodeClick={(_, node) => onOpen(node.id)} fitView fitViewOptions={{ padding: 0.12, maxZoom: 1 }} minZoom={0.45} maxZoom={1.35} nodesDraggable={false} nodesConnectable={false} zoomOnDoubleClick={false}>
+          <Background color="#211a0c" gap={24} size={1} />
+        </ReactFlow>
+      </section>
+      <div className="overview-summary">
+        <div><span>EXECUTIVE CHAIN</span><strong>Teams → Management → Dot → You</strong><small>Formal accountability remains separate from shared communication.</small></div>
+        <div><span>YOUR ASSISTANT</span><strong>Dot → CEO / Director</strong><small>Dot is your personal agent, command link, and consolidated briefing layer.</small></div>
+        <div><span>SHARED COMMUNICATION</span><strong>Every agent ↔ Shared Brain</strong><small>Common context, ownership tracking, and duplicate-work prevention.</small></div>
+      </div>
+    </main>
+  );
+}
+
+const LOAD: Record<string, number> = { brain: 82, dot: 76, marketing: 68, research: 54, managers: 43, email: 61, finance: 72, growth: 64, 'general-manager': 58, 'operations-manager': 71 };
+
+function BasicDashboard({ stations, onOpen }: { stations: Station[]; onOpen: (id: string) => void }) {
+  const working = stations.filter((station) => station.status === 'working').length;
+  const review = stations.filter((station) => station.status === 'review');
+  const averageLoad = Math.round(stations.reduce((total, station) => total + (LOAD[station.id] ?? 20), 0) / stations.length);
+  return (
+    <main className="dashboard-page">
+      <div className="view-heading"><div><span>BASIC DASHBOARD</span><h2>Organization operating picture</h2><p>A concise view of current work, exceptions, capacity, and reporting health.</p></div><button onClick={() => onOpen('dot')}>OPEN DOT COMMAND LINK</button></div>
+      <section className="metric-grid">
+        <div><span>SYSTEM HEALTH</span><strong>98.4<small>%</small></strong><em>ALL CORE SERVICES NOMINAL</em></div>
+        <div><span>ACTIVE STATIONS</span><strong>{working}<small>/{stations.length}</small></strong><em>{review.length} WAITING FOR REVIEW</em></div>
+        <div><span>TASKS COMPLETED</span><strong>284</strong><em>+18 SINCE 09:00</em></div>
+        <div><span>AVERAGE LOAD</span><strong>{averageLoad}<small>%</small></strong><em>WITHIN OPERATING RANGE</em></div>
+      </section>
+      <section className="dashboard-grid">
+        <div className="dashboard-panel workload-panel">
+          <header><div><span>LIVE WORKLOAD</span><strong>Stations by active capacity</strong></div><em>UPDATED NOW</em></header>
+          <div className="workload-list">{stations.map((station) => {
+            const load = LOAD[station.id] ?? 20;
+            return <button key={station.id} onClick={() => onOpen(station.id)}><span>{station.code}</span><div><strong>{station.name}</strong><small>{station.current}</small><i><b style={{ width: `${load}%` }} /></i></div><em>{load}%</em></button>;
+          })}</div>
+        </div>
+        <div className="dashboard-side">
+          <section className="dashboard-panel approval-panel">
+            <header><div><span>NEEDS ATTENTION</span><strong>Approval queue</strong></div><em>{review.length + 1} ITEMS</em></header>
+            <button onClick={() => onOpen('managers')}><span>MGR</span><div><strong>Campaign approval</strong><small>Managers · confidence below 85%</small></div><em>HIGH</em></button>
+            <button onClick={() => onOpen('general-manager')}><span>GM</span><div><strong>Growth investment decision</strong><small>General Manager · financial impact</small></div><em>REVIEW</em></button>
+            <button onClick={() => onOpen('finance')}><span>FIN</span><div><strong>Budget variance</strong><small>Finance · software spend +6%</small></div><em>MED</em></button>
+          </section>
+          <section className="dashboard-panel priority-panel">
+            <header><div><span>TOP PRIORITIES</span><strong>Current operating focus</strong></div><em>THIS WEEK</em></header>
+            <ol><li><b>01</b><span>Complete growth brief and campaign review</span></li><li><b>02</b><span>Resolve delivery blockers across teams</span></li><li><b>03</b><span>Qualify and route the newest inbound leads</span></li></ol>
+          </section>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+export function CommandCenterPage() {
+  const [view, setView] = useState<'overview' | 'workstations' | 'workspace' | 'dashboard'>('overview');
+  const [stations, setStations] = useState(INITIAL_STATIONS);
+  const [selectedId, setSelectedId] = useState('brain');
+  const [graphs, setGraphs] = useState<Record<string, WorkflowGraph>>(() => Object.fromEntries(INITIAL_STATIONS.map((station) => [station.id, makeGraph(station)])));
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [dashboardWidgetIds, setDashboardWidgetIds] = useState(DEFAULT_WIDGET_IDS);
+  const selected = stations.find((station) => station.id === selectedId) ?? stations[0];
+  const apps = useMemo(() => STACKS[selected.id] ?? FALLBACK_STACK, [selected.id]);
+  const stationWidgets = DASHBOARD_WIDGETS.filter((widget) => widget.stationId === selected.id);
+
+  const openStation = (id: string) => {
+    setSelectedId(id);
+    setView('workstations');
+  };
+
+  const addStation = (event: FormEvent) => {
+    event.preventDefault();
+    const name = newName.trim();
+    if (!name) return;
+    const id = `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${Date.now()}`;
+    const station: Station = { id, code: name.slice(0, 3).toUpperCase(), name, purpose: 'A configurable specialist workstation connected to Shared Brain.', current: 'Waiting for its first objective', reportsTo: 'Operations Manager', status: 'ready' };
+    setStations((current) => [...current, station]);
+    setGraphs((current) => ({ ...current, [id]: makeGraph(station) }));
+    setSelectedId(id);
+    setNewName('');
+    setAdding(false);
+  };
+
+  return (
+    <div className="jarvis-command">
+      <header className="command-header">
+        <div><span className="command-eyebrow">OPENJARVIS // ORGANIZATION CONTROL</span><h1>COMMAND CENTER</h1></div>
+        <nav className="command-view-nav" aria-label="Command center views">
+          <button className={view === 'overview' ? 'active' : ''} onClick={() => setView('overview')}>OVERVIEW</button>
+          <button className={view === 'workstations' ? 'active' : ''} onClick={() => setView('workstations')}>WORKSTATIONS</button>
+          <button className={view === 'workspace' ? 'active' : ''} onClick={() => setView('workspace')}>WORKSPACE</button>
+          <button className={view === 'dashboard' ? 'active' : ''} onClick={() => setView('dashboard')}>DASHBOARD</button>
+        </nav>
+        <div className="header-telemetry"><span><i /> SYSTEM ONLINE</span><span>{stations.length} STATIONS</span><span>LOCAL FIRST</span></div>
+      </header>
+      {view === 'overview' ? <OrganizationOverview stations={stations} onOpen={openStation} /> : view === 'workspace' ? <SoftwareEngineeringWorkspace /> : view === 'dashboard' ? <CustomDashboard widgetIds={dashboardWidgetIds} setWidgetIds={setDashboardWidgetIds} onOpenStation={openStation} /> : <div className="command-grid">
+        <aside className="station-rail">
+          <div className="rail-head"><div><span>WORKSTATIONS</span><strong>{stations.length} ACTIVE</strong></div><button onClick={() => setAdding((value) => !value)} aria-label="Add workstation"><Plus size={15} /></button></div>
+          {adding && <form className="station-add" onSubmit={addStation}><input autoFocus value={newName} onChange={(event) => setNewName(event.target.value)} placeholder="Station name" /><button type="submit">ADD</button></form>}
+          <div className="station-list">
+            {stations.map((station) => (
+              <button key={station.id} className={station.id === selected.id ? 'selected' : ''} onClick={() => setSelectedId(station.id)}>
+                <span className="station-code">{station.code}</span>
+                <span className="station-copy"><strong>{station.name}</strong><small>{station.current}</small></span>
+                <i data-status={station.status} />
+              </button>
+            ))}
+          </div>
+          <div className="rail-foot"><Activity size={13} /><span>LIVE WORK FEED</span><b>284</b></div>
+        </aside>
+
+        {selected.id === 'brain' ? <section className="workflow-stage brain-stage"><SharedBrainPanel /></section> : <main className="workflow-stage">
+          <div className="station-header">
+            <div><span>{selected.code} // SELECTED STATION</span><h2>{selected.name}</h2><p>{selected.purpose}</p></div>
+            <div className="station-now"><span>CURRENT WORK</span><strong>{selected.current}</strong><small>Reports to {selected.reportsTo}</small></div>
+          </div>
+          <section className="station-widget-options">
+            <div><span>DASHBOARD WIDGETS</span><strong>{stationWidgets.length ? `${stationWidgets.length} AVAILABLE FROM ${selected.name.toUpperCase()}` : 'NO WIDGETS REGISTERED'}</strong></div>
+            <div>{stationWidgets.map((widget) => {
+              const added = dashboardWidgetIds.includes(widget.id);
+              return <button key={widget.id} className={added ? 'added' : ''} onClick={() => setDashboardWidgetIds(added ? dashboardWidgetIds.filter((id) => id !== widget.id) : [...dashboardWidgetIds, widget.id])}>{added ? 'REMOVE' : '+ ADD'} {widget.name.toUpperCase()}</button>;
+            })}</div>
+          </section>
+          {selected.id === 'marketing' && <SocialContentStudio />}
+          {selected.id === 'system-builder' && <SystemBuilderLab />}
+          <WorkflowBlueprint
+            key={selected.id}
+            className="gold-blueprint"
+            title={`${selected.name} connection map`}
+            initialGraph={graphs[selected.id] ?? makeGraph(selected)}
+            apps={apps}
+            agentTemplate={{ label: `New ${selected.name} agent`, detail: `Add a specialist inside ${selected.name}.`, kind: 'agent', tool: 'OpenJarvis agent' }}
+            onChange={(graph) => setGraphs((current) => ({ ...current, [selected.id]: graph }))}
+          />
+        </main>}
+
+        <DotVoice station={selected} />
+      </div>}
+      <footer className="command-footer"><span><Square size={7} fill="currentColor" /> BLACK OAK OPERATING SYSTEM</span><span>DOT VOICE ROUTER // OPENJARVIS RUNTIME</span><button><Settings2 size={12} /> CONTROL POLICY: RISK-BASED</button></footer>
+    </div>
+  );
+}
