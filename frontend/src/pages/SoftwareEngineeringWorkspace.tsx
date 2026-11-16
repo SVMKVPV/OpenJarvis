@@ -21,8 +21,8 @@ import {
   type WorkflowRunDetail,
   type WorkflowRunAction,
 } from '../lib/api';
-import { listConnectors } from '../lib/connectors-api';
-import type { ConnectorInfo } from '../types/connectors';
+import { getSyncStatus, listConnectors } from '../lib/connectors-api';
+import type { ConnectorInfo, SyncStatus } from '../types/connectors';
 import './software-workspace.css';
 
 type Connector = { id: string; code: string; provider: string; product: string; role: string; model: string; status: 'setup' | 'local'; enabled: boolean; contributions: number };
@@ -107,6 +107,12 @@ export function SoftwareEngineeringWorkspace() {
   const [runtimePlugins, setRuntimePlugins] = useState<RuntimePlugin[]>([]);
   const [liveConnectors, setLiveConnectors] = useState<ConnectorInfo[] | null>(null);
   const [pluginCatalogState, setPluginCatalogState] = useState<'loading' | 'online' | 'offline'>('loading');
+  const [pluginRefresh, setPluginRefresh] = useState(0);
+  const [syncConnectorId, setSyncConnectorId] = useState('');
+  const [connectorSync, setConnectorSync] = useState<SyncStatus | 'unavailable' | null>(null);
+  const syncConnectorConfigured = liveConnectors?.some(
+    (source) => source.connector_id === syncConnectorId && source.connected,
+  ) ?? false;
   const [workflowRuns, setWorkflowRuns] = useState<WorkflowRunSummary[]>([]);
   const [inspectedRunId, setInspectedRunId] = useState('');
   const [runDetail, setRunDetail] = useState<WorkflowRunDetail | null>(null);
@@ -387,7 +393,7 @@ export function SoftwareEngineeringWorkspace() {
         if (!cancelled) setLiveConnectors(null);
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [pluginRefresh]);
 
   useEffect(() => {
     let cancelled = false;
@@ -401,7 +407,18 @@ export function SoftwareEngineeringWorkspace() {
         if (!cancelled) setPluginCatalogState('offline');
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [pluginRefresh]);
+
+  useEffect(() => {
+    if (!syncConnectorConfigured) return;
+    let active = true;
+    getSyncStatus(syncConnectorId).then((status) => {
+      if (active) setConnectorSync(status);
+    }).catch(() => {
+      if (active) setConnectorSync('unavailable');
+    });
+    return () => { active = false; };
+  }, [syncConnectorId, syncConnectorConfigured, pluginRefresh]);
 
   useEffect(() => {
     let cancelled = false;
@@ -503,15 +520,49 @@ export function SoftwareEngineeringWorkspace() {
           <header><div><span>BUSINESS PLUGINS</span><strong>OPENJARVIS RUNTIME</strong></div><em data-state={pluginCatalogState}>{pluginCatalogState.toUpperCase()}</em></header>
           {pluginCatalogState === 'online' ? <>
             <div className="plugin-counts">{(['connector', 'channel', 'tool', 'agent', 'engine'] as const).map((kind) => <div key={kind}><strong>{pluginCounts[kind] ?? 0}</strong><span>{kind.toUpperCase()}S</span></div>)}</div>
-            <div className="plugin-sample">
-              {runtimePlugins.filter((plugin) => plugin.kind === 'connector').slice(0, 8).map((plugin) => {
-                const source = liveConnectors?.find((item) => item.connector_id === plugin.id);
-                const status = !plugin.enabled ? 'REVIEW' : source?.connected
-                  ? 'CONNECTED' : source ? 'DISCONNECTED' : 'UNVERIFIED';
-                return <span key={plugin.id}>{plugin.name}<i>{status}</i></span>;
-              })}
-            </div>
+            <details>
+              <summary>Connector status</summary>
+              <div className="plugin-sample">
+                {runtimePlugins.filter((plugin) => plugin.kind === 'connector').map((plugin) => {
+                  const source = liveConnectors?.find((item) => item.connector_id === plugin.id);
+                  const status = !plugin.enabled ? 'REVIEW' : source?.connected
+                    ? 'CONFIGURED' : source ? 'DISCONNECTED' : 'UNVERIFIED';
+                  return <span key={plugin.id}>{plugin.name}<i>{status}</i></span>;
+                })}
+              </div>
+              <label>Connector sync history
+                <select value={syncConnectorConfigured ? syncConnectorId : ''} onChange={(event) => {
+                  setConnectorSync(null);
+                  setSyncConnectorId(event.target.value);
+                }}>
+                  <option value="">Choose a configured connector</option>
+                  {liveConnectors?.filter((source) => source.connected).map((source) => (
+                    <option key={source.connector_id} value={source.connector_id}>
+                      {source.display_name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {syncConnectorConfigured && (
+                <p role="status">
+                  {connectorSync === 'unavailable' ? 'Sync history unavailable.' : connectorSync
+                    ? `Sync status: ${connectorSync.state}. ${connectorSync.last_sync
+                      ? `Last recorded sync: ${new Date(connectorSync.last_sync).toLocaleString()}.`
+                      : 'No sync recorded.'}`
+                    : 'Loading sync history…'}
+                </p>
+              )}
+            </details>
           </> : <p>{pluginCatalogState === 'loading' ? 'READING LOCAL PLUGIN CATALOG…' : 'START LOCAL AI OR CONNECT A BACKEND TO LOAD OPERATIONAL PLUGINS.'}</p>}
+          <button type="button" className="workflow-launch" disabled={pluginCatalogState === 'loading'}
+            onClick={() => {
+              setPluginCatalogState('loading');
+              setLiveConnectors(null);
+              setConnectorSync(null);
+              setPluginRefresh((version) => version + 1);
+            }}>
+            Refresh plugins
+          </button>
           <p><Link to="/data-sources">Manage data source connections ↗</Link></p>
         </section>
         <section className="workflow-runtime">
