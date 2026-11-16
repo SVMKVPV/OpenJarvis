@@ -391,13 +391,22 @@ class WorkflowEngine:
                 context=node.agent != "none",
                 **({"system_prompt": instruction} if instruction else {}),
             )
-            failed = bool(result.get("error"))
+            error = result.get("error")
+            content = result.get("content") or ""
+            if error:
+                detail = error if isinstance(error, str) else "Model execution failed."
+                return WorkflowStepResult(
+                    node_id=node.id, success=False, output=content.strip() or detail
+                )
+            if node.agent == "none" and not content.strip():
+                return WorkflowStepResult(
+                    node_id=node.id,
+                    success=False,
+                    output="The model returned an empty response.",
+                )
             return WorkflowStepResult(
                 node_id=node.id,
-                success=not failed,
-                output=result.get("content") or (
-                    "Model execution failed." if failed else ""
-                ),
+                output=content,
             )
         except Exception as exc:
             return WorkflowStepResult(

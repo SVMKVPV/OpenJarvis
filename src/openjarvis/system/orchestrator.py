@@ -95,6 +95,7 @@ class QueryOrchestrator:
             "usage": result.get("usage", {}),
             "model": s.model,
             "engine": s.engine_key,
+            **({"error": result["error"]} if result.get("error") else {}),
         }
 
     def _detect_agent_intent(self, query: str) -> Optional[str]:

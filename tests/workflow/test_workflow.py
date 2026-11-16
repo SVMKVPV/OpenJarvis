@@ -269,6 +269,37 @@ class TestWorkflowEngine:
             (Role.USER, "Example record"),
         ]
 
+    @pytest.mark.parametrize(
+        ("model_result", "expected"),
+        [
+            ({"content": "  "}, "The model returned an empty response."),
+            ({"content": "Backend unavailable", "error": True}, "Backend unavailable"),
+            ({"error": "Engine connection closed"}, "Engine connection closed"),
+        ],
+    )
+    def test_failed_model_output_does_not_reach_approval(self, model_result, expected):
+        from openjarvis.core.config import JarvisConfig
+        from openjarvis.system.core import JarvisSystem
+
+        graph = (
+            WorkflowBuilder("model review")
+            .add_agent("model", agent="none")
+            .add_approval(
+                "review", action_type="review", description="Review model output"
+            )
+            .connect("model", "review")
+            .build()
+        )
+        engine = Mock()
+        engine.generate.return_value = model_result
+        system = JarvisSystem(JarvisConfig(), EventBus(), engine, "test", "test")
+
+        result = WorkflowEngine().run(graph, system, initial_input="Example record")
+
+        assert result.status == "failed"
+        assert result.final_output == expected
+        assert [step.node_id for step in result.steps] == ["model"]
+
     def test_loop_without_backend_reports_no_iterations(self):
         graph = WorkflowBuilder("review").add_loop("review").build()
         result = WorkflowEngine().run(graph)
