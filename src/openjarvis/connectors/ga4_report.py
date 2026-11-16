@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 from pathlib import Path
 
 import httpx
@@ -14,9 +15,11 @@ from openjarvis.connectors.google_auth import (
     call_with_refresh,
     current_access_token,
 )
-from openjarvis.connectors.oauth import save_tokens
+from openjarvis.connectors.oauth import delete_tokens, save_tokens
 from openjarvis.core.paths import get_config_dir
 from openjarvis.security.file_utils import secure_write_json
+
+_credential_lock = threading.Lock()
 
 
 def _run_views_report(token: str, property_id: str) -> dict:
@@ -110,35 +113,41 @@ def authorize_ga4(client_file: Path) -> None:
     })
 
 
+def remove_ga4_authorization() -> None:
+    with _credential_lock:
+        delete_tokens(ga4_credentials_path())
+
+
 def ga4_views() -> dict:
     property_id = ga4_settings()["property_id"]
     if not property_id:
         return {"status": "unconfigured", "views": None}
     if not re.fullmatch(r"[0-9]{1,30}", property_id):
         return {"status": "invalid_property", "views": None}
-    credentials = ga4_credentials_path()
-    try:
-        token = current_access_token(credentials)
-    except (AttributeError, UnicodeError):
-        token = ""
-    if not isinstance(token, str) or not token:
-        return {"status": "authorization_required", "views": None}
-
-    try:
-        report = call_with_refresh(_run_views_report, credentials, property_id)
-        headers = report["metricHeaders"]
-        if headers[0]["name"] != "screenPageViews":
-            raise ValueError("Unexpected GA4 metric")
-        rows = report.get("rows", [])
-        views = int(rows[0]["metricValues"][0]["value"]) if rows else 0
-        if views < 0:
-            raise ValueError("Invalid GA4 views count")
-    except GoogleAuthError:
-        return {"status": "authorization_required", "views": None}
-    except httpx.HTTPStatusError as exc:
-        if exc.response.status_code in {401, 403}:
+    with _credential_lock:
+        credentials = ga4_credentials_path()
+        try:
+            token = current_access_token(credentials)
+        except (AttributeError, UnicodeError):
+            token = ""
+        if not isinstance(token, str) or not token:
             return {"status": "authorization_required", "views": None}
-        return {"status": "unavailable", "views": None}
-    except (httpx.RequestError, KeyError, IndexError, TypeError, ValueError):
-        return {"status": "unavailable", "views": None}
-    return {"status": "live", "views": views}
+
+        try:
+            report = call_with_refresh(_run_views_report, credentials, property_id)
+            headers = report["metricHeaders"]
+            if headers[0]["name"] != "screenPageViews":
+                raise ValueError("Unexpected GA4 metric")
+            rows = report.get("rows", [])
+            views = int(rows[0]["metricValues"][0]["value"]) if rows else 0
+            if views < 0:
+                raise ValueError("Invalid GA4 views count")
+        except GoogleAuthError:
+            return {"status": "authorization_required", "views": None}
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in {401, 403}:
+                return {"status": "authorization_required", "views": None}
+            return {"status": "unavailable", "views": None}
+        except (httpx.RequestError, KeyError, IndexError, TypeError, ValueError):
+            return {"status": "unavailable", "views": None}
+        return {"status": "live", "views": views}

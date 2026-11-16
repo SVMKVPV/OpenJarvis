@@ -44,6 +44,15 @@ def test_ga4_dashboard_reads_views_only_after_configuration(tmp_path, monkeypatc
         response = client.get(route)
         assert response.headers["Cache-Control"] == "no-store"
         assert response.json() == {"status": "live", "views": 319}
+        shared_credentials = credentials.parent / "google.json"
+        shared_credentials.write_text('{"access_token":"shared-fixture"}')
+        removed = "/v1/dashboard/ga4-authorization"
+        assert client.delete(removed).status_code == 204
+        assert client.delete(removed).status_code == 204
+        assert not credentials.exists()
+        assert shared_credentials.read_text() == '{"access_token":"shared-fixture"}'
+        assert client.get(route).json()["status"] == "authorization_required"
+        assert len(calls) == 1
     url, options = calls[0]
     assert url == (
         "https://analyticsdata.googleapis.com/v1beta/properties/123456789:runReport"

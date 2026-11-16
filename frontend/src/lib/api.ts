@@ -1331,6 +1331,11 @@ export async function saveGa4Property(propertyId: string): Promise<Ga4PropertySe
   return response.json();
 }
 
+export async function removeGa4Authorization(): Promise<void> {
+  const response = await apiFetch('/v1/dashboard/ga4-authorization', { method: 'DELETE' });
+  if (!response.ok) throw new Error('Could not remove saved GA4 authorization.');
+}
+
 export type Ga4Views = {
   status: 'unconfigured' | 'invalid_property' | 'authorization_required' | 'unavailable' | 'live';
   views: number | null;

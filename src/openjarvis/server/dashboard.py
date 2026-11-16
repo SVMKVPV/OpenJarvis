@@ -469,6 +469,17 @@ def update_google_analytics_settings(payload: Ga4PropertySettings) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@dashboard_router.delete("/v1/dashboard/ga4-authorization", status_code=204)
+def delete_google_analytics_authorization() -> Response:
+    from openjarvis.connectors.ga4_report import remove_ga4_authorization
+
+    try:
+        remove_ga4_authorization()
+    except OSError as exc:
+        raise HTTPException(500, "Could not remove saved GA4 authorization") from exc
+    return Response(status_code=204)
+
+
 @dashboard_router.get("/v1/dashboard/ga4-views")
 def google_analytics_views(response: Response) -> dict:
     from openjarvis.connectors.ga4_report import ga4_views
