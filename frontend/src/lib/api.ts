@@ -1200,6 +1200,48 @@ export async function denyAction(actionId: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Durable workflows
+// ---------------------------------------------------------------------------
+
+export type WorkflowRunStatus = 'queued' | 'running' | 'waiting_approval' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
+
+export interface WorkflowRunSummary {
+  id: string;
+  workflow_name: string;
+  status: WorkflowRunStatus;
+  final_output: string;
+  error: string;
+  created_at: number;
+  started_at: number | null;
+  finished_at: number | null;
+}
+
+export interface WorkflowRunInput {
+  name: string;
+  nodes: Array<Record<string, unknown>>;
+  edges?: Array<Record<string, unknown>>;
+  initial_input?: string;
+  context?: Record<string, unknown>;
+}
+
+export async function fetchWorkflowRuns(): Promise<WorkflowRunSummary[]> {
+  const res = await apiFetch('/v1/workflows/runs?limit=8');
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  const data = await res.json();
+  return data.runs || [];
+}
+
+export async function startWorkflowRun(input: WorkflowRunInput): Promise<WorkflowRunSummary> {
+  const res = await apiFetch('/v1/workflows/runs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
 // Inference source (desktop only)
 // ---------------------------------------------------------------------------
 

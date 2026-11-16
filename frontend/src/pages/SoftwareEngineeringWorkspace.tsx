@@ -1,6 +1,15 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Check, ChevronRight, Folder, FolderPlus, Monitor, Plus, Settings2 } from 'lucide-react';
-import { fetchRuntimePlugins, type RuntimePlugin } from '../lib/api';
+import {
+  approveAction,
+  fetchPendingApprovals,
+  fetchRuntimePlugins,
+  fetchWorkflowRuns,
+  startWorkflowRun,
+  type PendingApproval,
+  type RuntimePlugin,
+  type WorkflowRunSummary,
+} from '../lib/api';
 import './software-workspace.css';
 
 type Connector = { id: string; code: string; provider: string; product: string; role: string; model: string; status: 'setup' | 'local'; enabled: boolean; contributions: number };
@@ -38,6 +47,9 @@ export function SoftwareEngineeringWorkspace() {
   const [warning, setWarning] = useState('');
   const [runtimePlugins, setRuntimePlugins] = useState<RuntimePlugin[]>([]);
   const [pluginCatalogState, setPluginCatalogState] = useState<'loading' | 'online' | 'offline'>('loading');
+  const [workflowRuns, setWorkflowRuns] = useState<WorkflowRunSummary[]>([]);
+  const [workflowApprovals, setWorkflowApprovals] = useState<PendingApproval[]>([]);
+  const [workflowState, setWorkflowState] = useState<'online' | 'offline' | 'starting'>('offline');
   const [proposals, setProposals] = useState<Proposal[]>([
     { id: 'p-1', connector: 'OpenAI / ChatGPT', text: 'Prepared the command-center component boundary and preserved existing voice routing.', approved: false },
   ]);
@@ -57,6 +69,51 @@ export function SoftwareEngineeringWorkspace() {
       });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const [runs, approvals] = await Promise.all([fetchWorkflowRuns(), fetchPendingApprovals()]);
+        if (!cancelled) {
+          setWorkflowRuns(runs);
+          setWorkflowApprovals(approvals.filter((item) => typeof item.payload.workflow_run_id === 'string'));
+          setWorkflowState('online');
+        }
+      } catch {
+        if (!cancelled) setWorkflowState('offline');
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(refresh, 2500);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, []);
+
+  const launchGuardedWorkflow = async () => {
+    setWorkflowState('starting');
+    try {
+      await startWorkflowRun({
+        name: 'CEO guarded delivery',
+        initial_input: 'Prepare a reviewed command-center delivery',
+        nodes: [
+          { id: 'prepare', type: 'transform', transform_expr: 'concatenate' },
+          { id: 'approval', type: 'approval', config: { action_type: 'release', description: 'Approve the prepared delivery before release', tier: 'high', permission_key: 'workflow:release' } },
+          { id: 'release', type: 'transform', transform_expr: 'concatenate' },
+        ],
+        edges: [{ source: 'prepare', target: 'approval' }, { source: 'approval', target: 'release' }],
+        context: { owner: 'CEO Director', station: 'System Builder' },
+      });
+      setWorkflowRuns(await fetchWorkflowRuns());
+      setWorkflowState('online');
+    } catch {
+      setWorkflowState('offline');
+    }
+  };
+
+  const approveWorkflow = async (approval: PendingApproval) => {
+    await approveAction(approval.id);
+    setWorkflowApprovals((items) => items.filter((item) => item.id !== approval.id));
+  };
 
   const pluginCounts = useMemo(() => runtimePlugins.reduce<Record<string, number>>((counts, plugin) => {
     counts[plugin.kind] = (counts[plugin.kind] ?? 0) + 1;
@@ -110,6 +167,13 @@ export function SoftwareEngineeringWorkspace() {
             <div className="plugin-counts">{(['connector', 'channel', 'tool', 'agent', 'engine'] as const).map((kind) => <div key={kind}><strong>{pluginCounts[kind] ?? 0}</strong><span>{kind.toUpperCase()}S</span></div>)}</div>
             <div className="plugin-sample">{runtimePlugins.filter((plugin) => plugin.kind === 'connector').slice(0, 8).map((plugin) => <span key={plugin.id}>{plugin.name}<i>{plugin.enabled ? 'READY' : 'REVIEW'}</i></span>)}</div>
           </> : <p>{pluginCatalogState === 'loading' ? 'READING LOCAL PLUGIN CATALOG…' : 'START LOCAL AI OR CONNECT A BACKEND TO LOAD OPERATIONAL PLUGINS.'}</p>}
+        </section>
+        <section className="workflow-runtime">
+          <header><div><span>WORKFLOW RUNTIME</span><strong>DURABLE EXECUTION LEDGER</strong></div><em data-state={workflowState}>{workflowState.toUpperCase()}</em></header>
+          <button className="workflow-launch" onClick={launchGuardedWorkflow} disabled={workflowState === 'starting'}>{workflowState === 'starting' ? 'STARTING…' : '+ RUN GUARDED DELIVERY'}</button>
+          {workflowApprovals.slice(0, 2).map((approval) => <article className="workflow-approval" key={approval.id}><div><b>CEO APPROVAL REQUIRED</b><span>{approval.description}</span></div><button onClick={() => void approveWorkflow(approval)}>APPROVE</button></article>)}
+          <div className="workflow-runs">{workflowRuns.slice(0, 5).map((run) => <article key={run.id}><div><strong>{run.workflow_name}</strong><small>{run.id.slice(0, 8)} · {new Date(run.created_at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small></div><em data-status={run.status}>{run.status.replace('_', ' ').toUpperCase()}</em></article>)}</div>
+          {!workflowRuns.length && <p>NO WORKFLOW RUNS RECORDED. START A GUARDED DELIVERY TO TEST THE LIVE APPROVAL PATH.</p>}
         </section>
         <section className="environment-preview"><header><div><span>ENVIRONMENT</span><strong>VIEW SURFACE</strong></div><Monitor size={13}/></header><div className="environment-tabs"><button className={environment === 'desktop' ? 'active' : ''} onClick={() => setEnvironment('desktop')}>DESKTOP</button><button className={environment === 'chrome' ? 'active' : ''} onClick={() => setEnvironment('chrome')}>CHROME</button></div>{environment === 'desktop' ? <div className="desktop-frame"><div className="desktop-top">SOFTWARE ENGINEERING DESKTOP</div><div className="desktop-windows"><span>CODE</span><span>TERMINAL</span><span>PREVIEW</span></div><p>DESKTOP CONTROL NOT CONNECTED</p></div> : <div className="chrome-frame"><div><i/><i/><i/><span>localhost / command-center</span></div><strong>OPENJARVIS PREVIEW</strong><p>BROWSER CONTROL NOT CONNECTED</p></div>}</section>
       </aside>
