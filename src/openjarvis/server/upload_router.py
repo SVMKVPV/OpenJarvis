@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
+import json
 import logging
 import uuid
 from typing import List, Optional
@@ -236,11 +238,19 @@ def _file_chunks(ext: str, data: bytes) -> list[str]:
 def _index_file_batch(
     documents: list[tuple[str, str, list[str]]], *, source_url: str = ""
 ) -> IngestResponse:
-    reference = f"upload:{uuid.uuid4().hex}"
+    if source_url:
+        # Gmail imports are retriable. Every unchanged batch uses the same
+        # chunk keys, while changed evidence gets a new immutable reference.
+        documents = sorted(documents)
+        encoded = json.dumps([source_url, documents], separators=(",", ":")).encode()
+        batch_id = hashlib.sha256(encoded).hexdigest()[:32]
+    else:
+        batch_id = uuid.uuid4().hex
+    reference = f"upload:{batch_id}"
     total_chunks = 0
     with _get_store() as store:
-        for filename, doc_type, chunks in documents:
-            doc_id = str(uuid.uuid4())
+        for index, (filename, doc_type, chunks) in enumerate(documents):
+            doc_id = f"{reference}:{index}" if source_url else str(uuid.uuid4())
             for idx, chunk in enumerate(chunks):
                 store.store(
                     chunk,

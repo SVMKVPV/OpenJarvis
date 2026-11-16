@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -26,6 +27,8 @@ def test_import_attachments_from_the_selected_gmail_message(tmp_path, monkeypatc
             source_id="abc123", doc_id="gmail:abc123", doc_type="email",
         )
 
+    invoice_content = b"Invoice M-42, total AUD 132.00"
+
     def provider(operation, credentials, message_id, *args):
         assert message_id == "abc123"
         if operation is gmail._gmail_api_get_message:
@@ -34,7 +37,7 @@ def test_import_attachments_from_the_selected_gmail_message(tmp_path, monkeypatc
                 "body": {"attachmentId": "invoice-id", "size": 32},
             }]}}
         assert operation is gmail._gmail_api_get_attachment and args == ("invoice-id",)
-        return base64.urlsafe_b64encode(b"Invoice M-42, total AUD 132.00").decode()
+        return base64.urlsafe_b64encode(invoice_content).decode()
 
     monkeypatch.setattr(gmail, "_call_with_refresh", provider)
     app = FastAPI()
@@ -42,14 +45,26 @@ def test_import_attachments_from_the_selected_gmail_message(tmp_path, monkeypatc
     with TestClient(app) as client:
         base = "/v1/connectors/upload/ingest/gmail"
         assert client.post(f"{base}/other").status_code == 404
-        result = client.post(f"{base}/abc123")
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            imports = list(pool.map(client.post, [f"{base}/abc123"] * 3))
+        result = imports[0]
         result.raise_for_status()
         assert result.json()["chunks_added"] == 1
+        assert all(item.status_code == 200 and item.json() == result.json()
+                   for item in imports)
+        reused = client.post(f"{base}/abc123")
+        assert reused.status_code == 200 and reused.json() == result.json()
+        invoice_content = b"Invoice M-42, total AUD 142.00"
+        revised = client.post(f"{base}/abc123")
+        revised.raise_for_status()
+        assert revised.json()["reference"] != result.json()["reference"]
     with KnowledgeStore(db_path) as store:
         evidence, = store.uploaded_evidence(result.json()["reference"], limit=5)
         assert evidence.content == "Invoice M-42, total AUD 132.00"
         assert evidence.metadata["title"].startswith("invoice.csv")
         assert evidence.metadata["url"] == "https://mail.google.com/mail/u/0/#all/abc123"
+        new_evidence, = store.uploaded_evidence(revised.json()["reference"], limit=5)
+        assert new_evidence.content == "Invoice M-42, total AUD 142.00"
 
 
 def test_workflow_reviews_only_the_selected_upload_batch(tmp_path, monkeypatch):
