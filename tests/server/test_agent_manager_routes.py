@@ -280,6 +280,19 @@ class TestAgentManagerRoutes:
         assert len(agents) == 1
         assert agents[0]["name"] == "broken"
 
+    def test_update_model_preserves_role_configuration(self, manager, client):
+        config = {"schedule_type": "manual", "tools": ["memory_retrieve"]}
+        agent = manager.create_agent(name="Quality", config=config)
+        path = f"/v1/managed-agents/{agent['id']}"
+
+        response = client.patch(path, json={"model": "qwen2.5-coder:7b"})
+        assert response.status_code == 200
+        assert response.json()["config"] == {**config, "model": "qwen2.5-coder:7b"}
+
+        response = client.patch(path, json={"model": ""})
+        assert response.status_code == 200
+        assert client.get(path).json()["config"] == config
+
     def test_send_and_list_messages(self, manager, client):
         agent = manager.create_agent(name="chat", agent_type="simple")
 

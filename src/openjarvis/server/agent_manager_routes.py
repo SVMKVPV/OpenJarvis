@@ -89,6 +89,7 @@ class CreateAgentRequest(BaseModel):
 
 
 class UpdateAgentRequest(BaseModel):
+    model: Optional[str] = None
     name: Optional[str] = None
     agent_type: Optional[str] = None
     config: Optional[Dict[str, Any]] = None
@@ -1738,6 +1739,8 @@ def create_agent_manager_router(
             kwargs["agent_type"] = req.agent_type
         if req.config is not None:
             kwargs["config"] = req.config
+        if req.model is not None:
+            kwargs["model"] = req.model.strip()
         updated = manager.update_agent(agent_id, **kwargs)
         scheduler = getattr(request.app.state, "agent_scheduler", None)
         previous_config = existing.get("config") or {}
