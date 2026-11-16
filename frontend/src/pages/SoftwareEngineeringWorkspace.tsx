@@ -1247,7 +1247,9 @@ export function SoftwareEngineeringWorkspace({
           {(draftGraph?.nodes.some((node) => node.config?.source === 'upload') ||
             selectedDefinition?.graph.nodes.some((node) =>
               (node.config as DraftNode['config'])?.source === 'upload')) && (
-            <WorkflowEvidenceUpload onIndexed={setWorkflowInput} />
+            <WorkflowEvidenceUpload onIndexed={setWorkflowInput}
+              allowAudio={draftGraph?.nodes.some((node) => node.id === 'delivery-evidence') ||
+                selectedDefinition?.graph.nodes.some((node) => node.id === 'delivery-evidence')} />
           )}
           <p><a href="https://zie619.github.io/n8n-workflows/" target="_blank" rel="noopener noreferrer">Browse optional n8n templates ↗</a><br />Download JSON for manual import into n8n.</p>
           {definitions.length > 0 && (

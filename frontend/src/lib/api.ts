@@ -422,10 +422,11 @@ export interface SpeechHealth {
 }
 
 export async function transcribeAudio(audioBlob: Blob, filename = 'recording.webm'): Promise<TranscriptionResult> {
-  if (isTauri()) {
+  if (isTauri() && !getApiKey()) {
     try {
       const buffer = await audioBlob.arrayBuffer();
       return await tauriInvoke<TranscriptionResult>('transcribe_audio', {
+        apiUrl: getBase(),
         audioData: Array.from(new Uint8Array(buffer)),
         filename,
       });
