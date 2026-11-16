@@ -180,6 +180,27 @@ export async function assignWorkflowFollowUp(
   return result.queued;
 }
 
+export type WorkflowFollowUp = {
+  id: string;
+  agent_id: string;
+  agent_name: string;
+  status: AgentMessage['status'];
+  created_at: number;
+};
+
+export async function fetchWorkflowFollowUps(
+  runId: string, signal: AbortSignal,
+): Promise<WorkflowFollowUp[]> {
+  const response = await apiFetch(
+    `/v1/workflows/runs/${encodeURIComponent(runId)}/workstation-follow-ups`, { signal },
+  );
+  const result = await response.json().catch(() => null);
+  if (!response.ok || !Array.isArray(result?.follow_ups)) {
+    throw new Error('Workstation follow-ups are unavailable.');
+  }
+  return result.follow_ups;
+}
+
 export type RuntimePlugin = {
   id: string;
   name: string;

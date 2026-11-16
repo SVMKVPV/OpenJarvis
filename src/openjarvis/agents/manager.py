@@ -714,6 +714,19 @@ class AgentManager:
             return False
 
     @_db_locked
+    def list_workflow_handoffs(self, run_id: str) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT message.id, message.agent_id, agent.name AS agent_name, "
+            "message.status, message.created_at "
+            "FROM agent_messages AS message "
+            "JOIN managed_agents AS agent ON agent.id = message.agent_id "
+            "WHERE message.id GLOB ? AND message.mode = 'handoff' "
+            "ORDER BY message.created_at DESC, message.id",
+            (f"workflow:{run_id}:*",),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    @_db_locked
     def store_agent_response(
         self,
         agent_id: str,

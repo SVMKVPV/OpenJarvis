@@ -1,5 +1,5 @@
-import { type FormEvent, useState } from 'react';
-import { assignWorkflowFollowUp } from '../lib/api';
+import { type FormEvent, useEffect, useState } from 'react';
+import { assignWorkflowFollowUp, fetchWorkflowFollowUps, type WorkflowFollowUp } from '../lib/api';
 
 export type WorkflowRecipient = { stationId: string; name: string; agentId: string };
 
@@ -13,7 +13,34 @@ export function WorkflowWorkstationAssignment({ runId, recipients, onOpenStation
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState('');
   const [confirmedStation, setConfirmedStation] = useState('');
+  const [open, setOpen] = useState(false);
+  const [followUps, setFollowUps] = useState<WorkflowFollowUp[]>([]);
+  const [followUpStatus, setFollowUpStatus] = useState('Checking follow-ups…');
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const recipient = recipients.find((entry) => entry.stationId === stationId);
+
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    let timer: number | undefined;
+    const refresh = async () => {
+      try {
+        const assignments = await fetchWorkflowFollowUps(runId, controller.signal);
+        if (controller.signal.aborted) return;
+        setFollowUps(assignments);
+        setFollowUpStatus(assignments.length ? '' : 'No follow-ups assigned.');
+      } catch {
+        if (!controller.signal.aborted) setFollowUpStatus('Could not refresh follow-ups.');
+      } finally {
+        if (!controller.signal.aborted) timer = window.setTimeout(() => void refresh(), 10000);
+      }
+    };
+    void refresh();
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [open, runId, refreshVersion]);
 
   const assign = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -26,6 +53,7 @@ export function WorkflowWorkstationAssignment({ runId, recipients, onOpenStation
       setMessage(queued ? `Follow-up queued for ${recipient.name}.`
         : `${recipient.name} already has a follow-up for this run.`);
       setConfirmedStation(recipient.stationId);
+      setRefreshVersion((version) => version + 1);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not queue the follow-up.');
     } finally {
@@ -34,7 +62,7 @@ export function WorkflowWorkstationAssignment({ runId, recipients, onOpenStation
   };
 
   return (
-    <details>
+    <details onToggle={(event) => setOpen(event.currentTarget.open)}>
       <summary>Assign approved follow-up</summary>
       {recipients.length === 0 ? <p>Link a managed agent to a workstation to assign follow-ups.</p> : (
         <form className="connector-editor" onSubmit={assign}>
@@ -58,6 +86,17 @@ export function WorkflowWorkstationAssignment({ runId, recipients, onOpenStation
             <button type="button" onClick={() => onOpenStation(confirmedStation)}>Open workstation</button>
           )}
         </form>
+      )}
+      {followUpStatus && <p role="status">{followUpStatus}</p>}
+      {followUps.length > 0 && (
+        <ul aria-label="Assigned follow-ups">
+          {followUps.map((followUp) => (
+            <li key={followUp.id}>
+              <strong>{followUp.agent_name}</strong>{' '}
+              <span>{followUp.status === 'pending' ? 'Waiting for agent' : 'Picked up by agent'}</span>
+            </li>
+          ))}
+        </ul>
       )}
     </details>
   );

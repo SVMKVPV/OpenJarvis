@@ -38,10 +38,12 @@ def test_handoff_approved_run_keeps_evidence_in_workflow(tmp_path, monkeypatch):
         run_path = f"/v1/workflows/runs/{run_id}"
         share_path = f"{run_path}/share-to-brain"
         assign_path = f"{run_path}/assign-workstation"
+        follow_ups_path = f"{run_path}/workstation-follow-ups"
         assignment = {"agent_id": agent["id"], "instruction": "Plan a delivery check."}
         summary = {"summary": "Delivery wording confirmed."}
         assert client.post(share_path, json=summary).status_code == 409
         assert client.post(assign_path, json=assignment).status_code == 409
+        assert client.get(follow_ups_path).status_code == 409
 
         def wait_for(expected):
             deadline = time.monotonic() + 3
@@ -77,6 +79,14 @@ def test_handoff_approved_run_keeps_evidence_in_workflow(tmp_path, monkeypatch):
         assert queued["content"] == (
             f"Approved workflow {run_id}\n\nPlan a delivery check."
         )
+        follow_up, = client.get(follow_ups_path).json()["follow_ups"]
+        assert follow_up["agent_name"] == agent["name"]
+        assert follow_up["status"] == "pending"
+        manager.store_agent_response(
+            agent["id"], "Checklist ready", delivered_message_ids=(queued["id"],)
+        )
+        received, = client.get(follow_ups_path).json()["follow_ups"]
+        assert received == {**follow_up, "status": "delivered"}
     approvals.close()
     manager.close()
 

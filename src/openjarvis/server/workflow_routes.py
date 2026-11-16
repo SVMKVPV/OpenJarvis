@@ -182,6 +182,16 @@ def create_workflow_runs_router() -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
+    @router.get("/{run_id}/workstation-follow-ups")
+    def workstation_follow_ups(run_id: str, request: Request) -> dict:
+        require_approved_run(run_id, request)
+        manager = getattr(request.app.state, "agent_manager", None)
+        if manager is None:
+            raise HTTPException(
+                status_code=503, detail="Managed agents are unavailable."
+            )
+        return {"follow_ups": manager.list_workflow_handoffs(run_id)}
+
     @router.post("/{run_id}/assign-workstation")
     def assign_workstation(
         run_id: str, payload: WorkflowAgentHandoff, request: Request
