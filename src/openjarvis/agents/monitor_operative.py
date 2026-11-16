@@ -242,7 +242,9 @@ class MonitorOperativeAgent(ToolUsingAgent):
 
         # 5. Run function-calling tool loop
         openai_tools = self._executor.get_openai_tools() if self._tools else []
-        recoverable_searches = {"knowledge_search", "search_nodes"}.intersection(
+        recoverable_searches = {
+            "knowledge_search", "search_nodes", "gmail_review_candidates",
+        }.intersection(
             tool.get("function", {}).get("name") for tool in openai_tools
         )
         all_tool_results: list[ToolResult] = []
@@ -272,6 +274,10 @@ class MonitorOperativeAgent(ToolUsingAgent):
             # Strip think tags so they don't interfere with parsing
             content = self._strip_think_tags(content)
             raw_tool_calls = result.get("tool_calls", [])
+            if not raw_tool_calls and "gmail_review_candidates" in recoverable_searches:
+                raw_tool_calls = self._extract_gmail_review_calls(
+                    content, recoverable_searches
+                )
             if recovered_search and (
                 raw_tool_calls
                 or self._extract_json_search(content, recoverable_searches)
@@ -325,7 +331,7 @@ class MonitorOperativeAgent(ToolUsingAgent):
                             "\n\nTry a shorter keyword query. Omit guessed filters, "
                             "but preserve filters required by the user."
                         )
-                    elif json_search:
+                    elif json_search and action != "gmail_review_candidates":
                         recovered_search = True
                         observation_content += (
                             "\n\nWrite the final answer to the original request using "
@@ -435,6 +441,20 @@ class MonitorOperativeAgent(ToolUsingAgent):
     # Text-based tool call extraction (fallback for non-function-calling models)
     # ------------------------------------------------------------------
 
+    @classmethod
+    def _extract_gmail_review_calls(cls, text: str, allowed: set[str]) -> list[dict]:
+        """Recover the two ordered, read-only lookups emitted on separate lines."""
+        text = text.strip()
+        fence = re.fullmatch(r"```json[ \t]*\r?\n(.*?)\r?\n```", text, re.DOTALL)
+        lines = (fence.group(1) if fence else text).splitlines()
+        if len(lines) != 2:
+            return []
+        first = cls._extract_json_search(lines[0], {"gmail_review_candidates"})
+        second = cls._extract_json_search(lines[1], allowed & {"knowledge_search"})
+        if first is None or second is None:
+            return []
+        return [{"name": name, "arguments": args} for name, args in (first, second)]
+
     @staticmethod
     def _extract_json_search(
         text: str, allowed: set[str]
@@ -467,6 +487,8 @@ class MonitorOperativeAgent(ToolUsingAgent):
             or not isinstance(call["arguments"], dict)
         ):
             return None
+        if call["name"] == "gmail_review_candidates":
+            return None if call["arguments"] else (call["name"], "{}")
         query = call["arguments"].get("query")
         if not isinstance(query, str) or not query.strip():
             return None

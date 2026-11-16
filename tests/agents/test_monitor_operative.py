@@ -132,6 +132,25 @@ class TestMonitorOperativeAgent:
         mutation = call.replace("search_nodes", "n8n_create_workflow")
         assert MonitorOperativeAgent._extract_json_search(mutation, allowed) is None
 
+    def test_recovers_ordered_gmail_lookups_from_json_lines(self) -> None:
+        first = '{"name":"gmail_review_candidates","arguments":{}}'
+        second = '{"name":"knowledge_search","arguments":{"query":"invoice"}}'
+        allowed = {"gmail_review_candidates", "knowledge_search"}
+        reply = f"```json\n{first}\n{second}\n```"
+        calls = MonitorOperativeAgent._extract_gmail_review_calls(reply, allowed)
+        assert [call["name"] for call in calls] == [
+            "gmail_review_candidates", "knowledge_search"
+        ]
+        assert not MonitorOperativeAgent._extract_gmail_review_calls(
+            reply, {"gmail_review_candidates"}
+        )
+        assert not MonitorOperativeAgent._extract_gmail_review_calls(
+            reply.replace("knowledge_search", "send_email"), allowed
+        )
+        assert not MonitorOperativeAgent._extract_gmail_review_calls(
+            f"Example:\n{reply}", allowed
+        )
+
     def test_repeated_json_search_is_not_saved_as_the_answer(self) -> None:
         call = '{"name":"knowledge_search","arguments":{"query":"Acacia"}}'
         tool = KnowledgeSearchTool()
