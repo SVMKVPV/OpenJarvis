@@ -1254,6 +1254,7 @@ export async function fetchWorkflowRuns(): Promise<WorkflowRunSummary[]> {
 }
 
 export interface WorkflowRunDetail extends WorkflowRunSummary {
+  initial_input: string;
   graph: SavedWorkflowDefinition['graph'];
   steps: Array<{
     node_id: string;

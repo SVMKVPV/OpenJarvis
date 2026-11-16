@@ -91,7 +91,7 @@ def test_runtime_pauses_for_approval_and_resumes_without_replay(tmp_path) -> Non
     runtime = WorkflowRuntime(system=None, store=store, approval_store=approvals)
     graph = (
         WorkflowBuilder("guarded")
-        .add_transform("prepare")
+        .add_transform("prepare", transform="first_line")
         .add_approval(
             "approve",
             action_type="publish",
@@ -102,13 +102,15 @@ def test_runtime_pauses_for_approval_and_resumes_without_replay(tmp_path) -> Non
         .build()
     )
 
-    submitted = runtime.submit(graph, initial_input="campaign")
+    submitted = runtime.submit(graph, initial_input="campaign\ninternal notes")
     paused = _wait_for_status(store, submitted["id"], "waiting_approval")
     assert [step["node_id"] for step in paused["steps"]] == [
         "prepare",
         "approve",
     ]
     approval_id = paused["context"]["_workflow_approvals"]["approve"]
+    assert paused["steps"][1]["metadata"]["review_input"] == "campaign"
+    assert "review_input" not in approvals.get_action(approval_id).payload
     approvals.update_status(approval_id, STATUS_APPROVED)
 
     runtime.resume(submitted["id"])

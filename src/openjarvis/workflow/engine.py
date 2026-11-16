@@ -334,6 +334,7 @@ class WorkflowEngine:
                     "approval_id": approval_id,
                     "approval_status": action.status,
                     "workflow_status": "waiting_approval",
+                    "review_input": input_text,
                 },
             )
 
@@ -356,6 +357,7 @@ class WorkflowEngine:
                 "approval_id": action.id,
                 "approval_status": action.status,
                 "workflow_status": "waiting_approval",
+                "review_input": input_text,
             },
         )
 

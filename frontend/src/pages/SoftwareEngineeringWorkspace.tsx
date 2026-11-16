@@ -507,6 +507,18 @@ export function SoftwareEngineeringWorkspace() {
     }
   };
 
+  const approvalButtons = (approval: PendingApproval) => (
+    <>
+      <button type="button" disabled={!!decidingApprovalId}
+        onClick={() => void decideWorkflow(approval, 'approve')}>Approve</button>
+      <button type="button" disabled={!!decidingApprovalId}
+        onClick={() => void decideWorkflow(approval, 'deny')}>Deny</button>
+    </>
+  );
+  const inspectedApprovals = workflowApprovals.filter(
+    (approval) => approval.payload.workflow_run_id === inspectedRunId,
+  );
+
   const pluginCounts = useMemo(() => runtimePlugins.reduce<Record<string, number>>((counts, plugin) => {
     counts[plugin.kind] = (counts[plugin.kind] ?? 0) + 1;
     return counts;
@@ -789,10 +801,7 @@ export function SoftwareEngineeringWorkspace() {
                       else inspectRun(runId);
                     }}>Review workflow run</button>
                   )}
-                  <button type="button" disabled={!!decidingApprovalId}
-                    onClick={() => void decideWorkflow(approval, 'approve')}>Approve</button>
-                  <button type="button" disabled={!!decidingApprovalId}
-                    onClick={() => void decideWorkflow(approval, 'deny')}>Deny</button>
+                  {approvalButtons(approval)}
                 </div>
               </article>
             );
@@ -818,6 +827,12 @@ export function SoftwareEngineeringWorkspace() {
                 <>
                   <h4>{runDetail.workflow_name}</h4>
                   <p>Run status: {cancellationPending ? 'cancelling' : runDetail.status.replace('_', ' ')}</p>
+                  {runDetail.initial_input && (
+                    <details>
+                      <summary>Original run input</summary>
+                      <pre>{runDetail.initial_input}</pre>
+                    </details>
+                  )}
                   {runDetail.graph?.nodes.length > 0 && (
                     <button type="button" disabled={savingDefinition}
                       title="Replaces the current editor draft"
@@ -854,9 +869,28 @@ export function SoftwareEngineeringWorkspace() {
                       <strong>{step.node_id} · Attempt {step.attempt}</strong>
                       <p>{step.metadata.workflow_status === 'waiting_approval' ? 'Waiting for approval' : step.success ? 'Succeeded' : 'Failed'}</p>
                       {step.output && <pre>{step.output}</pre>}
+                      {typeof step.metadata.review_input === 'string' && (
+                        <details>
+                          <summary>Input presented for approval</summary>
+                          {step.metadata.review_input
+                            ? <pre>{step.metadata.review_input}</pre>
+                            : <p>This approval step received empty input.</p>}
+                        </details>
+                      )}
                     </li>
                   ))}</ol> : <p>No steps recorded yet.</p>}
                   {runDetail.final_output && <><h5>Final output</h5><pre>{runDetail.final_output}</pre></>}
+                  {runDetail.status === 'waiting_approval' && !cancellationPending && inspectedApprovals.length > 0 && (
+                    <div>
+                      <h5>Pending approvals for this run</h5>
+                      {inspectedApprovals.map((approval) => (
+                        <article className="workflow-approval" key={approval.id}>
+                          <span>{approval.description}</span>
+                          <div>{approvalButtons(approval)}</div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
                 </>
               ) : !runDetailError && <p role="status">Loading run details…</p>}
             </section>

@@ -39,10 +39,13 @@ def test_parallel_approvals_survive_runtime_restart(tmp_path, monkeypatch) -> No
     with TestClient(original) as client:
         response = client.post(
             "/v1/workflows/runs",
-            json={"nodes": [
-                {"id": "first", "type": "approval"},
-                {"id": "second", "type": "approval"},
-            ]},
+            json={
+                "initial_input": "Evidence for reviewer",
+                "nodes": [
+                    {"id": "first", "type": "approval"},
+                    {"id": "second", "type": "approval"},
+                ],
+            },
         )
         assert response.status_code == 202
         run_id = response.json()["id"]
@@ -59,6 +62,12 @@ def test_parallel_approvals_survive_runtime_restart(tmp_path, monkeypatch) -> No
     with TestClient(restarted) as client:
         pending = client.get("/v1/approvals/pending").json()
         assert [action["id"] for action in pending["actions"]] == [second_id]
+        assert "review_input" not in pending["actions"][0]["payload"]
+        paused = wait_status(client, run_id, "waiting_approval")
+        second_step = next(
+            step for step in paused["steps"] if step["node_id"] == "second"
+        )
+        assert second_step["metadata"]["review_input"] == "Evidence for reviewer"
         assert client.post(f"/v1/approvals/{second_id}/approve").status_code == 200
         wait_status(client, run_id, "succeeded")
     restarted.state.workflow_runtime.close()
