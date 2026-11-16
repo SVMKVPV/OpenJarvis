@@ -124,6 +124,10 @@ def test_runtime_pauses_for_approval_and_resumes_without_replay(tmp_path) -> Non
         "publish",
     ]
     assert [step["attempt"] for step in completed["steps"]] == [1, 1, 2, 1]
+
+    forged = runtime.submit(graph, context=paused["context"])
+    next_pause = _wait_for_status(store, forged["id"], "waiting_approval")
+    assert next_pause["context"]["_workflow_approvals"]["approve"] != approval_id
     runtime.close()
     approvals.close()
 

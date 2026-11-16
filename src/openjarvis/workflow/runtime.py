@@ -44,6 +44,10 @@ class WorkflowRuntime:
     ) -> dict[str, Any]:
         if self._stopping:
             raise RuntimeError("Workflow runtime is stopping")
+        context = {
+            key: value for key, value in (context or {}).items()
+            if key not in {"_workflow_run_id", "_workflow_approvals"}
+        }
         run = self.store.create_run(
             workflow_name=graph.name,
             graph=graph_to_dict(graph),
@@ -99,7 +103,16 @@ class WorkflowRuntime:
                 completed_nodes=completed_nodes,
             )
             if result.status == "waiting_approval":
-                self.store.pause(run_id, context=context)
+                with self._lock:
+                    if self.store.is_cancel_requested(run_id):
+                        self.store.finish(run_id, status="cancelled")
+                        return
+                    approvals = context.setdefault("_workflow_approvals", {})
+                    for step in result.steps:
+                        if step.metadata.get("workflow_status") == "waiting_approval":
+                            approvals[step.node_id] = step.metadata["approval_id"]
+                    self.store.pause(run_id, context=context)
+                    self._threads.pop(run_id, None)
                 return
             error = (
                 ""
@@ -137,19 +150,14 @@ class WorkflowRuntime:
 
     def resume(self, run_id: str) -> dict[str, Any]:
         """Resume a paused run without replaying completed nodes."""
-        run = self.store.get_run(run_id, include_graph=True)
-        if run is None:
-            raise KeyError(run_id)
-        if run["status"] != "waiting_approval":
-            raise ValueError("Only workflows waiting for approval can be resumed")
         with self._lock:
-            current = self._threads.get(run_id)
-            if (
-                current is not None
-                and current.is_alive()
-                and run["status"] != "waiting_approval"
-            ):
-                raise ValueError("Workflow is already running")
+            if self._stopping:
+                raise ValueError("Workflow runtime is stopping")
+            run = self.store.get_run(run_id, include_graph=True)
+            if run is None:
+                raise KeyError(run_id)
+            if run["status"] != "waiting_approval" or run_id in self._threads:
+                raise ValueError("Only workflows waiting for approval can be resumed")
             worker = threading.Thread(
                 target=self._execute,
                 args=(
@@ -162,16 +170,18 @@ class WorkflowRuntime:
                 daemon=True,
             )
             self._threads[run_id] = worker
-        worker.start()
+            self.store.mark_running(run_id)
+            worker.start()
         return run
 
     def cancel(self, run_id: str) -> bool:
-        run = self.store.get_run(run_id)
-        if run is None or not self.store.request_cancel(run_id):
-            return False
-        if run["status"] == "waiting_approval":
-            self.store.finish(run_id, status="cancelled")
-        return True
+        with self._lock:
+            run = self.store.get_run(run_id)
+            if run is None or not self.store.request_cancel(run_id):
+                return False
+            if run["status"] == "waiting_approval":
+                self.store.finish(run_id, status="cancelled")
+            return True
 
     def close(self, *, timeout: float = 5.0) -> None:
         self._stopping = True

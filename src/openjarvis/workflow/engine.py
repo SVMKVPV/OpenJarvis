@@ -117,7 +117,9 @@ class WorkflowEngine:
                             self._execute_node,
                             graph.get_node(nid),
                             dict(outputs),
-                            dict(ctx),
+                            {**ctx, "_workflow_approvals": dict(
+                                ctx.get("_workflow_approvals", {})
+                            )},
                             system,
                             graph,
                         ): nid
@@ -253,7 +255,12 @@ class WorkflowEngine:
         approval_id = approval_ids.get(node.id)
         if approval_id:
             action = self._approval_store.get_action(approval_id)
-            if action is None:
+            if (
+                action is None
+                or action.payload.get("workflow_run_id")
+                != context.get("_workflow_run_id", "")
+                or action.payload.get("workflow_node_id") != node.id
+            ):
                 return WorkflowStepResult(
                     node_id=node.id,
                     success=False,
