@@ -699,6 +699,17 @@ export function CommandCenterPage() {
           {selected.id === 'growth' && (
             <LeadRegister onOpenDiscovery={() => openWorkspace({ initialStarter: 'leads' })} />
           )}
+          {selected.id === 'research' && (
+            <section className="station-widget-options" aria-label="Competitor advertising">
+              <div>
+                <strong>Competitor ad review</strong>
+                <button type="button" onClick={() => openWorkspace({ initialStarter: 'competitor-ads' })}>
+                  Open competitor ad workflow
+                </button>
+              </div>
+              <p>Compare indexed ads by offer and observed dates, then review an experiment grounded in the evidence.</p>
+            </section>
+          )}
           {selected.id === 'email' && <GmailReviewList onOpenWorkflow={openGmailReplyWorkflow} />}
           {selected.id === 'marketing' && <><Ga4PropertyForm /><SocialContentStudio /></>}
           {selected.id === 'system-builder' && <SystemBuilderLab />}

@@ -138,6 +138,32 @@ const LEAD_DISCOVERY = {
   ],
 } satisfies SavedWorkflowDefinition['graph'];
 
+const COMPETITOR_AD_REVIEW = {
+  name: 'Review competitor advertising evidence',
+  nodes: [
+    { id: 'ad-evidence', type: 'tool', config: {
+      tool_name: 'knowledge_search', query_from_input: true, source: 'upload', require_match: true,
+    } },
+    { id: 'ad-brief', type: 'agent', agent: 'none', config: {
+      instruction: [
+        'Write a competitor advertising brief based on the indexed evidence. Use these three sections:',
+        '1. Observations. For each distinct ad, give advertiser, offer, ad ID or URL, exact source reference, earliest observed date and latest observed date. Mark missing fields unknown. Only name the audience or advertising channel if the source states it.',
+        '2. Evidence gaps. State whether continuous run dates are confirmed. Report repeated observations as dates observed. Leave advertiser motives, profitability, sales and spend unknown.',
+        '3. Proposed test. Suggest one differentiated offer or delivery experiment we could run. Label it as a proposal and name one metric to evaluate it.',
+      ].join('\n'),
+    } },
+    { id: 'ad-review', type: 'approval', config: {
+      description: 'Check the cited ads, dates and evidence for each pattern before sharing the brief or acting on the proposal.',
+      tier: 'high',
+    } },
+  ],
+  edges: [
+    { source: 'ad-evidence', target: 'ad-brief' },
+    { source: 'ad-evidence', target: 'ad-review' },
+    { source: 'ad-brief', target: 'ad-review' },
+  ],
+} satisfies SavedWorkflowDefinition['graph'];
+
 const EMAIL_REPLY_REVIEW = {
   name: 'Draft and review a Gmail reply',
   nodes: [
@@ -241,7 +267,7 @@ const ITEMS: WorkItem[] = [
 export type WorkspaceEntry = {
   initialRunId?: string;
   initialGmailReference?: string;
-  initialStarter?: 'finance' | 'leads';
+  initialStarter?: 'finance' | 'leads' | 'competitor-ads';
 };
 
 export function SoftwareEngineeringWorkspace({
@@ -399,7 +425,8 @@ export function SoftwareEngineeringWorkspace({
   const [savingDefinition, setSavingDefinition] = useState(false);
   const initialGraph = initialStarter === 'finance' ? FINANCE_EVIDENCE_REVIEW
     : initialStarter === 'leads' ? LEAD_DISCOVERY
-      : initialGmailReference ? EMAIL_REPLY_REVIEW : GUARDED_DELIVERY;
+      : initialStarter === 'competitor-ads' ? COMPETITOR_AD_REVIEW
+        : initialGmailReference ? EMAIL_REPLY_REVIEW : GUARDED_DELIVERY;
   const [workflowName, setWorkflowName] = useState(initialGraph.name);
   const [workflowGraph, setWorkflowGraph] = useState(() =>
     JSON.stringify({ nodes: initialGraph.nodes, edges: initialGraph.edges }, null, 2));
@@ -964,6 +991,14 @@ export function SoftwareEngineeringWorkspace({
               loadWorkflowEditor(EMAIL_REPLY_REVIEW);
               setDefinitionMessage('Gmail reply workflow loaded. Save it, then run it with a distinctive subject or the indexed Gmail reference (gmail:…).');
             }}>Load Gmail reply review starter</button>
+            <button type="button" disabled={savingDefinition} onClick={() => {
+              loadWorkflowEditor(COMPETITOR_AD_REVIEW);
+              setDefinitionMessage('Competitor ad review loaded. Save it and run with a competitor or campaign name.');
+            }}>Load competitor ad review starter</button>
+            {workflowName === COMPETITOR_AD_REVIEW.name && (
+              <small>Upload and index dated ad observations first. Include source links, advertiser
+                names and ad identifiers so the brief can cite and compare them.</small>
+            )}
             {initialGmailReference && <small>Gmail reference for this workflow run <code>{initialGmailReference}</code></small>}
             <label>Workflow name
               <input ref={workflowNameInput} value={workflowName}
