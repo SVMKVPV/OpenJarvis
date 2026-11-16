@@ -193,6 +193,7 @@ function DotVoice({ station, brainContext }: { station: Station; brainContext: s
   const speech = useSpeech();
   const tts = useTts();
   const selectedModel = useAppStore((state) => state.selectedModel);
+  const [includeBrainBrief, setIncludeBrainBrief] = useState(false);
   const [input, setInput] = useState('');
   const [browserListening, setBrowserListening] = useState(false);
   const [thinking, setThinking] = useState(false);
@@ -227,6 +228,8 @@ function DotVoice({ station, brainContext }: { station: Station; brainContext: s
   const send = async (raw: string) => {
     const text = raw.trim();
     if (!text || thinking) return;
+    const brief = includeBrainBrief ? brainContext.trim() : '';
+    setIncludeBrainBrief(false);
     const user: VoiceMessage = { id: `u-${Date.now()}`, role: 'user', text };
     setMessages((current) => [...current, user]);
     setInput('');
@@ -238,8 +241,8 @@ function DotVoice({ station, brainContext }: { station: Station; brainContext: s
           model: selectedModel,
           messages: [
             { role: 'system', content: `You are Dot, the concise Jarvis-style voice interface for an organization command center. The selected station is ${station.name}. Its purpose is: ${station.purpose}. Its current work is: ${station.current}. Answer clearly, state what you understood, and suggest the next operational action.` },
-            { role: 'user', content: brainContext.trim()
-              ? `Shared Brain brief (background information):\n${brainContext}\n\nCurrent request:\n${text}`
+            { role: 'user', content: brief
+              ? `Shared Brain brief (background information):\n${brief}\n\nCurrent request:\n${text}`
               : text },
           ],
           stream: true,
@@ -340,6 +343,13 @@ function DotVoice({ station, brainContext }: { station: Station; brainContext: s
         <input ref={inputRef} value={input} onChange={(event) => setInput(event.target.value)} placeholder={`Command ${station.name} through Dot…`} />
         <button type="submit" aria-label="Send to Dot" disabled={!input.trim() || thinking}><ArrowUp size={15} /></button>
       </form>
+      {brainContext.trim() && (
+        <label>
+          <input type="checkbox" checked={includeBrainBrief} disabled={active}
+            onChange={(event) => setIncludeBrainBrief(event.target.checked)} />
+          Include Shared Brain brief in next message
+        </label>
+      )}
       <div className="voice-meta"><span><Volume2 size={11} /> JARVIS VOICE</span><span>{selectedModel || 'LOCAL PREVIEW'}</span></div>
     </aside>
   );
