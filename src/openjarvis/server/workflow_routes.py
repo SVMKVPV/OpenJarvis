@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 
 from openjarvis.core.paths import get_config_dir
 from openjarvis.server.approval_routes import get_approval_store
@@ -41,6 +41,10 @@ class RecurringWorkflowInputs(BaseModel):
     initial_input: str = ""
     first_due_at: float = Field(gt=0, le=253402300799, allow_inf_nan=False)
     interval_seconds: int = Field(ge=60, le=31536000)
+
+
+class RecurringWorkflowStatus(BaseModel):
+    paused: StrictBool
 
 
 class RescheduleWorkflowRun(BaseModel):
@@ -294,6 +298,21 @@ def create_workflow_runs_router() -> APIRouter:
                 status_code=404, detail="Workflow definition not found"
             ) from exc
         runtime.start_scheduling()
+        return recurrence
+
+    @root.patch("/definitions/{definition_id}/recurrences/{recurrence_id}")
+    def update_recurrence_status(
+        definition_id: str, recurrence_id: str,
+        payload: RecurringWorkflowStatus, request: Request,
+    ) -> dict:
+        runtime = _runtime(request)
+        recurrence = runtime.store.set_recurrence_paused(
+            definition_id, recurrence_id, paused=payload.paused, now=time.time(),
+        )
+        if recurrence is None:
+            raise HTTPException(status_code=404, detail="Recurring schedule not found")
+        if not payload.paused:
+            runtime.start_scheduling()
         return recurrence
 
     @root.delete(

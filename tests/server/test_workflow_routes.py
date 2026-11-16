@@ -99,6 +99,11 @@ def test_recurring_workflow_catches_up_once_after_restart(tmp_path, monkeypatch)
         created = client.post(url, json=request)
         assert created.status_code == 201
         assert client.get(url).json()["recurrences"] == [created.json()]
+        schedule_url = f"{url}/{created.json()['id']}"
+        paused = client.patch(schedule_url, json={"paused": True})
+        assert paused.status_code == 200 and paused.json()["paused"] is True
+        resumed = client.patch(schedule_url, json={"paused": False})
+        assert resumed.status_code == 200 and resumed.json() == created.json()
         original.state.workflow_runtime.close()
 
     offline_store = WorkflowRunStore(db_path)

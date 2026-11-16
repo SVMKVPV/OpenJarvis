@@ -1540,20 +1540,34 @@ export type WorkflowRecurrence = {
   next_due_at: number;
   interval_seconds: number;
   skipped_while_active?: number;
+  paused?: boolean;
 };
+
+type WorkflowRecurrenceChange = string
+  | { first_due_at: number; interval_seconds: number; initial_input: string }
+  | { id: string; paused: boolean };
 
 export async function workflowRecurrences(
   definitionId: string,
-  action?: { first_due_at: number; interval_seconds: number; initial_input: string } | string,
+  action?: WorkflowRecurrenceChange,
 ): Promise<WorkflowRecurrence[]> {
   const path = `/v1/workflows/definitions/${encodeURIComponent(definitionId)}/recurrences`;
-  const response = typeof action === 'string'
-    ? await apiFetch(`${path}/${encodeURIComponent(action)}`, { method: 'DELETE' })
-    : await apiFetch(path, action && {
+  let response: Response;
+  if (typeof action === 'string') {
+    response = await apiFetch(`${path}/${encodeURIComponent(action)}`, { method: 'DELETE' });
+  } else if (action && 'paused' in action) {
+    response = await apiFetch(`${path}/${encodeURIComponent(action.id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paused: action.paused }),
+    });
+  } else {
+    response = await apiFetch(path, action && {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(action),
     });
+  }
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     throw new Error(typeof body?.detail === 'string'

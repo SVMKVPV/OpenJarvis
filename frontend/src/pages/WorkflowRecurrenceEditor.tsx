@@ -20,12 +20,14 @@ export function WorkflowRecurrenceEditor({ definitionId, initialInput }: {
     return () => { active = false; };
   }, [definitionId]);
 
-  const changeSchedule = async (action: Parameters<typeof workflowRecurrences>[1]) => {
+  const changeSchedule = async (
+    action: NonNullable<Parameters<typeof workflowRecurrences>[1]>, success: string,
+  ) => {
     setPending(true);
     setMessage('');
     try {
       setSchedules(await workflowRecurrences(definitionId, action));
-      setMessage(typeof action === 'string' ? 'Schedule removed.' : 'Schedule created.');
+      setMessage(success);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not update schedules.');
     } finally {
@@ -39,7 +41,7 @@ export function WorkflowRecurrenceEditor({ definitionId, initialInput }: {
       first_due_at: Date.parse(firstRun) / 1000,
       interval_seconds: Number(interval) * 60,
       initial_input: initialInput,
-    });
+    }, 'Schedule created.');
   };
 
   return (
@@ -56,20 +58,28 @@ export function WorkflowRecurrenceEditor({ definitionId, initialInput }: {
         </label>
         <small>Uses the run input above and the latest saved workflow. A scheduled start is skipped
           while the previous run is active or waiting for approval. After downtime, only the
-          latest missed start is considered.</small>
+          latest missed start is considered. Pausing leaves existing runs in place. Resuming
+          starts at the next future time.</small>
         <button disabled={pending}>Create recurring schedule</button>
       </form>
       {schedules.length > 0 && (
         <ul>
           {schedules.map((schedule) => (
             <li key={schedule.id}>
-              Every {schedule.interval_seconds / 60} min. Next recorded start{' '}
-              {new Date(schedule.next_due_at * 1000).toLocaleString()}{' '}
+              Every {schedule.interval_seconds / 60} min.{' '}
+              {schedule.paused ? 'Paused' :
+                `Next recorded start ${new Date(schedule.next_due_at * 1000).toLocaleString()}`}{' '}
               {!!schedule.skipped_while_active && (
                 <span>Skipped while active {schedule.skipped_while_active}{' '}</span>
               )}
+              {typeof schedule.paused === 'boolean' && (
+                <button type="button" disabled={pending} onClick={() => void changeSchedule(
+                  { id: schedule.id, paused: !schedule.paused },
+                  schedule.paused ? 'Schedule resumed.' : 'Schedule paused.',
+                )}>{schedule.paused ? 'Resume schedule' : 'Pause schedule'}</button>
+              )}{' '}
               <button type="button" disabled={pending}
-                onClick={() => void changeSchedule(schedule.id)}>Remove schedule</button>
+                onClick={() => void changeSchedule(schedule.id, 'Schedule removed.')}>Remove schedule</button>
             </li>
           ))}
         </ul>

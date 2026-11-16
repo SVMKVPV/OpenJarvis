@@ -35,6 +35,36 @@ def _wait_for_status(store: WorkflowRunStore, run_id: str, expected: str) -> dic
     raise AssertionError(f"workflow run did not reach {expected}")
 
 
+def test_paused_recurrence_resumes_on_next_future_slot_after_restart(tmp_path) -> None:
+    path = str(tmp_path / "workflow.db")
+    store = WorkflowRunStore(path)
+    graph = WorkflowBuilder("Recurring review").add_transform("format").build()
+    definition_id = store.save_definition(graph_to_dict(graph))["id"]
+    schedule = store.save_recurrence(definition_id, "saved input", 1000, 60)
+    schedule_id = schedule["id"]
+    store.set_recurrence_paused(definition_id, schedule_id, paused=True, now=980)
+    store.close()
+
+    reopened = WorkflowRunStore(path)
+    try:
+        reopened.enqueue_due_recurrences(1180)
+        assert reopened.list_runs() == []
+        assert reopened.list_recurrences(definition_id)[0]["paused"] is True
+        resumed = reopened.set_recurrence_paused(
+            definition_id, schedule_id, paused=False, now=1180
+        )
+        assert resumed is not None
+        assert resumed["next_due_at"] == 1240
+        reopened.enqueue_due_recurrences(1180)
+        assert reopened.list_runs() == []
+        reopened.enqueue_due_recurrences(1240)
+        run, = reopened.list_runs()
+        assert run["initial_input"] == "saved input"
+        assert run["scheduled_at"] == 1240
+    finally:
+        reopened.close()
+
+
 def test_recurrence_skips_an_active_review_after_restart(tmp_path) -> None:
     path = str(tmp_path / "workflow.db")
     start = 1000

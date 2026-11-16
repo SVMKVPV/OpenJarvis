@@ -65,7 +65,8 @@ class WorkflowRunStore:
                     initial_input TEXT NOT NULL,
                     next_due_at REAL NOT NULL,
                     interval_seconds INTEGER NOT NULL,
-                    skipped_while_active INTEGER NOT NULL DEFAULT 0
+                    skipped_while_active INTEGER NOT NULL DEFAULT 0,
+                    paused INTEGER NOT NULL DEFAULT 0
                 );
                 CREATE INDEX IF NOT EXISTS idx_workflow_recurrences_due
                     ON workflow_recurrences(next_due_at);
@@ -116,6 +117,11 @@ class WorkflowRunStore:
                 self._conn.execute(
                     "ALTER TABLE workflow_recurrences ADD COLUMN "
                     "skipped_while_active INTEGER NOT NULL DEFAULT 0"
+                )
+            if "paused" not in recurrence_columns:
+                self._conn.execute(
+                    "ALTER TABLE workflow_recurrences ADD COLUMN "
+                    "paused INTEGER NOT NULL DEFAULT 0"
                 )
             self._conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_workflow_runs_recurrence "
@@ -291,6 +297,7 @@ class WorkflowRunStore:
             "next_due_at": next_due_at,
             "interval_seconds": interval_seconds,
             "skipped_while_active": 0,
+            "paused": False,
         }
         with self._lock, self._conn:
             if self.get_definition(definition_id) is None:
@@ -311,7 +318,29 @@ class WorkflowRunStore:
                 "ORDER BY next_due_at, id",
                 (definition_id,),
             ).fetchall()
-        return [dict(row) for row in rows]
+        return [dict(row) | {"paused": bool(row["paused"])} for row in rows]
+
+    def set_recurrence_paused(
+        self, definition_id: str, recurrence_id: str, *, paused: bool, now: float
+    ) -> dict[str, Any] | None:
+        with self._lock, self._conn:
+            self._conn.execute("BEGIN IMMEDIATE")
+            row = self._conn.execute(
+                "SELECT * FROM workflow_recurrences WHERE definition_id = ? AND id = ?",
+                (definition_id, recurrence_id),
+            ).fetchone()
+            if row is None:
+                return None
+            next_due = row["next_due_at"]
+            if row["paused"] and not paused and next_due <= now:
+                interval = row["interval_seconds"]
+                next_due += (int((now - next_due) // interval) + 1) * interval
+            self._conn.execute(
+                "UPDATE workflow_recurrences SET paused = ?, next_due_at = ? "
+                "WHERE definition_id = ? AND id = ?",
+                (paused, next_due, definition_id, recurrence_id),
+            )
+        return dict(row) | {"paused": paused, "next_due_at": next_due}
 
     def delete_recurrence(self, definition_id: str, recurrence_id: str) -> bool:
         with self._lock, self._conn:
@@ -324,7 +353,8 @@ class WorkflowRunStore:
     def enqueue_due_recurrences(self, now: float, limit: int = 20) -> None:
         with self._lock, self._conn:
             if self._conn.execute(
-                "SELECT 1 FROM workflow_recurrences WHERE next_due_at <= ? LIMIT 1",
+                "SELECT 1 FROM workflow_recurrences "
+                "WHERE paused = 0 AND next_due_at <= ? LIMIT 1",
                 (now,),
             ).fetchone() is None:
                 return
@@ -336,7 +366,8 @@ class WorkflowRunStore:
                 ") AS has_active_run "
                 "FROM workflow_recurrences AS recurrence JOIN workflow_definitions "
                 "AS definition ON definition.id = recurrence.definition_id "
-                "WHERE next_due_at <= ? ORDER BY next_due_at, recurrence.id LIMIT ?",
+                "WHERE recurrence.paused = 0 AND next_due_at <= ? "
+                "ORDER BY next_due_at, recurrence.id LIMIT ?",
                 (now, limit),
             ).fetchall()
             for row in rows:
