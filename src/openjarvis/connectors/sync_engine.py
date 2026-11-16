@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from openjarvis.connectors._stubs import BaseConnector
+from openjarvis.connectors._stubs import BaseConnector, SyncStatus
 from openjarvis.connectors.pipeline import IngestionPipeline
 from openjarvis.core.config import DEFAULT_CONFIG_DIR
 
@@ -147,6 +147,11 @@ class SyncEngine:
             # Ingest any remaining documents.
             if batch and not (cancel_event is not None and cancel_event.is_set()):
                 items_ingested += self._pipeline.ingest(batch)
+
+            if cancel_event is None or not cancel_event.is_set():
+                status = connector.sync_status()
+                if isinstance(status, SyncStatus) and status.state == "error":
+                    raise RuntimeError(status.error or "Connector sync did not finish.")
 
         except Exception as exc:
             self._save_checkpoint(

@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import socket
 import stat
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -186,6 +186,46 @@ def test_atom_release_notes_and_video_descriptions_are_indexable():
     assert video["pubDate"] == "2026-10-01T10:00:00Z"
 
 
+def test_partial_sync_preserves_checkpoint_and_indexes_healthy_feed(tmp_path):
+    import json
+
+    from openjarvis.connectors.news_rss import NewsRSSConnector
+    from openjarvis.connectors.pipeline import IngestionPipeline
+    from openjarvis.connectors.store import KnowledgeStore
+    from openjarvis.connectors.sync_engine import SyncEngine
+
+    config = tmp_path / "feeds.json"
+    config.write_text(json.dumps({"feeds": [
+        {"name": "Working feed", "url": "https://example.com/good"},
+        {"name": "Broken feed", "url": "https://example.com/broken"},
+    ]}), encoding="utf-8")
+    connector = NewsRSSConnector(config_path=str(config))
+    with KnowledgeStore(tmp_path / "knowledge.db") as store:
+        with SyncEngine(
+            pipeline=IngestionPipeline(store), state_db=str(tmp_path / "sync.db")
+        ) as engine:
+            with patch(
+                "openjarvis.connectors.news_rss._fetch_feed",
+                side_effect=[_SAMPLE_RSS, "<invalid"],
+            ):
+                with pytest.raises(RuntimeError, match="Broken feed: invalid XML"):
+                    engine.sync(connector)
+            failed = engine.get_checkpoint("news_rss")
+            assert failed is not None
+            assert failed["items_synced"] == 3 and failed["last_sync"] is None
+            assert "invalid XML" in failed["error"]
+
+            with patch(
+                "openjarvis.connectors.news_rss._fetch_feed",
+                side_effect=[_SAMPLE_RSS, _SAMPLE_ATOM] * 2,
+            ):
+                assert engine.sync(connector) == 1
+                assert engine.sync(connector) == 0
+            recovered = engine.get_checkpoint("news_rss")
+            assert recovered is not None
+            assert recovered["items_synced"] == 4 and recovered["error"] is None
+
+
 def test_sync_filters_by_since(connector):
     """Items older than `since` are excluded when date is parseable."""
     with patch(
@@ -193,7 +233,8 @@ def test_sync_filters_by_since(connector):
         return_value=_SAMPLE_RSS,
     ):
         # Only items after April 1 12:00 should come through
-        docs = list(connector.sync(since=datetime(2026, 4, 1, 11, 0, 0)))
+        utc_plus_two = timezone(timedelta(hours=2))
+        docs = list(connector.sync(since=datetime(2026, 4, 1, 13, tzinfo=utc_plus_two)))
 
     assert len(docs) == 2
     assert docs[0].title == "Article Two"

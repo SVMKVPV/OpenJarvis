@@ -12,9 +12,10 @@ import ipaddress
 import json
 import re
 import socket
+import ssl
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from html import unescape
 from pathlib import Path
@@ -357,6 +358,12 @@ class NewsRSSConnector(BaseConnector):
     ) -> Iterator[Document]:
         """Yield Documents for recent items across all configured feeds."""
         feeds = self._load_config()
+        self._status.state = "syncing"
+        self._status.error = None
+        failures: list[str] = []
+        cutoff = since
+        if since is not None and since.tzinfo is None:
+            cutoff = since.replace(tzinfo=timezone.utc)
 
         for feed in feeds:
             feed_name = feed.get("name", "Unknown Feed")
@@ -365,16 +372,30 @@ class NewsRSSConnector(BaseConnector):
                 continue
 
             try:
-                xml_text = _fetch_feed(feed_url)
-            except (httpx.HTTPError, ValueError):
+                items = _parse_rss_items(_fetch_feed(feed_url))
+            except httpx.HTTPStatusError as exc:
+                failures.append(f"{feed_name}: HTTP {exc.response.status_code}")
+                continue
+            except httpx.RequestError as exc:
+                reason = (
+                    "TLS certificate verification failed"
+                    if isinstance(exc.__cause__, ssl.SSLCertVerificationError)
+                    else "connection failed"
+                )
+                failures.append(f"{feed_name}: {reason}")
+                continue
+            except (ET.ParseError, ValueError) as exc:
+                reason = "invalid XML" if isinstance(exc, ET.ParseError) else str(exc)
+                failures.append(f"{feed_name}: {reason}")
                 continue
 
-            items = _parse_rss_items(xml_text)
             for item in items:
                 pub_dt = _parse_pub_date(item["pubDate"])
+                if pub_dt is not None and pub_dt.tzinfo is None:
+                    pub_dt = pub_dt.replace(tzinfo=timezone.utc)
 
                 # Filter by since if the date is parseable
-                if since and pub_dt and pub_dt.replace(tzinfo=None) < since:
+                if cutoff is not None and pub_dt is not None and pub_dt < cutoff:
                     continue
 
                 title = item["title"] or "Untitled"
@@ -391,8 +412,12 @@ class NewsRSSConnector(BaseConnector):
                     metadata={"feed_name": feed_name},
                 )
 
-        self._status.state = "idle"
-        self._status.last_sync = datetime.now()
+        if failures:
+            self._status.state = "error"
+            self._status.error = "RSS sync incomplete. " + "; ".join(failures)
+        else:
+            self._status.state = "idle"
+            self._status.last_sync = datetime.now(timezone.utc)
 
     def sync_status(self) -> SyncStatus:
         return self._status
