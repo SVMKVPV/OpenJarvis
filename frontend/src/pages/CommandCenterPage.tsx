@@ -1,5 +1,7 @@
 import { FormEvent, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router';
 import { Activity, ArrowUp, Mic, MicOff, Plus, Settings2, Square, Volume2 } from 'lucide-react';
+
 import {
   Background,
   Handle,
@@ -26,6 +28,14 @@ import { SocialContentStudio } from './SocialContentStudio';
 import { SystemBuilderLab } from './SystemBuilderLab';
 import './command-center.css';
 import './overview-dashboard.css';
+
+const STATION_AGENT_TEMPLATES: Record<string, string> = {
+  finance: 'cfo_finance',
+  research: 'competitive_research',
+  email: 'email_briefing',
+  managers: 'quality_manager',
+  'system-builder': 'system_builder',
+};
 
 type Station = {
   id: string;
@@ -524,6 +534,11 @@ export function CommandCenterPage() {
           </section>
           {selected.id === 'marketing' && <SocialContentStudio />}
           {selected.id === 'system-builder' && <SystemBuilderLab />}
+          {STATION_AGENT_TEMPLATES[selected.id] && (
+            <Link to={`/agents?template=${STATION_AGENT_TEMPLATES[selected.id]}`}>
+              Configure {selected.name} agent ↗
+            </Link>
+          )}
           <WorkflowBlueprint
             key={selected.id}
             className="gold-blueprint"

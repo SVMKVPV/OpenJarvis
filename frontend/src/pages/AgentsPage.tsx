@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { toast } from 'sonner';
@@ -3429,6 +3430,17 @@ export function AgentsPage() {
   const [channels, setChannels] = useState<ChannelBinding[]>([]);
   const [templates, setTemplates] = useState<AgentTemplate[]>([]);
   const [showWizard, setShowWizard] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTemplate = searchParams.get('template');
+  const preferredTemplate = templates.find((template) => template.id === requestedTemplate);
+  const closeWizard = () => {
+    setShowWizard(false);
+    if (requestedTemplate) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('template');
+      setSearchParams(next, { replace: true });
+    }
+  };
   const [detailTab, setDetailTab] = useState<'overview' | 'interact' | 'channels' | 'messaging' | 'tasks' | 'memory' | 'learning' | 'logs'>('interact');
 
   const refresh = useCallback(async () => {
@@ -3907,12 +3919,14 @@ export function AgentsPage() {
     <div className="flex-1 overflow-y-auto px-6 py-10">
       <div className="max-w-5xl mx-auto">
       {/* Launch wizard modal */}
-      {showWizard && (
+      {(showWizard || preferredTemplate) && (
         <LaunchWizard
-          templates={templates}
-          onClose={() => setShowWizard(false)}
+          templates={preferredTemplate
+            ? [preferredTemplate, ...templates.filter((template) => template.id !== preferredTemplate.id)]
+            : templates}
+          onClose={closeWizard}
           onLaunched={() => {
-            setShowWizard(false);
+            closeWizard();
             refresh();
           }}
         />
