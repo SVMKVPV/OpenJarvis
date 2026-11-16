@@ -152,6 +152,25 @@ export function SoftwareEngineeringWorkspace({ initialRunId = '' }: { initialRun
   const [inspectedRunId, setInspectedRunId] = useState(initialRunId);
   const runInspector = useRef<HTMLElement>(null);
   const [runDetail, setRunDetail] = useState<WorkflowRunDetail | null>(null);
+  const runGraph = useMemo(
+    () => runDetail?.graph ? readDraftGraph(JSON.stringify(runDetail.graph)) : null,
+    [runDetail?.graph],
+  );
+  const runStepElements = useRef(new Map<string, HTMLLIElement>());
+  const lastAttempts = new Map((runDetail?.steps ?? []).map((step) => [step.node_id, step]));
+  const runStepStatuses = new Map(Array.from(lastAttempts, ([id, step]) => [
+    id,
+    step.metadata.workflow_status === 'waiting_approval'
+      ? 'waiting for approval'
+      : step.success ? 'succeeded' : 'failed',
+  ] as const));
+  const openRunStep = (id: string) => {
+    const step = lastAttempts.get(id);
+    const element = step && runStepElements.current.get(`${id}:${step.attempt}`);
+    const evidence = element?.querySelector<HTMLDetailsElement>('details[data-approval-input]');
+    if (evidence) evidence.open = true;
+    element?.focus();
+  };
   const [runDetailError, setRunDetailError] = useState('');
   const [runActionPending, setRunActionPending] = useState(false);
   const [runActionMessage, setRunActionMessage] = useState<{ id: string; text: string } | null>(null);
@@ -1028,9 +1047,17 @@ export function SoftwareEngineeringWorkspace({ initialRunId = '' }: { initialRun
                     )}
                   </div>
                   {runActionMessage?.id === runDetail.id && <p role="status">{runActionMessage.text}</p>}
+                  {runGraph && runGraph.nodes.length > 0 && (
+                    <WorkflowDraftMap label="Workflow run diagram" steps={runGraph.nodes}
+                      connections={runGraph.edges ?? []} statuses={runStepStatuses} onOpen={openRunStep} />
+                  )}
                   {runDetail.error && <p>{runDetail.error}</p>}
                   {runDetail.steps.length ? <ol>{runDetail.steps.map((step) => (
-                    <li key={`${step.node_id}-${step.attempt}`}>
+                    <li key={`${step.node_id}-${step.attempt}`} tabIndex={-1} ref={(element) => {
+                      const key = `${step.node_id}:${step.attempt}`;
+                      if (element) runStepElements.current.set(key, element);
+                      else runStepElements.current.delete(key);
+                    }}>
                       <strong>{step.node_id} · Attempt {step.attempt}</strong>
                       <p>{step.metadata.workflow_status === 'waiting_approval' ? 'Waiting for approval' : step.success ? 'Succeeded' : 'Failed'}</p>
                       {typeof step.metadata.shared_brain_revision === 'number' && (
@@ -1038,7 +1065,7 @@ export function SoftwareEngineeringWorkspace({ initialRunId = '' }: { initialRun
                       )}
                       {step.output && <pre>{step.output}</pre>}
                       {typeof step.metadata.review_input === 'string' && (
-                        <details open={initialRunId === inspectedRunId}>
+                        <details data-approval-input open={initialRunId === inspectedRunId}>
                           <summary>Input presented for approval</summary>
                           {step.metadata.review_input
                             ? <pre>{step.metadata.review_input}</pre>

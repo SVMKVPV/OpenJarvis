@@ -3,15 +3,22 @@ import { Background, Handle, MarkerType, Position, ReactFlow, type Edge, type No
 
 type DraftStep = { id: string; type?: string };
 type DraftConnection = { source: string; target: string; condition?: string };
-type StepNode = Node<{ label: string; kind: string; onOpen: (id: string) => void }, 'draftStep'>;
+type StepStatus = 'succeeded' | 'failed' | 'waiting for approval' | 'no result';
+type StepNode = Node<{
+  label: string;
+  kind: string;
+  status?: StepStatus;
+  onOpen: (id: string) => void;
+}, 'draftStep'>;
 
 function DraftStepNode({ id, data }: NodeProps<StepNode>) {
   return (
     <>
       <Handle type="target" position={Position.Top} />
-      <button type="button" className="workflow-map-step" onClick={() => data.onOpen(id)}>
+      <button type="button" className="workflow-map-step" data-status={data.status}
+        disabled={data.status === 'no result'} onClick={() => data.onOpen(id)}>
         <strong>{data.label}</strong>
-        <small>{data.kind}</small>
+        <small>{data.status ?? data.kind}</small>
       </button>
       <Handle type="source" position={Position.Bottom} />
     </>
@@ -20,12 +27,17 @@ function DraftStepNode({ id, data }: NodeProps<StepNode>) {
 
 const nodeTypes = { draftStep: DraftStepNode };
 
-export function WorkflowDraftMap({ steps, connections, onOpen, canConnect, onConnect }: {
+export function WorkflowDraftMap({
+  steps, connections, onOpen, canConnect, onConnect, statuses,
+  label = 'Saved workflow diagram',
+}: {
   steps: DraftStep[];
   connections: DraftConnection[];
   onOpen: (id: string) => void;
-  canConnect: (source: string, target: string) => boolean;
-  onConnect: (source: string, target: string) => void;
+  canConnect?: (source: string, target: string) => boolean;
+  onConnect?: (source: string, target: string) => void;
+  statuses?: ReadonlyMap<string, StepStatus>;
+  label?: string;
 }) {
   const { nodes, edges } = useMemo(() => {
     const known = new Set(steps.map((step) => step.id));
@@ -60,7 +72,12 @@ export function WorkflowDraftMap({ steps, connections, onOpen, canConnect, onCon
       id: step.id,
       type: 'draftStep',
       position: positions.get(step.id) ?? { x: 0, y: level++ * 90 },
-      data: { label: step.id, kind: step.type === 'agent' ? 'model' : step.type ?? 'step', onOpen },
+      data: {
+        label: step.id,
+        kind: step.type === 'agent' ? 'model' : step.type ?? 'step',
+        status: statuses && (statuses.get(step.id) ?? 'no result'),
+        onOpen,
+      },
     }));
     const edges: Edge[] = valid.map(({ source, target, condition }, index) => ({
       id: String(index),
@@ -73,16 +90,16 @@ export function WorkflowDraftMap({ steps, connections, onOpen, canConnect, onCon
       labelBgStyle: { fill: '#171107' },
     }));
     return { nodes, edges };
-  }, [steps, connections, onOpen]);
+  }, [steps, connections, onOpen, statuses]);
 
   return (
-    <div className="workflow-draft-map" aria-label="Saved workflow diagram">
+    <div className="workflow-draft-map" role="group" aria-label={label}>
       <ReactFlow<StepNode> nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView
         fitViewOptions={{ padding: 0.12, maxZoom: 1 }} minZoom={0.2}
-        isValidConnection={({ source, target }) => canConnect(source, target)}
-        onConnect={({ source, target }) => onConnect(source, target)}
+        isValidConnection={({ source, target }) => canConnect?.(source, target) ?? false}
+        onConnect={({ source, target }) => onConnect?.(source, target)}
         connectionLineStyle={{ stroke: '#d6ad52', strokeWidth: 2 }}
-        nodesDraggable={false} nodesFocusable={false}
+        nodesDraggable={false} nodesConnectable={!!onConnect} nodesFocusable={false}
         edgesFocusable={false} preventScrolling={false} zoomOnDoubleClick={false}>
         <Background color="#3b2e15" gap={18} />
       </ReactFlow>

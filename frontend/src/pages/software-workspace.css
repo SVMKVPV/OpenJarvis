@@ -51,3 +51,9 @@
   border-radius: 0;
   background: #d6ad52;
 }
+
+.workflow-map-step[data-status="succeeded"] { border-color: #75936b; }
+.workflow-map-step[data-status="failed"] { border-color: #c46f5b; }
+.workflow-map-step[data-status="waiting for approval"] { border-color: #edb653; }
+.workflow-map-step[data-status="no result"] { opacity: .6; }
+.workflow-run-detail li[tabindex]:focus { outline: 1px solid #d6ad52; }
