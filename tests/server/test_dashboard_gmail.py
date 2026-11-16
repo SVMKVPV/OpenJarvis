@@ -63,3 +63,20 @@ def test_gmail_review_counts_threads_with_inbound_latest_message(tmp_path, monke
             assert json.loads(result.content) == candidates.json()["candidates"]
         finally:
             manager.close()
+
+def test_exact_gmail_reference_excludes_other_messages_and_attachments(tmp_path):
+    with KnowledgeStore(tmp_path / "knowledge.db") as store:
+        for reference, source_id, body, chunk in [
+            ("gmail:abc", "abc", "Original email", 0),
+            ("gmail:abc", "abc", "Second excerpt", 1),
+            ("gmail:abc", "abc:attachment", "Attachment payload", 0),
+            ("gmail:def", "def", "Other sender", 0),
+        ]:
+            store.store(
+                body, source="gmail", doc_type="email", doc_id=reference,
+                source_id=source_id, title="Same subject", chunk_index=chunk,
+            )
+        message = store.gmail_indexed_message("gmail:abc")
+        assert message is not None
+        assert message["excerpts"] == ["Original email", "Second excerpt"]
+        assert store.gmail_indexed_message("gmail:unknown") is None

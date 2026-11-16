@@ -77,11 +77,12 @@ const EMAIL_REPLY_REVIEW = {
   nodes: [
     { id: 'source-email', type: 'tool', config: {
       tool_name: 'knowledge_search', query_from_input: true, source: 'gmail', require_match: true,
+      allow_gmail_reference: true,
     } },
     { id: 'draft-reply', type: 'agent', agent: 'none', config: {
       instruction: [
         'Draft one email from BLVCKOAK replying to the matching indexed email.',
-        'Use the sender name from the result header in the greeting. Use Hello if no name is shown. Omit placeholders.',
+        'Use the sender name from the indexed result in the greeting. Use Hello if no name is shown. Omit placeholders.',
         'Use a subject and a concise body. For an acknowledgment, confirm receipt of the email and include its reference. Omit additional requests or commitments.',
         'Sign as BLVCKOAK. Return an ambiguity note if the intended email cannot be identified.',
       ].join(' '),
@@ -812,7 +813,7 @@ export function SoftwareEngineeringWorkspace({ initialRunId = '' }: { initialRun
             }}>Load document review starter</button>
             <button type="button" disabled={savingDefinition} onClick={() => {
               loadWorkflowEditor(EMAIL_REPLY_REVIEW);
-              setDefinitionMessage('Gmail reply workflow loaded. Save it, then run it with a distinctive subject or reference from the indexed email.');
+              setDefinitionMessage('Gmail reply workflow loaded. Save it, then run it with a distinctive subject or the indexed Gmail reference (gmail:…).');
             }}>Load Gmail reply review starter</button>
             <label>Workflow name
               <input ref={workflowNameInput} value={workflowName}

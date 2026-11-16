@@ -34,3 +34,30 @@ class GmailReviewCandidatesTool(BaseTool):
         with KnowledgeStore() as store:
             candidates = store.gmail_review_candidates()
         return ToolResult(self.tool_id, json.dumps(candidates, ensure_ascii=False))
+
+
+class GmailIndexedMessageTool(BaseTool):
+    tool_id = "gmail_indexed_message"
+
+    def __init__(self, store: KnowledgeStore) -> None:
+        self._store = store
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description="Read an indexed Gmail message by exact reference.",
+            parameters={
+                "type": "object",
+                "properties": {"reference": {"type": "string"}},
+                "required": ["reference"],
+            },
+        )
+
+    def execute(self, reference: str) -> ToolResult:
+        message = self._store.gmail_indexed_message(reference)
+        if message is None:
+            return ToolResult(
+                self.tool_id, "Indexed Gmail message not found.", success=False
+            )
+        return ToolResult(self.tool_id, json.dumps(message, ensure_ascii=False))

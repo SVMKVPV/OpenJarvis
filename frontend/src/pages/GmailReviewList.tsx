@@ -38,6 +38,9 @@ export function GmailReviewList() {
                 </a>
               ) : <strong>{subject}</strong>}
               <div>{sender || 'Unknown sender'} · <time dateTime={received_at}>{new Date(received_at).toLocaleString()}</time></div>
+              {message_id && id === 'gmail:' + message_id && (
+                <div>Workflow reference <code>{id}</code></div>
+              )}
             </li>
           ))}
         </ul>

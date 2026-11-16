@@ -615,6 +615,32 @@ class KnowledgeStore(MemoryBackend):
             for row in rows
         ]
 
+    def gmail_indexed_message(self, reference: str) -> dict[str, Any] | None:
+        """Read body excerpts from the exact Gmail document, excluding attachments."""
+        rows = self._conn.execute(
+            """
+            SELECT title, author, timestamp, url, substr(content, 1, 2000)
+            FROM knowledge_chunks
+            WHERE source = 'gmail' AND doc_type = 'email'
+                AND doc_id = ? AND source_id = substr(doc_id, 7)
+                AND deleted_at IS NULL
+            ORDER BY chunk_index
+            LIMIT 5
+            """,
+            (reference,),
+        ).fetchall()
+        if not rows:
+            return None
+        first = rows[0]
+        return {
+            "reference": reference,
+            "subject": first[0],
+            "sender": first[1],
+            "received_at": first[2],
+            "url": first[3],
+            "excerpts": [row[4] for row in rows],
+        }
+
     def upcoming_calendar_events(
         self, now_iso: str, local_day: str, *, limit: int = 8
     ) -> list[dict[str, Any]]:

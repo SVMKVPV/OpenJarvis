@@ -483,6 +483,7 @@ class WorkflowEngine:
         from openjarvis.core.registry import ConnectorRegistry
         from openjarvis.core.types import ToolCall
         from openjarvis.tools._stubs import ToolExecutor
+        from openjarvis.tools.gmail_review import GmailIndexedMessageTool
         from openjarvis.tools.knowledge_search import KnowledgeSearchTool
 
         source = node.config.get("source", "")
@@ -500,16 +501,24 @@ class WorkflowEngine:
             if len(indexed_sources) == 1:
                 source = indexed_sources[0]
 
-        call = ToolCall(
-            id=f"wf_{node.id}",
-            name="knowledge_search",
-            arguments=json.dumps(
-                {"query": query, "source": source, "top_k": 5}
-            ),
-        )
         with KnowledgeStore() as store:
+            tool: GmailIndexedMessageTool | KnowledgeSearchTool
+            arguments: dict[str, Any]
+            if (
+                node.config.get("allow_gmail_reference") is True
+                and source == "gmail"
+                and query.startswith("gmail:")
+            ):
+                tool = GmailIndexedMessageTool(store)
+                arguments = {"reference": query}
+            else:
+                tool = KnowledgeSearchTool(store=store)
+                arguments = {"query": query, "source": source, "top_k": 5}
+            call = ToolCall(
+                id=f"wf_{node.id}", name=tool.spec.name, arguments=json.dumps(arguments)
+            )
             executor = ToolExecutor(
-                tools=[KnowledgeSearchTool(store=store)],
+                tools=[tool],
                 bus=self._bus,
                 capability_policy=getattr(system, "capability_policy", None),
                 rate_limiter=getattr(system, "rate_limiter", None),
