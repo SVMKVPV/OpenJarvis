@@ -39,6 +39,7 @@ import {
 import { isAutoUpdateDisabled, setAutoUpdateDisabled } from '../components/Desktop/UpdateChecker';
 
 const CLOUD_KEY_STATUS_CHANGED = 'openjarvis-cloud-key-status-changed';
+const OMNIROUTE_LOCAL_URL = 'http://127.0.0.1:20128/v1';
 
 function OllamaModelList() {
   const [models, setModels] = useState<Array<{ name: string; size: number }>>([]);
@@ -355,6 +356,10 @@ export function SettingsPage() {
   const saveSource = useCallback(async () => {
     try {
       if (srcKind === 'custom') {
+        if (customHost.trim() === OMNIROUTE_LOCAL_URL && !customKey.trim()) {
+          setSrcMsg('Enter your OmniRoute gateway key before saving.');
+          return;
+        }
         await setInferenceSource({ kind: 'custom', host: customHost, model: customModel, engine: customEngine, apiKey: customKey || undefined });
       } else {
         await setInferenceSource({ kind: 'ollama' });
@@ -600,6 +605,21 @@ export function SettingsPage() {
             </SettingRow>
             {srcKind === 'custom' && (
               <>
+                <SettingRow label="OmniRoute" description="Use the local gateway and its API key from Dashboard → Endpoints.">
+                  <button
+                    type="button"
+                    className="text-sm px-3 py-1.5 cursor-pointer"
+                    onClick={() => {
+                      setCustomHost(OMNIROUTE_LOCAL_URL);
+                      setCustomModel('auto');
+                      setCustomEngine('lmstudio');
+                      setCustomKey('');
+                      setSrcMsg('Enter your OmniRoute gateway key before saving.');
+                    }}
+                  >
+                    Use local OmniRoute
+                  </button>
+                </SettingRow>
                 <SettingRow label="Server URL" description="e.g. LM Studio: http://localhost:1234/v1">
                   <input type="text" value={customHost} onChange={(e) => { setCustomHost(e.target.value); setSrcMsg(''); }} placeholder="http://localhost:1234/v1"
                     className="text-sm px-3 py-1.5 rounded-lg outline-none w-56"
