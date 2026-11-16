@@ -11,6 +11,50 @@ from fastapi.testclient import TestClient  # noqa: E402
 from openjarvis.server.workflow_routes import create_workflow_runs_router  # noqa: E402
 
 
+def test_approval_reopens_runtime_after_restart(tmp_path, monkeypatch) -> None:
+    from openjarvis.server import approval_routes
+    from openjarvis.tools.approval_store import ApprovalStore
+
+    monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(tmp_path / "workflow.db"))
+    approvals = ApprovalStore(str(tmp_path / "approvals.db"))
+    monkeypatch.setattr(approval_routes, "_store", approvals)
+
+    def new_app():
+        app = FastAPI()
+        app.state.workflow_system = None
+        app.include_router(create_workflow_runs_router())
+        app.include_router(approval_routes.router)
+        return app
+
+    def wait_status(client, run_id, expected):
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            run = client.get(f"/v1/workflows/runs/{run_id}").json()
+            if run["status"] == expected:
+                return run
+            time.sleep(0.01)
+        pytest.fail(f"Run did not reach {expected}")
+
+    original = new_app()
+    with TestClient(original) as client:
+        response = client.post(
+            "/v1/workflows/runs",
+            json={"nodes": [{"id": "review", "type": "approval"}]},
+        )
+        assert response.status_code == 202
+        run_id = response.json()["id"]
+        paused = wait_status(client, run_id, "waiting_approval")
+    original.state.workflow_runtime.close()
+
+    restarted = new_app()
+    with TestClient(restarted) as client:
+        approval_id = paused["steps"][0]["metadata"]["approval_id"]
+        assert client.post(f"/v1/approvals/{approval_id}/approve").status_code == 200
+        wait_status(client, run_id, "succeeded")
+    restarted.state.workflow_runtime.close()
+    approvals.close()
+
+
 def test_saved_definition_survives_runtime_restart(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(tmp_path / "workflow.db"))
     app = FastAPI()

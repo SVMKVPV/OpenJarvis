@@ -30,28 +30,29 @@ class WorkflowRunRequest(WorkflowDefinition, WorkflowInputs):
     pass
 
 
+_runtime_creation_lock = threading.Lock()
+
+
+def get_workflow_runtime(request: Request) -> WorkflowRuntime:
+    with _runtime_creation_lock:
+        runtime = getattr(request.app.state, "workflow_runtime", None)
+        if runtime is None:
+            db_path = os.environ.get("OPENJARVIS_WORKFLOW_DB", "")
+            store = WorkflowRunStore(db_path=db_path)
+            runtime = WorkflowRuntime(
+                system=request.app.state.workflow_system,
+                store=store,
+                approval_store=get_approval_store(),
+                bus=getattr(request.app.state, "bus", None),
+            )
+            request.app.state.workflow_runtime = runtime
+        return runtime
+
+
 def create_workflow_runs_router() -> APIRouter:
     root = APIRouter(prefix="/v1/workflows", tags=["workflows"])
     router = APIRouter(prefix="/runs")
-    creation_lock = threading.Lock()
-
-    def _runtime(request: Request) -> WorkflowRuntime:
-        runtime = getattr(request.app.state, "workflow_runtime", None)
-        if runtime is not None:
-            return runtime
-        with creation_lock:
-            runtime = getattr(request.app.state, "workflow_runtime", None)
-            if runtime is None:
-                db_path = os.environ.get("OPENJARVIS_WORKFLOW_DB", "")
-                store = WorkflowRunStore(db_path=db_path)
-                runtime = WorkflowRuntime(
-                    system=request.app.state.workflow_system,
-                    store=store,
-                    approval_store=get_approval_store(),
-                    bus=getattr(request.app.state, "bus", None),
-                )
-                request.app.state.workflow_runtime = runtime
-        return runtime
+    _runtime = get_workflow_runtime
 
     @router.post("", status_code=status.HTTP_202_ACCEPTED)
     async def start_run(payload: WorkflowRunRequest, request: Request) -> dict:

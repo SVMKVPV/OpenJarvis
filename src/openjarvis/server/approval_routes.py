@@ -38,8 +38,14 @@ _get_store = get_approval_store
 def _resume_workflow(request: Request, action: PendingAction) -> None:
     run_id = action.payload.get("workflow_run_id")
     runtime = getattr(request.app.state, "workflow_runtime", None)
-    if not run_id or runtime is None:
+    if not run_id:
         return
+    if runtime is None:
+        if not hasattr(request.app.state, "workflow_system"):
+            return
+        from openjarvis.server.workflow_routes import get_workflow_runtime
+
+        runtime = get_workflow_runtime(request)
     try:
         runtime.resume(run_id)
     except (KeyError, ValueError):
