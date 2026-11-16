@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from threading import Event
 
 from openjarvis.tools.approval_store import STATUS_APPROVED, ApprovalStore
 from openjarvis.workflow.builder import WorkflowBuilder
@@ -150,6 +151,34 @@ def test_resume_recognizes_expired_approval_without_polling(tmp_path) -> None:
         assert result["error"] == "Approval expired"
         assert all(step["node_id"] == "review" for step in result["steps"])
     finally:
+        runtime.close()
+        approvals.close()
+
+
+def test_cancel_during_last_step_is_recorded(tmp_path) -> None:
+    started = Event()
+    release = Event()
+
+    class SlowAgent:
+        def ask(self, *_args, **_kwargs):
+            started.set()
+            assert release.wait(5)
+            return {"content": "Step output"}
+
+    store = WorkflowRunStore(str(tmp_path / "workflow.db"))
+    approvals = ApprovalStore(str(tmp_path / "approvals.db"))
+    runtime = WorkflowRuntime(system=SlowAgent(), store=store, approval_store=approvals)
+    try:
+        graph = WorkflowBuilder("cancel last step").add_agent("last").build()
+        run_id = runtime.submit(graph)["id"]
+        assert started.wait(3)
+        assert runtime.cancel(run_id)
+        release.set()
+        result = _wait_for_terminal(store, run_id)
+        assert result["status"] == "cancelled"
+        assert result["steps"][0]["output"] == "Step output"
+    finally:
+        release.set()
         runtime.close()
         approvals.close()
 

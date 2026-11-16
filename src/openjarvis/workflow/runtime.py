@@ -102,29 +102,24 @@ class WorkflowRuntime:
                 resume_outputs=resume_outputs,
                 completed_nodes=completed_nodes,
             )
-            if result.status == "waiting_approval":
-                with self._lock:
-                    if self.store.is_cancel_requested(run_id):
-                        self.store.finish(run_id, status="cancelled")
-                        return
+            with self._lock:
+                if self.store.is_cancel_requested(run_id):
+                    self.store.finish(run_id, status="cancelled")
+                    return
+                if result.status == "waiting_approval":
                     approvals = context.setdefault("_workflow_approvals", {})
                     for step in result.steps:
                         if step.metadata.get("workflow_status") == "waiting_approval":
                             approvals[step.node_id] = step.metadata["approval_id"]
                     self.store.pause(run_id, context=context)
                     self._threads.pop(run_id, None)
-                return
-            error = (
-                ""
-                if result.success or result.status == "cancelled"
-                else result.final_output
-            )
-            self.store.finish(
-                run_id,
-                status=result.status,
-                final_output=result.final_output,
-                error=error,
-            )
+                    return
+                self.store.finish(
+                    run_id,
+                    status=result.status,
+                    final_output=result.final_output,
+                    error=result.final_output if result.status == "failed" else "",
+                )
         except Exception as exc:
             logger.exception("Workflow run %s failed", run_id)
             self.store.finish(run_id, status="failed", error=str(exc))
