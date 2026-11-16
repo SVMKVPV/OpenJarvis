@@ -23,6 +23,9 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
+      // Native WebView releases bundle their assets and must never be held
+      // back by a service worker from an older installed version.
+      disable: process.env.npm_lifecycle_event === 'build:tauri',
       registerType: 'autoUpdate',
       manifest: {
         name: 'OpenJarvis',

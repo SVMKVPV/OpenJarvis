@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { Routes, Route } from 'react-router';
 import { Layout } from './components/Layout';
 import { ChatPage } from './pages/ChatPage';
@@ -10,7 +10,6 @@ import { AgentsPage } from './pages/AgentsPage';
 import { DataSourcesPage } from './pages/DataSourcesPage';
 import { LogsPage } from './pages/LogsPage';
 import { CommandPalette } from './components/CommandPalette';
-import { SetupScreen } from './components/SetupScreen';
 import { Toaster } from './components/ui/sonner';
 import { useAppStore } from './lib/store';
 import { fetchModels, fetchServerInfo, fetchSavings, submitSavings, isTauri } from './lib/api';
@@ -20,16 +19,10 @@ import { track, hashId } from './lib/analytics';
 import { offerAnalyticsChoice } from './lib/analytics-invitation';
 
 export default function App() {
-  const [setupDone, setSetupDone] = useState(!isTauri());
-  const handleSetupReady = useCallback(() => {
-    setSetupDone(true);
-    // Only fire once per install — guard against setup screen re-appearing
-    // on reinstalls or dev reloads.
-    if (!localStorage.getItem('oj-setup-completed')) {
-      localStorage.setItem('oj-setup-completed', '1');
-      track('setup_completed', { preset: 'default' });
-    }
-  }, []);
+  // The command center is useful before an inference provider is configured.
+  // Provider setup remains available in Settings and retains its explicit
+  // consent step before Ollama starts or downloads a model.
+  const setupDone = true;
   const prevModelRef = useRef<string>('');
   const setModels = useAppStore((s) => s.setModels);
   const setModelsLoading = useAppStore((s) => s.setModelsLoading);
@@ -184,10 +177,6 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [commandPaletteOpen, setCommandPaletteOpen, toggleSystemPanel]);
 
-
-  if (!setupDone) {
-    return <SetupScreen onReady={handleSetupReady} />;
-  }
 
   return (
     <>
