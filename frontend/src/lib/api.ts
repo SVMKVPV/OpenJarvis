@@ -571,7 +571,10 @@ export async function createManagedAgent(body: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  if (!res.ok) {
+    const error = await res.json().catch(() => null);
+    throw new Error(typeof error?.detail === 'string' ? error.detail : `Failed: ${res.status}`);
+  }
   return res.json();
 }
 

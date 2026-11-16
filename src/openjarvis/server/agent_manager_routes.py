@@ -8,7 +8,7 @@ import re as _re
 import threading
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from openjarvis.agents.manager import AgentManager
+from openjarvis.agents.manager import AgentManager, AgentTemplateNotFound
 from openjarvis.agents.tool_resolver import (
     BROWSER_SUB_TOOLS as _BROWSER_SUB_TOOLS,
 )
@@ -1652,9 +1652,12 @@ def create_agent_manager_router(
     @agents_router.post("")
     async def create_agent(req: CreateAgentRequest, request: Request):
         if req.template_id:
-            agent = manager.create_from_template(
-                req.template_id, req.name, overrides=req.config
-            )
+            try:
+                agent = manager.create_from_template(
+                    req.template_id, req.name, overrides=req.config
+                )
+            except AgentTemplateNotFound as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
         else:
             agent = manager.create_agent(
                 name=req.name, agent_type=req.agent_type, config=req.config
@@ -2338,7 +2341,12 @@ def create_agent_manager_router(
 
     @templates_router.post("/{template_id}/instantiate")
     async def instantiate_template(template_id: str, req: CreateAgentRequest):
-        return manager.create_from_template(template_id, req.name, overrides=req.config)
+        try:
+            return manager.create_from_template(
+                template_id, req.name, overrides=req.config
+            )
+        except AgentTemplateNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     # ── Global agent endpoints ───────────────────────────────
 

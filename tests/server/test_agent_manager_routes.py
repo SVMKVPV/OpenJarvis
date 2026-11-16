@@ -134,6 +134,16 @@ class TestAgentManagerRoutes:
         assert resp.json()["sent"] is True
         instance.post.assert_awaited_once()
 
+    def test_missing_agent_template_returns_not_found(self, client, manager):
+        for path, payload in [
+            ("/v1/managed-agents", {"template_id": "missing-role"}),
+            ("/v1/templates/missing-role/instantiate", {}),
+        ]:
+            response = client.post(path, json={"name": "Example", **payload})
+            assert response.status_code == 404
+            assert response.json()["detail"] == "Template not found: missing-role"
+        assert not manager.list_agents()
+
     def test_create_agent(self, client):
         resp = client.post(
             "/v1/managed-agents",

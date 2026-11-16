@@ -20,6 +20,10 @@ from openjarvis.core.paths import get_config_dir
 
 logger = logging.getLogger(__name__)
 
+
+class AgentTemplateNotFound(ValueError):
+    """Raised when a requested agent template is unavailable."""
+
 _CREATE_AGENTS = """\
 CREATE TABLE IF NOT EXISTS managed_agents (
     id              TEXT PRIMARY KEY,
@@ -626,7 +630,7 @@ class AgentManager:
         templates = self.list_templates()
         tpl = next((t for t in templates if t.get("id") == template_id), None)
         if not tpl:
-            raise ValueError(f"Template not found: {template_id}")
+            raise AgentTemplateNotFound(f"Template not found: {template_id}")
         skip = {"id", "name", "description", "source"}
         config = {k: v for k, v in tpl.items() if k not in skip}
         if overrides:

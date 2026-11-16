@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { createManagedAgent, fetchManagedAgents, runManagedAgent, type ManagedAgent } from '../lib/api';
+import {
+  createManagedAgent, fetchManagedAgents, fetchTemplates, runManagedAgent, type ManagedAgent,
+} from '../lib/api';
 import { WorkstationAgentInbox } from './WorkstationAgentInbox';
 
 export function WorkstationAgentActivity({
@@ -54,6 +56,13 @@ export function WorkstationAgentActivity({
     setCreating(true);
     setCreationError('');
     try {
+      const templates = await fetchTemplates().catch(() => {
+        throw new Error('Could not check role templates. Verify the backend connection and try again.');
+      });
+      if (!templates.some((template) => template.id === templateId)) {
+        setCreationError('This backend does not offer this workstation’s role template. Update the backend or link an existing agent.');
+        return;
+      }
       const agent = await createManagedAgent({
         name: stationName,
         template_id: templateId,
