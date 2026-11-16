@@ -156,7 +156,7 @@ describe('connectors-api sends the Bearer auth header', () => {
 
   it('OAuth polling waits for a real connected state before resolving', async () => {
     vi.useFakeTimers();
-    const open = vi.fn();
+    const open = vi.fn(() => ({}));
     vi.stubGlobal('window', { open });
     try {
       fetchMock
@@ -178,6 +178,17 @@ describe('connectors-api sends the Bearer auth header', () => {
       expect(open).toHaveBeenCalledOnce();
     } finally {
       vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('reports a blocked OAuth popup without polling', async () => {
+    vi.stubGlobal('window', { open: vi.fn(() => null) });
+    try {
+      const { startServerOAuth } = await freshConnectorsApi();
+      await expect(startServerOAuth('spotify')).rejects.toThrow('blocked the sign-in window');
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
       vi.unstubAllGlobals();
     }
   });

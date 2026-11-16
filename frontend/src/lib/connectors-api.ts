@@ -18,8 +18,8 @@ export async function listConnectors(): Promise<ConnectorInfo[]> {
   return data.connectors || [];
 }
 
-export async function getConnector(id: string): Promise<ConnectorInfo> {
-  const res = await apiFetch(`/v1/connectors/${encodeURIComponent(id)}`);
+export async function getConnector(id: string, signal?: AbortSignal): Promise<ConnectorInfo> {
+  const res = await apiFetch(`/v1/connectors/${encodeURIComponent(id)}`, { signal });
   if (!res.ok) throw new Error(`Failed to get connector ${id}: ${res.status}`);
   return res.json();
 }
@@ -44,22 +44,29 @@ export async function connectSource(id: string, req: ConnectRequest): Promise<Co
  *  connector whose /connect returned `oauth_required` (issue #512). */
 export function startServerOAuth(id: string, oauthStartPath?: string): Promise<void> {
   const path = oauthStartPath || `/v1/connectors/${encodeURIComponent(id)}/oauth/start`;
-  window.open(`${getBase()}${path}`, '_blank', 'width=600,height=700');
+  const popup = window.open(`${getBase()}${path}`, '_blank', 'width=600,height=700');
+  if (!popup) {
+    return Promise.reject(new Error('Your browser blocked the sign-in window. Allow pop-ups for this site and try again.'));
+  }
   return new Promise((resolve, reject) => {
-    const interval = setInterval(async () => {
+    const controller = new AbortController();
+    const poll = async () => {
       try {
-        const info = await getConnector(id);
+        const info = await getConnector(id, controller.signal);
         if (info.connected) {
-          clearInterval(interval);
           clearTimeout(timer);
           resolve();
+          return;
         }
       } catch {
         // ignore transient polling errors
       }
-    }, 2000);
+      if (!controller.signal.aborted) nextPoll = setTimeout(poll, 2000);
+    };
+    let nextPoll = setTimeout(poll, 2000);
     const timer = setTimeout(() => {
-      clearInterval(interval);
+      clearTimeout(nextPoll);
+      controller.abort();
       reject(new Error('Authorization timed out — please try again.'));
     }, 180000);
   });
