@@ -478,7 +478,9 @@ export function SoftwareEngineeringWorkspace({
   };
   const [definitions, setDefinitions] = useState<SavedWorkflowDefinition[]>([]);
   const [nextDefinitionPage, setNextDefinitionPage] = useState<string | null>(null);
-  const [loadingOlderDefinitions, setLoadingOlderDefinitions] = useState(false);
+  const [loadingDefinitions, setLoadingDefinitions] = useState(true);
+  const [definitionSearch, setDefinitionSearch] = useState('');
+  const [appliedDefinitionSearch, setAppliedDefinitionSearch] = useState('');
   const [definitionId, setDefinitionId] = useState(initialDefinitionId);
   const [editingDefinition, setEditingDefinition] = useState<SavedWorkflowDefinition>();
   const editingDefinitionId = editingDefinition?.id;
@@ -576,25 +578,29 @@ export function SoftwareEngineeringWorkspace({
       setDefinitionMessage(items.length ? '' : 'No saved workflows.');
     }).catch(() => {
       if (!cancelled) setDefinitionMessage('Saved workflows are unavailable. Check the backend connection.');
+    }).finally(() => {
+      if (!cancelled) setLoadingDefinitions(false);
     });
     return () => { cancelled = true; };
   }, []);
 
-  const loadOlderDefinitions = async () => {
-    if (!nextDefinitionPage || loadingOlderDefinitions) return;
-    setLoadingOlderDefinitions(true);
+  const loadDefinitionPage = async (search: string, before?: string) => {
+    if (loadingDefinitions || savingDefinition) return;
+    setLoadingDefinitions(true);
     try {
-      const page = await fetchWorkflowDefinitions(nextDefinitionPage);
-      setDefinitions((current) => [
-        ...current,
-        ...page.definitions.filter((item) => !current.some((saved) => saved.id === item.id)),
-      ]);
+      const page = await fetchWorkflowDefinitions(before, search);
+      setDefinitions((current) => {
+        const retained = before ? current : current.filter((item) => item.id === definitionId);
+        return [...retained, ...page.definitions.filter((item) =>
+          !retained.some((saved) => saved.id === item.id))];
+      });
+      setAppliedDefinitionSearch(search);
       setNextDefinitionPage(page.next_before ?? null);
-      setDefinitionMessage('Older saved workflows loaded.');
+      setDefinitionMessage(search && !page.definitions.length ? 'No workflows match this name.' : '');
     } catch {
-      setDefinitionMessage('Could not load older workflows. Try again.');
+      setDefinitionMessage('Could not load saved workflows. Try again.');
     } finally {
-      setLoadingOlderDefinitions(false);
+      setLoadingDefinitions(false);
     }
   };
 
@@ -614,7 +620,7 @@ export function SoftwareEngineeringWorkspace({
   const saveDefinition = async (event: FormEvent) => {
     event.preventDefault();
     const name = workflowName.trim();
-    if (!name || savingDefinition) return;
+    if (!name || savingDefinition || loadingDefinitions) return;
     setSavingDefinition(true);
     try {
       const graph = JSON.parse(workflowGraph);
@@ -1121,11 +1127,11 @@ export function SoftwareEngineeringWorkspace({
               <input ref={workflowNameInput} value={workflowName}
                 onChange={(event) => setWorkflowName(event.target.value)} />
             </label>
-            <button className="workflow-launch" disabled={!workflowName.trim() || savingDefinition}>
+            <button className="workflow-launch" disabled={!workflowName.trim() || savingDefinition || loadingDefinitions}>
               {savingDefinition ? 'Saving…' : editingDefinitionId ? 'Save changes' : 'Save workflow'}
             </button>
             {editingDefinitionId && (
-              <button type="submit" value="copy" disabled={!workflowName.trim() || savingDefinition}>
+              <button type="submit" value="copy" disabled={!workflowName.trim() || savingDefinition || loadingDefinitions}>
                 Save as copy
               </button>
             )}
@@ -1330,10 +1336,27 @@ export function SoftwareEngineeringWorkspace({
                 selectedDefinition?.graph.nodes.some((node) => node.id === 'delivery-evidence')} />
           )}
           <p><a href="https://zie619.github.io/n8n-workflows/" target="_blank" rel="noopener noreferrer">Browse optional n8n templates ↗</a><br />Download JSON for manual import into n8n.</p>
+          <form className="connector-editor" onSubmit={(event) => {
+            event.preventDefault();
+            void loadDefinitionPage(definitionSearch.trim());
+          }}>
+            <label>Find a saved workflow
+              <input type="search" maxLength={200} value={definitionSearch}
+                onChange={(event) => setDefinitionSearch(event.target.value)} />
+            </label>
+            <button type="submit" disabled={loadingDefinitions || savingDefinition}>Search workflows</button>
+            {appliedDefinitionSearch && (
+              <button type="button" disabled={loadingDefinitions || savingDefinition} onClick={() => {
+                setDefinitionSearch('');
+                void loadDefinitionPage('');
+              }}>Clear search</button>
+            )}
+          </form>
           {definitions.length > 0 && (
             <form className="connector-editor" onSubmit={launchSaved}>
               <label>Saved workflow
-                <select value={definitionId} onChange={(event) => setDefinitionId(event.target.value)}>
+                <select value={definitionId} disabled={loadingDefinitions}
+                  onChange={(event) => setDefinitionId(event.target.value)}>
                   <option value="">Choose a workflow</option>
                   {definitions.map((definition) => (
                     <option key={definition.id} value={definition.id}>{definition.graph.name}</option>
@@ -1341,9 +1364,9 @@ export function SoftwareEngineeringWorkspace({
                 </select>
               </label>
               {nextDefinitionPage && (
-                <button type="button" disabled={loadingOlderDefinitions}
-                  onClick={() => void loadOlderDefinitions()}>
-                  {loadingOlderDefinitions ? 'Loading…' : 'Load older workflows'}
+                <button type="button" disabled={loadingDefinitions || savingDefinition}
+                  onClick={() => void loadDefinitionPage(appliedDefinitionSearch, nextDefinitionPage)}>
+                  {loadingDefinitions ? 'Loading…' : 'Load older workflows'}
                 </button>
               )}
               <label>Run input

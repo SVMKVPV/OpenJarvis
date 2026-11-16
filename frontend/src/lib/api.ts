@@ -1584,11 +1584,14 @@ export async function saveWorkflowDefinition(
   return res.json();
 }
 
-export async function fetchWorkflowDefinitions(before?: string): Promise<{
+export async function fetchWorkflowDefinitions(before?: string, search?: string): Promise<{
   definitions: SavedWorkflowDefinition[];
   next_before?: string | null;
 }> {
-  const query = before ? `?${new URLSearchParams({ before })}` : '';
+  const params = new URLSearchParams();
+  if (before) params.set('before', before);
+  if (search) params.set('search', search);
+  const query = params.size ? `?${params}` : '';
   const res = await apiFetch(`/v1/workflows/definitions${query}`);
   if (!res.ok) throw new Error(`Failed to load saved workflows (${res.status}).`);
   return res.json();

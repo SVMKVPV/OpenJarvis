@@ -319,8 +319,11 @@ def create_workflow_runs_router() -> APIRouter:
         request: Request,
         limit: int = Query(50, ge=1, le=200),
         before: str = Query("", max_length=128),
+        search: str = Query("", max_length=200),
     ) -> dict:
-        items = _runtime(request).store.list_definitions(limit + 1, before=before)
+        items = _runtime(request).store.list_definitions(
+            limit + 1, before=before, search=search.strip()
+        )
         definitions = items[:limit]
         return {
             "definitions": definitions,

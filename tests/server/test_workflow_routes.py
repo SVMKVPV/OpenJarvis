@@ -432,7 +432,7 @@ def test_saved_workflow_pages_remain_stable_with_new_definitions(tmp_path, monke
             assert response.status_code == 201
             return response.json()
 
-        oldest = save("Oldest")
+        oldest = save("Oldest 100%")
         middle = save("Middle")
         newest = save("Newest")
         page = client.get(path, params={"limit": 2}).json()
@@ -445,6 +445,10 @@ def test_saved_workflow_pages_remain_stable_with_new_definitions(tmp_path, monke
         }).json()
         assert page["definitions"] == [oldest]
         assert page["next_before"] is None
+        matches = client.get(path, params={"search": " OLDEST 100% "}).json()
+        assert matches["definitions"] == [oldest]
+        matches = client.get(path, params={"search": "%"}).json()
+        assert matches["definitions"] == [oldest]
         app.state.workflow_runtime.close()
 
 
