@@ -1233,7 +1233,7 @@ export async function fetchWorkflowRuns(): Promise<WorkflowRunSummary[]> {
 
 export interface SavedWorkflowDefinition {
   id: string;
-  graph: { name: string };
+  graph: Pick<WorkflowRunInput, 'name' | 'nodes' | 'edges'>;
 }
 
 export async function saveWorkflowDefinition(

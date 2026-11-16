@@ -104,6 +104,7 @@ export function SoftwareEngineeringWorkspace() {
   const [workflowRuns, setWorkflowRuns] = useState<WorkflowRunSummary[]>([]);
   const [definitions, setDefinitions] = useState<SavedWorkflowDefinition[]>([]);
   const [definitionId, setDefinitionId] = useState('');
+  const selectedDefinition = definitions.find((item) => item.id === definitionId);
   const [workflowInput, setWorkflowInput] = useState('');
   const [definitionMessage, setDefinitionMessage] = useState('Loading saved workflows…');
   const [launchingSaved, setLaunchingSaved] = useState(false);
@@ -211,6 +212,16 @@ export function SoftwareEngineeringWorkspace() {
     } finally {
       setLaunchingSaved(false);
     }
+  };
+
+  const editSaved = () => {
+    if (!selectedDefinition) return;
+    const { name, nodes, edges } = selectedDefinition.graph;
+    setWorkflowName(name);
+    setWorkflowGraph(JSON.stringify({ nodes, edges }, null, 2));
+    setEdgeSource('');
+    setEdgeTarget('');
+    setDefinitionMessage('Saved workflow loaded into the editor. Save workflow creates a new copy.');
   };
 
   useEffect(() => {
@@ -443,6 +454,10 @@ export function SoftwareEngineeringWorkspace() {
               </label>
               <button className="workflow-launch" disabled={!definitionId || launchingSaved}>
                 {launchingSaved ? 'Starting…' : 'Run saved workflow'}
+              </button>
+              <button type="button" disabled={!selectedDefinition || savingDefinition}
+                onClick={editSaved} title="Replaces the current editor draft">
+                Load saved workflow into editor
               </button>
             </form>
           )}
