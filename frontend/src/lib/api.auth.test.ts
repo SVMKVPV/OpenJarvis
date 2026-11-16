@@ -134,6 +134,22 @@ describe('managed agent channels', () => {
   });
 });
 
+describe('workstation messages', () => {
+  it('queues a message without asking the backend to run it immediately', async () => {
+    const message = { id: 'message-1', status: 'pending', mode: 'queued' };
+    fetchMock.mockResolvedValue(Response.json(message));
+    const { askAgent } = await freshApi();
+
+    await expect(askAgent('agent-1', 'Review this next run', 'queued')).resolves.toEqual(message);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/v1/managed-agents/agent-1/messages'),
+      expect.objectContaining({
+        body: JSON.stringify({ content: 'Review this next run', mode: 'queued', stream: false }),
+      }),
+    );
+  });
+});
+
 describe('workflow run actions', () => {
   it('returns the new run and its original run ID after a retry', async () => {
     const retry = { id: 'retry-run', parent_run_id: 'original/run', status: 'queued' };

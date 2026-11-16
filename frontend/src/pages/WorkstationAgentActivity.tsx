@@ -1,18 +1,24 @@
 import { useEffect, useState } from 'react';
-import { fetchManagedAgents, runManagedAgent, type ManagedAgent } from '../lib/api';
+import { createManagedAgent, fetchManagedAgents, runManagedAgent, type ManagedAgent } from '../lib/api';
 import { WorkstationAgentInbox } from './WorkstationAgentInbox';
 
 export function WorkstationAgentActivity({
   agentId,
+  stationName,
+  templateId,
   onSelect,
 }: {
   agentId: string;
+  stationName: string;
+  templateId?: string;
   onSelect: (id: string) => void;
 }) {
   const [agents, setAgents] = useState<ManagedAgent[] | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [starting, setStarting] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [creationError, setCreationError] = useState('');
   const [runMessage, setRunMessage] = useState<{ id: string; text: string } | null>(null);
 
   useEffect(() => {
@@ -39,6 +45,26 @@ export function WorkstationAgentActivity({
   }, [refreshVersion]);
 
   const selected = agents?.find((agent) => agent.id === agentId);
+  const createRoleAgent = async () => {
+    if (!templateId || agentId || creating || unavailable || agents === null) return;
+    setCreating(true);
+    setCreationError('');
+    try {
+      const agent = await createManagedAgent({
+        name: stationName,
+        template_id: templateId,
+        config: { schedule_type: 'manual', schedule_value: '' },
+      });
+      setAgents((current) => [agent, ...(current ?? []).filter((item) => item.id !== agent.id)]);
+      onSelect(agent.id);
+      setRefreshVersion((version) => version + 1);
+    } catch (error) {
+      setCreationError(error instanceof Error ? error.message : 'Could not create the role agent.');
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const startRun = async () => {
     if (!selected || unavailable || starting || selected.status !== 'idle') return;
     setStarting(true);
@@ -63,7 +89,7 @@ export function WorkstationAgentActivity({
     <section className="station-details-editor" aria-label="Managed agent activity">
       <label>
         Managed agent
-        <select value={agentId} onChange={(event) => {
+        <select value={agentId} disabled={creating} onChange={(event) => {
           setRunMessage(null);
           onSelect(event.target.value);
         }}>
@@ -74,7 +100,13 @@ export function WorkstationAgentActivity({
       </label>
       {unavailable && <p role="status">Live agent activity unavailable.</p>}
       {!unavailable && agents === null && <p role="status">Loading agents…</p>}
-      {!unavailable && agents?.length === 0 && <p>Create a managed agent in Agents to link it here.</p>}
+      {!unavailable && agents !== null && !agentId && templateId && (
+        <button type="button" disabled={creating} onClick={() => void createRoleAgent()}>
+          {creating ? 'Creating agent…' : 'Create and link manual agent'}
+        </button>
+      )}
+      {creationError && <p role="status">{creationError}</p>}
+      {!unavailable && !templateId && agents?.length === 0 && <p>Create a managed agent in Agents to link it here.</p>}
       {!unavailable && selected && (
         <div>
           <p>Status: {selected.status.replace(/_/g, ' ')}</p>

@@ -276,6 +276,38 @@ class TestAgentManagerRoutes:
         assert res.status_code == 200
         assert len(res.json()["messages"]) == 1
 
+    def test_manual_role_agent_accepts_queue_without_starting(self, client, manager):
+        scheduler = MagicMock()
+        client.app.state.agent_scheduler = scheduler
+        response = client.post(
+            "/v1/managed-agents",
+            json={
+                "name": "Managers",
+                "template_id": "quality_manager",
+                "config": {"schedule_type": "manual", "schedule_value": ""},
+            },
+        )
+        assert response.status_code == 200
+        agent = response.json()
+        assert agent["config"]["schedule_type"] == "manual"
+        scheduler.register_agent.assert_not_called()
+
+        worker = "openjarvis.server.agent_manager_routes._start_managed_worker"
+        with patch(worker) as start:
+            response = client.post(
+                f"/v1/managed-agents/{agent['id']}/messages",
+                json={
+                    "content": "Review the next draft",
+                    "mode": "queued",
+                    "stream": False,
+                },
+            )
+        assert response.status_code == 200
+        start.assert_not_called()
+        pending = manager.get_pending_messages(agent["id"])
+        assert [message["id"] for message in pending] == [response.json()["id"]]
+        assert manager.get_agent(agent["id"])["status"] == "idle"
+
     def test_get_agent_state(self, manager, client):
         agent = manager.create_agent(name="stateful", agent_type="simple")
         res = client.get(f"/v1/managed-agents/{agent['id']}/state")

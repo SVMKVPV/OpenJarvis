@@ -900,11 +900,15 @@ export async function sendAgentMessage(
  * Returns immediately with the stored user message; progress is observed via
  * the `/v1/agents/events` WebSocket and the resulting trace.
  */
-export async function askAgent(agentId: string, content: string): Promise<AgentMessage> {
+export async function askAgent(
+  agentId: string,
+  content: string,
+  mode: AgentMessage['mode'] = 'immediate',
+): Promise<AgentMessage> {
   const res = await apiFetch(`/v1/managed-agents/${agentId}/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...timeZoneHeaders() },
-    body: JSON.stringify({ content, mode: 'immediate', stream: false }),
+    body: JSON.stringify({ content, mode, stream: false }),
   });
   if (!res.ok) throw new Error(`Failed: ${res.status}`);
   return res.json();
