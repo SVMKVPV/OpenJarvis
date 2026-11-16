@@ -60,7 +60,7 @@ type DraftEdge = { source: string; target: string; condition?: string };
 
 type DraftNode = { id: string; type?: string; agent?: string; config?: Record<string, unknown> };
 type DraftGraph = { nodes: DraftNode[]; edges?: DraftEdge[] };
-type NewStepType = 'transform' | 'condition' | 'approval' | 'agent';
+type NewStepType = 'tool' | 'transform' | 'condition' | 'approval' | 'agent';
 
 function readDraftGraph(draft: string): DraftGraph | null {
   try {
@@ -319,6 +319,11 @@ export function SoftwareEngineeringWorkspace() {
     switch (stepType) {
       case 'agent':
         definition = { ...node, agent: 'none', config: { instruction: stepSetting.trim() } };
+        break;
+      case 'tool':
+        definition = { ...node, config: {
+          tool_name: 'knowledge_search', query_from_input: true, source: stepSetting.trim(),
+        } };
         break;
       case 'condition':
         definition = { ...node, condition_expr: stepSetting.trim() };
@@ -709,6 +714,7 @@ export function SoftwareEngineeringWorkspace() {
                     }}>
                       <option value="transform">Transform</option>
                       <option value="agent">Model response</option>
+                      <option value="tool">Search connector index</option>
                       <option value="condition">Condition</option>
                       <option value="approval">Approval</option>
                     </select>
@@ -721,6 +727,15 @@ export function SoftwareEngineeringWorkspace() {
                         <option value="json_field">Extract JSON field</option>
                         <option value="json_select">Keep selected JSON fields</option>
                       </select>
+                    </label>
+                  ) : stepType === 'tool' ? (
+                    <label>Indexed source
+                      <input list="indexed-workflow-sources" value={stepSetting}
+                        onChange={(event) => setStepSetting(event.target.value)} placeholder="gmail" />
+                      <datalist id="indexed-workflow-sources">
+                        {liveConnectors?.map((source) => <option key={source.connector_id} value={source.connector_id} />)}
+                      </datalist>
+                      <small>Uses the incoming text as a query against the local index.</small>
                     </label>
                   ) : stepType === 'agent' ? (
                     <label>Model instructions (optional)

@@ -228,7 +228,7 @@ class WorkflowEngine:
             if node.node_type == NodeType.AGENT:
                 result = self._run_agent_node(node, outputs, system, graph)
             elif node.node_type == NodeType.TOOL:
-                result = self._run_tool_node(node, outputs, system)
+                result = self._run_tool_node(node, outputs, system, graph)
             elif node.node_type == NodeType.CONDITION:
                 result = self._run_condition_node(node, outputs)
             elif node.node_type == NodeType.TRANSFORM:
@@ -436,9 +436,17 @@ class WorkflowEngine:
         node: WorkflowNode,
         outputs: Dict[str, str],
         system: Any,
+        graph: WorkflowGraph,
     ) -> WorkflowStepResult:
         """Execute a tool node."""
         tool_name = node.config.get("tool_name", "")
+        if (
+            tool_name == "knowledge_search"
+            and node.config.get("query_from_input") is True
+        ):
+            return self._search_connector_index(
+                node, self._get_node_input(node, outputs, graph).strip(), system
+            )
         tool_args = node.config.get("tool_args", "{}")
         if system and system.tool_executor:
             from openjarvis.core.types import ToolCall
@@ -454,6 +462,41 @@ class WorkflowEngine:
             node_id=node.id,
             success=False,
             output="No tool executor available.",
+        )
+
+    def _search_connector_index(
+        self, node: WorkflowNode, query: str, system: Any
+    ) -> WorkflowStepResult:
+        from openjarvis.connectors.store import KnowledgeStore
+        from openjarvis.core.types import ToolCall
+        from openjarvis.tools._stubs import ToolExecutor
+        from openjarvis.tools.knowledge_search import KnowledgeSearchTool
+
+        source = node.config.get("source", "")
+        if not query or not isinstance(source, str) or not source.strip():
+            return WorkflowStepResult(
+                node_id=node.id,
+                success=False,
+                output="A query and source are required.",
+            )
+
+        call = ToolCall(
+            id=f"wf_{node.id}",
+            name="knowledge_search",
+            arguments=json.dumps(
+                {"query": query, "source": source.strip(), "top_k": 5}
+            ),
+        )
+        with KnowledgeStore() as store:
+            executor = ToolExecutor(
+                tools=[KnowledgeSearchTool(store=store)],
+                bus=self._bus,
+                capability_policy=getattr(system, "capability_policy", None),
+                rate_limiter=getattr(system, "rate_limiter", None),
+            )
+            result = executor.execute(call)
+        return WorkflowStepResult(
+            node_id=node.id, success=result.success, output=result.content
         )
 
     def _run_condition_node(

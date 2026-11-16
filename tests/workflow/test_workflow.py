@@ -254,6 +254,31 @@ class TestWorkflowEngine:
         assert result.status == "failed"
         assert result.final_output == "Model unavailable"
 
+    def test_connector_search_filters_by_source(self, tmp_path, monkeypatch):
+        from openjarvis.connectors.store import KnowledgeStore
+
+        monkeypatch.setattr("openjarvis.core.config.DEFAULT_CONFIG_DIR", tmp_path)
+        with KnowledgeStore() as store:
+            store.store(content="Invoice safety deposit is 250", source="gmail")
+            store.store(content="Invoice unrelated chat", source="slack")
+        graph = graph_from_dict({
+            "nodes": [{
+                "id": "search",
+                "type": "tool",
+                "config": {
+                    "tool_name": "knowledge_search",
+                    "query_from_input": True,
+                    "source": "gmail",
+                },
+            }],
+        })
+
+        result = WorkflowEngine().run(graph, initial_input="invoice")
+
+        assert result.status == "succeeded"
+        assert "safety deposit is 250" in result.final_output
+        assert "unrelated chat" not in result.final_output
+
     def test_saved_model_instruction_is_separate_from_workflow_input(self):
         from openjarvis.core.config import JarvisConfig
         from openjarvis.core.types import Role
