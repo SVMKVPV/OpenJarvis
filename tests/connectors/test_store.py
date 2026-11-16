@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import Barrier
 
 import pytest
 
@@ -48,6 +50,21 @@ def ks(tmp_path: Path) -> KnowledgeStore:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
+
+def test_concurrent_open_of_fresh_knowledge_store(tmp_path: Path) -> None:
+    db_path = tmp_path / "concurrent.db"
+    barrier = Barrier(8)
+
+    def open_store():
+        barrier.wait(timeout=5)
+        with KnowledgeStore(db_path) as store:
+            return store.retrieve("unknown")
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = [pool.submit(open_store) for _ in range(8)]
+        assert [future.result(timeout=10) for future in futures] == [[]] * 8
+    db_path.unlink()  # Windows refuses deletion if any connection leaked.
 
 
 def test_store_and_retrieve_basic(ks: KnowledgeStore) -> None:

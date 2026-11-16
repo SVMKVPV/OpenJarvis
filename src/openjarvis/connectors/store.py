@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -21,6 +22,9 @@ from typing import Any, Dict, Iterable, List, Optional, Union
 from openjarvis.core.events import EventType, get_event_bus
 from openjarvis.core.registry import MemoryRegistry
 from openjarvis.tools.storage._stubs import MemoryBackend, RetrievalResult
+
+# Opening a fresh profile can race on SQLite's journal-mode transition.
+_SETUP_LOCK = threading.Lock()
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -163,15 +167,19 @@ class KnowledgeStore(MemoryBackend):
             db_path = DEFAULT_CONFIG_DIR / "knowledge.db"
 
         self._db_path = str(db_path)
-        # Ensure the parent directory exists (skip for :memory:)
-        if self._db_path != ":memory:":
-            from openjarvis.security.file_utils import secure_create
+        with _SETUP_LOCK:
+            if self._db_path != ":memory:":
+                from openjarvis.security.file_utils import secure_create
 
-            secure_create(Path(self._db_path))
+                secure_create(Path(self._db_path))
 
-        self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
-        self._setup()
+            self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
+            self._conn.row_factory = sqlite3.Row
+            try:
+                self._setup()
+            except BaseException:
+                self._conn.close()
+                raise
 
     def __enter__(self) -> "KnowledgeStore":
         return self
