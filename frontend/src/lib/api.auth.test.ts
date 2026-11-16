@@ -150,6 +150,17 @@ describe('workstation messages', () => {
   });
 });
 
+describe('workflow definitions', () => {
+  it('explains how to save edits when the backend rejects definition updates', async () => {
+    fetchMock.mockResolvedValue(Response.json({ detail: 'Method Not Allowed' }, { status: 405 }));
+    const { saveWorkflowDefinition } = await freshApi();
+    const definition = { name: 'Review', nodes: [{ id: 'review', type: 'approval' }] };
+
+    await expect(saveWorkflowDefinition(definition, 'saved-1')).rejects.toThrow('Save as copy');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('workflow run actions', () => {
   it('returns the new run and its original run ID after a retry', async () => {
     const retry = { id: 'retry-run', parent_run_id: 'original/run', status: 'queued' };

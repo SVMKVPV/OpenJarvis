@@ -112,6 +112,8 @@ export function SoftwareEngineeringWorkspace() {
   const [runDetailError, setRunDetailError] = useState('');
   const [runActionPending, setRunActionPending] = useState(false);
   const [runActionMessage, setRunActionMessage] = useState<{ id: string; text: string } | null>(null);
+  const runIsActive = runDetail !== null && ['queued', 'running', 'waiting_approval'].includes(runDetail.status);
+  const cancellationPending = runIsActive && runDetail.cancel_requested;
   const inspectRun = (id: string) => {
     setRunDetail(null);
     setRunDetailError('');
@@ -124,6 +126,11 @@ export function SoftwareEngineeringWorkspace() {
     setRunActionMessage(null);
     try {
       const retry = await requestWorkflowRunAction(id, action);
+      if (action === 'cancel') {
+        setRunDetail((current) => current?.id === id
+          ? { ...current, cancel_requested: true }
+          : current);
+      }
       if (retry) {
         setWorkflowRuns((current) => [retry, ...current.filter((run) => run.id !== retry.id)]);
         inspectRun(retry.id);
@@ -176,7 +183,9 @@ export function SoftwareEngineeringWorkspace() {
       try {
         const detail = await fetchWorkflowRun(inspectedRunId, controller.signal);
         if (controller.signal.aborted) return;
-        setRunDetail(detail);
+        setRunDetail((current) => current?.id === detail.id && current.cancel_requested
+          ? { ...detail, cancel_requested: true }
+          : detail);
         setRunDetailError('');
         if (!['queued', 'running', 'waiting_approval'].includes(detail.status)) return;
       } catch (error) {
@@ -673,7 +682,7 @@ export function SoftwareEngineeringWorkspace() {
               {runDetail?.id === inspectedRunId ? (
                 <>
                   <h4>{runDetail.workflow_name}</h4>
-                  <p>Run status: {runDetail.status.replace('_', ' ')}</p>
+                  <p>Run status: {cancellationPending ? 'cancelling' : runDetail.status.replace('_', ' ')}</p>
                   {runDetail.graph?.nodes.length > 0 && (
                     <button type="button" disabled={savingDefinition}
                       title="Replaces the current editor draft"
@@ -690,15 +699,15 @@ export function SoftwareEngineeringWorkspace() {
                     </button>
                   )}
                   <div>
-                    {['queued', 'running', 'waiting_approval'].includes(runDetail.status) && (
-                      <button type="button" disabled={runActionPending}
+                    {runIsActive && (
+                      <button type="button" disabled={runActionPending || cancellationPending}
                         onClick={() => void actOnRun(runDetail.id, 'cancel')}>Cancel run</button>
                     )}
                     {['failed', 'cancelled', 'interrupted'].includes(runDetail.status) && (
                       <button type="button" disabled={runActionPending}
                         onClick={() => void actOnRun(runDetail.id, 'retry')}>Retry as new run</button>
                     )}
-                    {runDetail.status === 'waiting_approval' && (
+                    {runDetail.status === 'waiting_approval' && !cancellationPending && (
                       <button type="button" disabled={runActionPending}
                         onClick={() => void actOnRun(runDetail.id, 'resume')}>Request resume</button>
                     )}

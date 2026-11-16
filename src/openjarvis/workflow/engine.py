@@ -104,6 +104,7 @@ class WorkflowEngine:
                     ctx,
                     system,
                     graph,
+                    should_cancel,
                 )
                 all_steps.append(step)
                 if step_callback:
@@ -134,6 +135,7 @@ class WorkflowEngine:
                             },
                             system,
                             graph,
+                            should_cancel,
                         ): nid
                         for nid in stage
                     }
@@ -161,6 +163,10 @@ class WorkflowEngine:
 
             if not success:
                 break
+
+        if should_cancel and should_cancel():
+            cancelled = True
+            success = False
 
         total = time.time() - t0
         # Final output is the output of the last executed node
@@ -208,6 +214,7 @@ class WorkflowEngine:
         ctx: Dict[str, Any],
         system: Any,
         graph: WorkflowGraph,
+        should_cancel: Optional[Callable[[], bool]] = None,
     ) -> WorkflowStepResult:
         """Execute a single workflow node."""
         if self._bus:
@@ -230,7 +237,9 @@ class WorkflowEngine:
                     self._get_node_input(node, outputs, graph),
                 )
             elif node.node_type == NodeType.LOOP:
-                result = self._run_loop_node(node, outputs, system, graph)
+                result = self._run_loop_node(
+                    node, outputs, system, graph, should_cancel
+                )
             elif node.node_type == NodeType.APPROVAL:
                 result = self._run_approval_node(
                     node,
@@ -525,6 +534,7 @@ class WorkflowEngine:
         outputs: Dict[str, str],
         system: Any,
         graph: WorkflowGraph,
+        should_cancel: Optional[Callable[[], bool]],
     ) -> WorkflowStepResult:
         """Execute a loop node (re-runs agent until condition or max iterations)."""
         if system is None:
@@ -536,8 +546,12 @@ class WorkflowEngine:
             )
         last_output = self._get_node_input(node, outputs, graph)
         exit_condition = node.condition_expr.lower()
-        for iteration in range(1, node.max_iterations + 1):
+        iterations = 0
+        for _ in range(node.max_iterations):
+            if should_cancel and should_cancel():
+                break
             result = system.ask(last_output, agent=node.agent or None)
+            iterations += 1
             last_output = result.get("content", "")
             if exit_condition and exit_condition in last_output.lower():
                 break
@@ -545,7 +559,7 @@ class WorkflowEngine:
             node_id=node.id,
             success=True,
             output=last_output,
-            metadata={"iterations": iteration},
+            metadata={"iterations": iterations},
         )
 
 

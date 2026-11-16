@@ -1216,6 +1216,7 @@ export interface WorkflowRunSummary {
   final_output: string;
   error: string;
   parent_run_id: string | null;
+  cancel_requested: boolean;
   created_at: number;
   started_at: number | null;
   finished_at: number | null;
@@ -1286,6 +1287,9 @@ export async function saveWorkflowDefinition(
     body: JSON.stringify(definition),
   });
   if (!res.ok) {
+    if (definitionId && res.status === 405) {
+      throw new Error('This backend does not support saving workflow edits in place. Update the backend or use Save as copy.');
+    }
     const body = await res.json().catch(() => null);
     throw new Error(typeof body?.detail === 'string'
       ? body.detail : `Failed to save workflow (${res.status}).`);

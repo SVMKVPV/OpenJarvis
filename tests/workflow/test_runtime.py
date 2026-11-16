@@ -3,6 +3,8 @@ from __future__ import annotations
 import time
 from threading import Event
 
+import pytest
+
 from openjarvis.tools.approval_store import STATUS_APPROVED, ApprovalStore
 from openjarvis.workflow.builder import WorkflowBuilder
 from openjarvis.workflow.runtime import WorkflowRuntime
@@ -155,12 +157,15 @@ def test_resume_recognizes_expired_approval_without_polling(tmp_path) -> None:
         approvals.close()
 
 
-def test_cancel_during_last_step_is_recorded(tmp_path) -> None:
+@pytest.mark.parametrize("step_type", ["agent", "loop", "parallel_loop"])
+def test_cancel_during_last_step_is_recorded(tmp_path, step_type) -> None:
     started = Event()
     release = Event()
+    calls = []
 
     class SlowAgent:
-        def ask(self, *_args, **_kwargs):
+        def ask(self, prompt, **_kwargs):
+            calls.append(prompt)
             started.set()
             assert release.wait(5)
             return {"content": "Step output"}
@@ -169,14 +174,25 @@ def test_cancel_during_last_step_is_recorded(tmp_path) -> None:
     approvals = ApprovalStore(str(tmp_path / "approvals.db"))
     runtime = WorkflowRuntime(system=SlowAgent(), store=store, approval_store=approvals)
     try:
-        graph = WorkflowBuilder("cancel last step").add_agent("last").build()
+        builder = WorkflowBuilder("cancel last step")
+        if step_type == "agent":
+            builder.add_agent("last")
+        else:
+            builder.add_loop("last", max_iterations=3)
+        if step_type == "parallel_loop":
+            builder.add_transform("sibling")
+        graph = builder.build()
         run_id = runtime.submit(graph)["id"]
         assert started.wait(3)
         assert runtime.cancel(run_id)
         release.set()
         result = _wait_for_terminal(store, run_id)
         assert result["status"] == "cancelled"
-        assert result["steps"][0]["output"] == "Step output"
+        step = next(step for step in result["steps"] if step["node_id"] == "last")
+        assert step["output"] == "Step output"
+        assert len(calls) == 1
+        if step_type != "agent":
+            assert step["metadata"]["iterations"] == 1
     finally:
         release.set()
         runtime.close()
