@@ -8,6 +8,7 @@ import {
   fetchWorkflowDefinitions,
   fetchWorkflowRuns,
   runSavedWorkflow,
+  saveWorkflowDefinition,
   startWorkflowRun,
   type PendingApproval,
   type RuntimePlugin,
@@ -21,6 +22,25 @@ import './software-workspace.css';
 type Connector = { id: string; code: string; provider: string; product: string; role: string; model: string; status: 'setup' | 'local'; enabled: boolean; contributions: number };
 type WorkItem = { id: string; folder: string; name: string; type: string; state: 'ACTIVE' | 'REVIEW' | 'BLOCKED' | 'COMPLETE'; owner: string; detail: string };
 type Proposal = { id: string; connector: string; text: string; approved: boolean };
+
+const GUARDED_DELIVERY = {
+  name: 'CEO guarded delivery',
+  nodes: [
+    { id: 'prepare', type: 'transform', transform_expr: 'concatenate' },
+    {
+      id: 'approval',
+      type: 'approval',
+      config: {
+        action_type: 'release',
+        description: 'Approve the prepared delivery before release',
+        tier: 'high',
+        permission_key: 'workflow:release',
+      },
+    },
+    { id: 'release', type: 'transform', transform_expr: 'concatenate' },
+  ],
+  edges: [{ source: 'prepare', target: 'approval' }, { source: 'approval', target: 'release' }],
+};
 
 const INITIAL_CONNECTORS: Connector[] = [
   { id: 'openai', code: 'OAI', provider: 'OpenAI', product: 'ChatGPT', role: 'Implementation + code review', model: 'GPT-5', status: 'setup', enabled: true, contributions: 14 },
@@ -60,6 +80,8 @@ export function SoftwareEngineeringWorkspace() {
   const [workflowInput, setWorkflowInput] = useState('');
   const [definitionMessage, setDefinitionMessage] = useState('Loading saved workflows…');
   const [launchingSaved, setLaunchingSaved] = useState(false);
+  const [savingDefinition, setSavingDefinition] = useState(false);
+  const [workflowName, setWorkflowName] = useState(GUARDED_DELIVERY.name);
   const [workflowApprovals, setWorkflowApprovals] = useState<PendingApproval[]>([]);
   const [workflowState, setWorkflowState] = useState<'online' | 'offline' | 'starting'>('offline');
   const [proposals, setProposals] = useState<Proposal[]>([
@@ -72,13 +94,33 @@ export function SoftwareEngineeringWorkspace() {
     let cancelled = false;
     fetchWorkflowDefinitions().then((items) => {
       if (cancelled) return;
-      setDefinitions(items);
+      setDefinitions((current) => [
+        ...current,
+        ...items.filter((item) => !current.some((saved) => saved.id === item.id)),
+      ]);
       setDefinitionMessage(items.length ? '' : 'No saved workflows.');
     }).catch(() => {
       if (!cancelled) setDefinitionMessage('Saved workflows are unavailable. Check the backend connection.');
     });
     return () => { cancelled = true; };
   }, []);
+
+  const saveGuarded = async (event: FormEvent) => {
+    event.preventDefault();
+    const name = workflowName.trim();
+    if (!name || savingDefinition) return;
+    setSavingDefinition(true);
+    try {
+      const saved = await saveWorkflowDefinition({ ...GUARDED_DELIVERY, name });
+      setDefinitions((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
+      setDefinitionId(saved.id);
+      setDefinitionMessage('Workflow saved.');
+    } catch (error) {
+      setDefinitionMessage(error instanceof Error ? error.message : 'Could not save workflow.');
+    } finally {
+      setSavingDefinition(false);
+    }
+  };
 
   const launchSaved = async (event: FormEvent) => {
     event.preventDefault();
@@ -145,14 +187,8 @@ export function SoftwareEngineeringWorkspace() {
     setWorkflowState('starting');
     try {
       await startWorkflowRun({
-        name: 'CEO guarded delivery',
+        ...GUARDED_DELIVERY,
         initial_input: 'Prepare a reviewed command-center delivery',
-        nodes: [
-          { id: 'prepare', type: 'transform', transform_expr: 'concatenate' },
-          { id: 'approval', type: 'approval', config: { action_type: 'release', description: 'Approve the prepared delivery before release', tier: 'high', permission_key: 'workflow:release' } },
-          { id: 'release', type: 'transform', transform_expr: 'concatenate' },
-        ],
-        edges: [{ source: 'prepare', target: 'approval' }, { source: 'approval', target: 'release' }],
         context: { owner: 'CEO Director', station: 'System Builder' },
       });
       setWorkflowRuns(await fetchWorkflowRuns());
@@ -231,6 +267,14 @@ export function SoftwareEngineeringWorkspace() {
         <section className="workflow-runtime">
           <header><div><span>WORKFLOW RUNTIME</span><strong>DURABLE EXECUTION LEDGER</strong></div><em data-state={workflowState}>{workflowState.toUpperCase()}</em></header>
           <button className="workflow-launch" onClick={launchGuardedWorkflow} disabled={workflowState === 'starting'}>{workflowState === 'starting' ? 'STARTING…' : '+ RUN GUARDED DELIVERY'}</button>
+          <form className="connector-editor" onSubmit={saveGuarded}>
+            <label>Guarded delivery name
+              <input value={workflowName} onChange={(event) => setWorkflowName(event.target.value)} />
+            </label>
+            <button className="workflow-launch" disabled={!workflowName.trim() || savingDefinition}>
+              {savingDefinition ? 'Saving…' : 'Save guarded delivery'}
+            </button>
+          </form>
           <p><a href="https://zie619.github.io/n8n-workflows/" target="_blank" rel="noopener noreferrer">Browse optional n8n templates ↗</a><br />Download JSON for manual import into n8n.</p>
           {definitions.length > 0 && (
             <form className="connector-editor" onSubmit={launchSaved}>

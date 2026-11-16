@@ -1236,6 +1236,18 @@ export interface SavedWorkflowDefinition {
   graph: { name: string };
 }
 
+export async function saveWorkflowDefinition(
+  definition: Pick<WorkflowRunInput, 'name' | 'nodes' | 'edges'>,
+): Promise<SavedWorkflowDefinition> {
+  const res = await apiFetch('/v1/workflows/definitions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(definition),
+  });
+  if (!res.ok) throw new Error(`Failed to save workflow (${res.status}).`);
+  return res.json();
+}
+
 export async function fetchWorkflowDefinitions(): Promise<SavedWorkflowDefinition[]> {
   const res = await apiFetch('/v1/workflows/definitions');
   if (!res.ok) throw new Error(`Failed to load saved workflows (${res.status}).`);
