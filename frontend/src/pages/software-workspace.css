@@ -3,3 +3,14 @@
 .workflow-runtime{margin:12px;border:1px solid #4a3a1d;background:#090805}.workflow-runtime>header{min-height:42px}.workflow-runtime header em[data-state=online]{color:#8ba876}.workflow-runtime header em[data-state=offline]{color:#c9694d}.workflow-launch{width:100%;border:0;border-bottom:1px solid #4a3a1d;background:#c9a247;color:#090704;padding:9px;font:800 7px var(--font-mono);cursor:pointer}.workflow-launch:disabled{background:#4a3b1d;color:#8a7445}.workflow-approval{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:9px;border-bottom:1px solid #3b2d17;background:#171006}.workflow-approval b,.workflow-approval span{display:block}.workflow-approval b{color:#d29a62;font:800 6px var(--font-mono)}.workflow-approval span{margin-top:4px;color:#ac9870;font:8px var(--font-sans)}.workflow-approval button{border:1px solid #c9a247;background:transparent;color:#d7b65f;padding:6px;font:800 6px var(--font-mono)}.workflow-runs article{display:flex;justify-content:space-between;align-items:center;padding:8px 9px;border-bottom:1px solid #2d2516}.workflow-runs strong,.workflow-runs small{display:block}.workflow-runs strong{color:#c7b17b;font:600 8px var(--font-display)}.workflow-runs small{margin-top:3px;color:#625944;font:6px var(--font-mono)}.workflow-runs em{color:#8ba876;font:800 6px var(--font-mono);font-style:normal}.workflow-runs em[data-status=waiting_approval]{color:#d5a550}.workflow-runs em[data-status=failed],.workflow-runs em[data-status=interrupted]{color:#c9694d}.workflow-runtime>p{margin:0;padding:12px;color:#75694d;font:7px/1.5 var(--font-mono)}
 @media(max-width:1200px){.se-layout{grid-template-columns:190px 1fr}.connector-column{grid-column:1/-1;border-top:1px solid #49391c}.connector-list{display:grid;grid-template-columns:repeat(2,1fr)}.environment-preview{grid-column:1/-1}.se-workspace{height:calc(100vh - 154px)}}
 @media(max-width:720px){.se-workspace{padding:15px 10px}.se-heading{align-items:flex-start;flex-direction:column;gap:12px}.se-layout{display:block}.folder-rail,.project-surface{border-right:0;border-bottom:1px solid #49391c}.folder-rail nav{display:flex;overflow:auto}.folder-rail nav button{min-width:150px}.project-body{display:block}.work-items{display:flex;overflow:auto;border-right:0}.work-items>button{min-width:190px}.connector-list{display:block}.item-preview dl{display:block}.item-preview dl div{margin-bottom:10px}}
+.workflow-graph-editor {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.workflow-graph-editor textarea {
+  display: block;
+  width: 100%;
+  margin-block: 0.5rem;
+  resize: vertical;
+  font-family: var(--font-mono);
+}

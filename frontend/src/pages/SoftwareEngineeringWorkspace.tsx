@@ -42,6 +42,11 @@ const GUARDED_DELIVERY = {
   edges: [{ source: 'prepare', target: 'approval' }, { source: 'approval', target: 'release' }],
 };
 
+const GUARDED_GRAPH_JSON = JSON.stringify({
+  nodes: GUARDED_DELIVERY.nodes,
+  edges: GUARDED_DELIVERY.edges,
+}, null, 2);
+
 const INITIAL_CONNECTORS: Connector[] = [
   { id: 'openai', code: 'OAI', provider: 'OpenAI', product: 'ChatGPT', role: 'Implementation + code review', model: 'GPT-5', status: 'setup', enabled: true, contributions: 14 },
   { id: 'anthropic', code: 'ANT', provider: 'Anthropic', product: 'Claude', role: 'Architecture + long-context review', model: 'Claude Sonnet', status: 'setup', enabled: true, contributions: 9 },
@@ -82,6 +87,7 @@ export function SoftwareEngineeringWorkspace() {
   const [launchingSaved, setLaunchingSaved] = useState(false);
   const [savingDefinition, setSavingDefinition] = useState(false);
   const [workflowName, setWorkflowName] = useState(GUARDED_DELIVERY.name);
+  const [workflowGraph, setWorkflowGraph] = useState(GUARDED_GRAPH_JSON);
   const [workflowApprovals, setWorkflowApprovals] = useState<PendingApproval[]>([]);
   const [workflowState, setWorkflowState] = useState<'online' | 'offline' | 'starting'>('offline');
   const [proposals, setProposals] = useState<Proposal[]>([
@@ -105,13 +111,18 @@ export function SoftwareEngineeringWorkspace() {
     return () => { cancelled = true; };
   }, []);
 
-  const saveGuarded = async (event: FormEvent) => {
+  const saveDefinition = async (event: FormEvent) => {
     event.preventDefault();
     const name = workflowName.trim();
     if (!name || savingDefinition) return;
     setSavingDefinition(true);
     try {
-      const saved = await saveWorkflowDefinition({ ...GUARDED_DELIVERY, name });
+      const graph = JSON.parse(workflowGraph);
+      if (!graph || !Array.isArray(graph.nodes) || !graph.nodes.length ||
+          (graph.edges !== undefined && !Array.isArray(graph.edges))) {
+        throw new Error('Provide a nonempty nodes array and an optional edges array.');
+      }
+      const saved = await saveWorkflowDefinition({ name, nodes: graph.nodes, edges: graph.edges });
       setDefinitions((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
       setDefinitionId(saved.id);
       setDefinitionMessage('Workflow saved.');
@@ -267,13 +278,22 @@ export function SoftwareEngineeringWorkspace() {
         <section className="workflow-runtime">
           <header><div><span>WORKFLOW RUNTIME</span><strong>DURABLE EXECUTION LEDGER</strong></div><em data-state={workflowState}>{workflowState.toUpperCase()}</em></header>
           <button className="workflow-launch" onClick={launchGuardedWorkflow} disabled={workflowState === 'starting'}>{workflowState === 'starting' ? 'STARTING…' : '+ RUN GUARDED DELIVERY'}</button>
-          <form className="connector-editor" onSubmit={saveGuarded}>
-            <label>Guarded delivery name
+          <form className="connector-editor" onSubmit={saveDefinition}>
+            <label>Workflow name
               <input value={workflowName} onChange={(event) => setWorkflowName(event.target.value)} />
             </label>
             <button className="workflow-launch" disabled={!workflowName.trim() || savingDefinition}>
-              {savingDefinition ? 'Saving…' : 'Save guarded delivery'}
+              {savingDefinition ? 'Saving…' : 'Save workflow'}
             </button>
+            <details className="workflow-graph-editor">
+              <summary>Edit workflow definition</summary>
+              <label>OpenJarvis workflow JSON
+                <textarea rows={12} spellCheck={false} value={workflowGraph}
+                  onChange={(event) => setWorkflowGraph(event.target.value)} />
+              </label>
+              <small>Conditional edges accept true or false in the condition field.</small>
+              <button type="button" onClick={() => setWorkflowGraph(GUARDED_GRAPH_JSON)}>Restore guarded delivery steps</button>
+            </details>
           </form>
           <p><a href="https://zie619.github.io/n8n-workflows/" target="_blank" rel="noopener noreferrer">Browse optional n8n templates ↗</a><br />Download JSON for manual import into n8n.</p>
           {definitions.length > 0 && (
