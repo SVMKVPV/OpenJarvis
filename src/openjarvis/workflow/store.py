@@ -196,12 +196,20 @@ class WorkflowRunStore:
             ).fetchone()
         return self._definition(row) if row is not None else None
 
-    def list_definitions(self, limit: int) -> list[dict[str, Any]]:
+    def list_definitions(
+        self, limit: int, *, before: str = ""
+    ) -> list[dict[str, Any]]:
+        query = "SELECT * FROM workflow_definitions"
+        params: tuple[Any, ...] = (limit,)
+        if before:
+            query += (
+                " WHERE (created_at, id) < "
+                "(SELECT created_at, id FROM workflow_definitions WHERE id = ?)"
+            )
+            params = (before, limit)
+        query += " ORDER BY created_at DESC, id DESC LIMIT ?"
         with self._lock:
-            rows = self._conn.execute(
-                "SELECT * FROM workflow_definitions ORDER BY created_at DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
+            rows = self._conn.execute(query, params).fetchall()
         return [self._definition(row) for row in rows]
 
     @staticmethod

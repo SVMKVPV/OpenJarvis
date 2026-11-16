@@ -477,6 +477,8 @@ export function SoftwareEngineeringWorkspace({
     }
   };
   const [definitions, setDefinitions] = useState<SavedWorkflowDefinition[]>([]);
+  const [nextDefinitionPage, setNextDefinitionPage] = useState<string | null>(null);
+  const [loadingOlderDefinitions, setLoadingOlderDefinitions] = useState(false);
   const [definitionId, setDefinitionId] = useState(initialDefinitionId);
   const [editingDefinition, setEditingDefinition] = useState<SavedWorkflowDefinition>();
   const editingDefinitionId = editingDefinition?.id;
@@ -564,8 +566,9 @@ export function SoftwareEngineeringWorkspace({
 
   useEffect(() => {
     let cancelled = false;
-    fetchWorkflowDefinitions().then((items) => {
+    fetchWorkflowDefinitions().then(({ definitions: items, next_before }) => {
       if (cancelled) return;
+      setNextDefinitionPage(next_before ?? null);
       setDefinitions((current) => [
         ...current,
         ...items.filter((item) => !current.some((saved) => saved.id === item.id)),
@@ -576,6 +579,24 @@ export function SoftwareEngineeringWorkspace({
     });
     return () => { cancelled = true; };
   }, []);
+
+  const loadOlderDefinitions = async () => {
+    if (!nextDefinitionPage || loadingOlderDefinitions) return;
+    setLoadingOlderDefinitions(true);
+    try {
+      const page = await fetchWorkflowDefinitions(nextDefinitionPage);
+      setDefinitions((current) => [
+        ...current,
+        ...page.definitions.filter((item) => !current.some((saved) => saved.id === item.id)),
+      ]);
+      setNextDefinitionPage(page.next_before ?? null);
+      setDefinitionMessage('Older saved workflows loaded.');
+    } catch {
+      setDefinitionMessage('Could not load older workflows. Try again.');
+    } finally {
+      setLoadingOlderDefinitions(false);
+    }
+  };
 
   useEffect(() => {
     if (!initialDefinitionId) return;
@@ -1319,6 +1340,12 @@ export function SoftwareEngineeringWorkspace({
                   ))}
                 </select>
               </label>
+              {nextDefinitionPage && (
+                <button type="button" disabled={loadingOlderDefinitions}
+                  onClick={() => void loadOlderDefinitions()}>
+                  {loadingOlderDefinitions ? 'Loading…' : 'Load older workflows'}
+                </button>
+              )}
               <label>Run input
                 <input value={workflowInput} onChange={(event) => setWorkflowInput(event.target.value)} />
               </label>

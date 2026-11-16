@@ -316,10 +316,17 @@ def create_workflow_runs_router() -> APIRouter:
 
     @root.get("/definitions")
     def list_definitions(
-        request: Request, limit: int = Query(50, ge=1, le=200)
+        request: Request,
+        limit: int = Query(50, ge=1, le=200),
+        before: str = Query("", max_length=128),
     ) -> dict:
-        definitions = _runtime(request).store.list_definitions(limit)
-        return {"definitions": definitions, "count": len(definitions)}
+        items = _runtime(request).store.list_definitions(limit + 1, before=before)
+        definitions = items[:limit]
+        return {
+            "definitions": definitions,
+            "count": len(definitions),
+            "next_before": definitions[-1]["id"] if len(items) > limit else None,
+        }
 
     @root.get("/definitions/{definition_id}")
     def get_definition(definition_id: str, request: Request) -> dict:

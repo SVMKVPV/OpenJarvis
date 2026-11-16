@@ -417,6 +417,37 @@ def test_saved_definition_survives_runtime_restart(tmp_path, monkeypatch) -> Non
         app.state.workflow_runtime.close()
 
 
+def test_saved_workflow_pages_remain_stable_with_new_definitions(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(tmp_path / "workflow.db"))
+    app = FastAPI()
+    app.state.workflow_system = None
+    app.include_router(create_workflow_runs_router())
+    path = "/v1/workflows/definitions"
+
+    with TestClient(app) as client:
+        def save(name):
+            response = client.post(path, json={
+                "name": name, "nodes": [{"id": "copy", "type": "transform"}],
+            })
+            assert response.status_code == 201
+            return response.json()
+
+        oldest = save("Oldest")
+        middle = save("Middle")
+        newest = save("Newest")
+        page = client.get(path, params={"limit": 2}).json()
+        assert page["definitions"] == [newest, middle]
+        assert page["next_before"] == middle["id"]
+
+        save("Added after the first page")
+        page = client.get(path, params={
+            "limit": 2, "before": middle["id"],
+        }).json()
+        assert page["definitions"] == [oldest]
+        assert page["next_before"] is None
+        app.state.workflow_runtime.close()
+
+
 def test_saved_workflow_launch_key_reuses_run_after_restart(tmp_path, monkeypatch):
     from concurrent.futures import ThreadPoolExecutor
 
