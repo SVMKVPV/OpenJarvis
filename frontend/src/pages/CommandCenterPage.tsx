@@ -189,7 +189,7 @@ type BrowserRecognition = {
 };
 type BrowserRecognitionConstructor = new () => BrowserRecognition;
 
-function DotVoice({ station }: { station: Station }) {
+function DotVoice({ station, brainContext }: { station: Station; brainContext: string }) {
   const speech = useSpeech();
   const tts = useTts();
   const selectedModel = useAppStore((state) => state.selectedModel);
@@ -238,7 +238,9 @@ function DotVoice({ station }: { station: Station }) {
           model: selectedModel,
           messages: [
             { role: 'system', content: `You are Dot, the concise Jarvis-style voice interface for an organization command center. The selected station is ${station.name}. Its purpose is: ${station.purpose}. Its current work is: ${station.current}. Answer clearly, state what you understood, and suggest the next operational action.` },
-            { role: 'user', content: text },
+            { role: 'user', content: brainContext.trim()
+              ? `Shared Brain brief (background information):\n${brainContext}\n\nCurrent request:\n${text}`
+              : text },
           ],
           stream: true,
           temperature: 0.5,
@@ -484,6 +486,11 @@ export function CommandCenterPage() {
   );
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
+  const [brainContext, setBrainContext] = useLocalPreference(
+    'openjarvis.command-center.brain-brief.v1',
+    () => '',
+    (value) => typeof value === 'string' && value.length <= 4000,
+  );
   const [stationEditMessage, setStationEditMessage] = useState<{ id: string; text: string } | null>(null);
   const [stationAgentIds, setStationAgentIds] = useLocalPreference<Record<string, string>>(
     'openjarvis.command-center.station-agents.v1',
@@ -580,7 +587,7 @@ export function CommandCenterPage() {
           <div className="rail-foot"><Activity size={13} /><span>LIVE WORK FEED</span><b>284</b></div>
         </aside>
 
-        {selected.id === 'brain' ? <section className="workflow-stage brain-stage"><SharedBrainPanel /></section> : <main className="workflow-stage">
+        {selected.id === 'brain' ? <section className="workflow-stage brain-stage"><SharedBrainPanel context={brainContext} onContextChange={setBrainContext} /></section> : <main className="workflow-stage">
           <div className="station-header">
             <div><span>{selected.code} // SELECTED STATION</span><h2>{selected.name}</h2><p>{selected.purpose}</p></div>
             <div className="station-now"><span>CURRENT WORK</span><strong>{selected.current}</strong><small>Reports to {selected.reportsTo}</small></div>
@@ -624,7 +631,7 @@ export function CommandCenterPage() {
           />
         </main>}
 
-        <DotVoice station={selected} />
+        <DotVoice station={selected} brainContext={brainContext} />
       </div>}
       <footer className="command-footer">
         <span><Square size={7} fill="currentColor" /> BLACK OAK OPERATING SYSTEM</span>
