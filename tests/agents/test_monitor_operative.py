@@ -128,3 +128,19 @@ class TestMonitorOperativeAgent:
         assert search.call_count == 2
         assert "tools" in engine.generate.call_args_list[1].kwargs
         assert "tools" not in engine.generate.call_args_list[2].kwargs
+
+    def test_markdown_next_action_is_not_a_tool_call(self) -> None:
+        brief = "**Current Owner:** Lina\n**Next Action:** Confirm the design."
+        engine = _make_engine(brief)
+        agent = MonitorOperativeAgent(
+            engine, "test-model", tools=[KnowledgeSearchTool()]
+        )
+        assert agent.run("Write a delivery brief.").content == brief
+        engine.generate.assert_called_once()
+
+    def test_standalone_action_directive_remains_supported(self) -> None:
+        directive = 'Action: knowledge_search\nAction Input: {"query":"design"}'
+        assert MonitorOperativeAgent._extract_tool_call(directive) == (
+            "knowledge_search",
+            '{"query":"design"}',
+        )

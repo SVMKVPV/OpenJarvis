@@ -32,6 +32,8 @@ import './command-center.css';
 import './overview-dashboard.css';
 
 const STATION_AGENT_TEMPLATES: Record<string, string> = {
+  'general-manager': 'general_manager',
+  'operations-manager': 'operations_manager',
   finance: 'cfo_finance',
   research: 'competitive_research',
   email: 'email_briefing',

@@ -300,7 +300,7 @@ class MonitorOperativeAgent(ToolUsingAgent):
                 )
             else:
                 # --- Text-based fallback ---
-                tool_info = self._extract_tool_call(content)
+                tool_info = self._extract_tool_call(content) if openai_tools else None
                 json_search = False
                 if tool_info is None and knowledge_search_available:
                     tool_info = self._extract_json_knowledge_search(content)
@@ -465,9 +465,13 @@ class MonitorOperativeAgent(ToolUsingAgent):
         3. <tool_name query="..."> or <tool_name>...</tool_name> (inline XML)
         """
         # Format 1: Action / Action Input
-        action_match = re.search(r"Action:\s*(.+)", text, re.IGNORECASE)
+        action_match = re.search(
+            r"^[ \t]*Action:[ \t]*([\w.-]+)[ \t]*$", text, re.IGNORECASE | re.MULTILINE
+        )
         input_match = re.search(
-            r"Action Input:\s*(.+?)(?=\n\n|\Z)", text, re.DOTALL | re.IGNORECASE
+            r"^[ \t]*Action Input:[ \t]*(.+?)(?=\n\n|\Z)",
+            text,
+            re.DOTALL | re.IGNORECASE | re.MULTILINE,
         )
         if action_match:
             return (

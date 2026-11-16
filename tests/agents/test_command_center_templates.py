@@ -12,8 +12,14 @@ def test_command_center_role_templates_are_available() -> None:
         "email_briefing",
         "quality_manager",
         "system_builder",
+        "general_manager",
+        "operations_manager",
     }
     assert expected <= templates.keys()
+    for role in ("general_manager", "operations_manager"):
+        assert templates[role]["schedule_type"] == "manual"
+        assert templates[role]["tools"] == []
+        assert "report to Dot" in templates[role]["system_prompt_template"]
     assert (
         "explicit CEO approval"
         in templates["cfo_finance"]["system_prompt_template"]
