@@ -35,21 +35,13 @@ def get_approval_store() -> ApprovalStore:
 _get_store = get_approval_store
 
 
-def _resume_workflow(request: Request, action: PendingAction) -> None:
-    run_id = action.payload.get("workflow_run_id")
+def _workflow_runtime(request: Request):
     runtime = getattr(request.app.state, "workflow_runtime", None)
-    if not run_id:
-        return
-    if runtime is None:
-        if not hasattr(request.app.state, "workflow_system"):
-            return
+    if runtime is None and hasattr(request.app.state, "workflow_system"):
         from openjarvis.server.workflow_routes import get_workflow_runtime
 
         runtime = get_workflow_runtime(request)
-    try:
-        runtime.resume(run_id)
-    except (KeyError, ValueError):
-        logger.debug("Workflow %s was not resumable after approval decision", run_id)
+    return runtime
 
 
 def _serialize(action: PendingAction) -> Dict[str, Any]:
@@ -67,11 +59,17 @@ def _serialize(action: PendingAction) -> Dict[str, Any]:
 
 
 @router.get("/v1/approvals/pending")
-async def list_pending_approvals() -> Dict[str, Any]:
+async def list_pending_approvals(request: Request) -> Dict[str, Any]:
     store = _get_store()
     store.expire_stale()
-    actions = store.list_pending()
-    return {"actions": [_serialize(a) for a in actions], "count": len(actions)}
+    actions = []
+    for action in store.list_pending():
+        if "workflow_node_id" in action.payload:
+            runtime = _workflow_runtime(request)
+            if runtime is None or not runtime.is_waiting_for(action):
+                continue
+        actions.append(_serialize(action))
+    return {"actions": actions, "count": len(actions)}
 
 
 def _decide(action_id: str, request: Request, decision: str) -> Dict[str, Any]:
@@ -79,9 +77,13 @@ def _decide(action_id: str, request: Request, decision: str) -> Dict[str, Any]:
     action = store.get_action(action_id)
     if action is None:
         raise HTTPException(status_code=404, detail="Action not found")
-    if not store.decide_pending(action_id, decision):
+    if "workflow_node_id" in action.payload:
+        runtime = _workflow_runtime(request)
+        decided = runtime is not None and runtime.decide_approval(action, decision)
+    else:
+        decided = store.decide_pending(action_id, decision)
+    if not decided:
         raise HTTPException(status_code=409, detail="Action is no longer pending")
-    _resume_workflow(request, action)
     logger.info("Action %s %s via UI", action_id, decision)
     return {"status": decision, "id": action_id}
 

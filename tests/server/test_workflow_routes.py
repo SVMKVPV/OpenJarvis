@@ -49,10 +49,58 @@ def test_approval_reopens_runtime_after_restart(tmp_path, monkeypatch) -> None:
     restarted = new_app()
     with TestClient(restarted) as client:
         approval_id = paused["steps"][0]["metadata"]["approval_id"]
+        pending = client.get("/v1/approvals/pending").json()
+        assert [action["id"] for action in pending["actions"]] == [approval_id]
         assert client.post(f"/v1/approvals/{approval_id}/approve").status_code == 200
         wait_status(client, run_id, "succeeded")
     restarted.state.workflow_runtime.close()
     approvals.close()
+
+
+@pytest.mark.parametrize("terminal_status", ["failed", "cancelled", "succeeded"])
+def test_terminal_workflow_approval_is_not_actionable(
+    tmp_path, monkeypatch, terminal_status
+) -> None:
+    from openjarvis.server import approval_routes
+    from openjarvis.tools.approval_store import STATUS_PENDING, ApprovalStore
+    from openjarvis.workflow.runtime import WorkflowRuntime
+    from openjarvis.workflow.store import WorkflowRunStore
+
+    approvals = ApprovalStore(str(tmp_path / "approvals.db"))
+    monkeypatch.setattr(approval_routes, "_store", approvals)
+    runtime = WorkflowRuntime(
+        system=None,
+        store=WorkflowRunStore(str(tmp_path / "workflow.db")),
+        approval_store=approvals,
+    )
+    app = FastAPI()
+    app.state.workflow_runtime = runtime
+    app.include_router(approval_routes.router)
+    try:
+        run = runtime.store.create_run(
+            workflow_name="review", graph={}, initial_input="", context={}
+        )
+        action = approvals.queue_action(
+            action_type="review",
+            description="Review output",
+            payload={"workflow_run_id": run["id"], "workflow_node_id": "review"},
+            permission_key="review",
+            tier="high",
+        )
+        runtime.store.pause(
+            run["id"], context={"_workflow_approvals": {"review": action.id}}
+        )
+        if terminal_status == "cancelled":
+            assert runtime.cancel(run["id"])
+        else:
+            runtime.store.finish(run["id"], status=terminal_status)
+        with TestClient(app) as client:
+            assert client.get("/v1/approvals/pending").json()["actions"] == []
+            assert client.post(f"/v1/approvals/{action.id}/approve").status_code == 409
+        assert approvals.get_action(action.id).status == STATUS_PENDING
+    finally:
+        runtime.close()
+        approvals.close()
 
 
 def test_saved_definition_survives_runtime_restart(tmp_path, monkeypatch) -> None:

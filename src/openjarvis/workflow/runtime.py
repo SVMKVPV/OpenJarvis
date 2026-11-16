@@ -7,7 +7,7 @@ import threading
 from typing import Any, Mapping
 
 from openjarvis.core.events import EventBus
-from openjarvis.tools.approval_store import ApprovalStore
+from openjarvis.tools.approval_store import ApprovalStore, PendingAction
 from openjarvis.workflow.engine import WorkflowEngine
 from openjarvis.workflow.graph import WorkflowGraph
 from openjarvis.workflow.serialization import graph_from_dict, graph_to_dict
@@ -168,6 +168,27 @@ class WorkflowRuntime:
             self.store.mark_running(run_id)
             worker.start()
         return run
+
+    def is_waiting_for(self, action: PendingAction) -> bool:
+        run_id = action.payload.get("workflow_run_id")
+        node_id = action.payload.get("workflow_node_id")
+        if not isinstance(run_id, str) or not isinstance(node_id, str):
+            return False
+        run = self.store.get_run(run_id)
+        return (
+            run is not None
+            and run["status"] == "waiting_approval"
+            and run["context"].get("_workflow_approvals", {}).get(node_id) == action.id
+        )
+
+    def decide_approval(self, action: PendingAction, decision: str) -> bool:
+        with self._lock:
+            if self._stopping or not self.is_waiting_for(action):
+                return False
+            if not self.approval_store.decide_pending(action.id, decision):
+                return False
+            self.resume(action.payload["workflow_run_id"])
+            return True
 
     def cancel(self, run_id: str) -> bool:
         with self._lock:

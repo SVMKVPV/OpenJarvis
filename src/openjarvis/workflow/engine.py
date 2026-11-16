@@ -164,10 +164,18 @@ class WorkflowEngine:
         total = time.time() - t0
         # Final output is the output of the last executed node
         final_output = all_steps[-1].output if all_steps else ""
-        if not success and not waiting_approval:
-            final_output = next(
-                (step.output for step in all_steps if not step.success), final_output
-            )
+        failed_step = next(
+            (
+                step
+                for step in all_steps
+                if not step.success
+                and step.metadata.get("workflow_status") != "waiting_approval"
+            ),
+            None,
+        )
+        if failed_step is not None:
+            waiting_approval = False
+            final_output = failed_step.output
 
         if self._bus:
             self._bus.publish(

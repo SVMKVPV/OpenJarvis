@@ -204,3 +204,22 @@ class TestWorkflowEngine:
         assert result.status == "failed"
         assert [step.node_id for step in result.steps] == ["check"]
         assert "Condition evaluation failed" in result.final_output
+
+    def test_parallel_failure_takes_precedence_over_pending_approval(self, tmp_path):
+        from openjarvis.tools.approval_store import ApprovalStore
+
+        graph = (
+            WorkflowBuilder("parallel review")
+            .add_approval("review", action_type="review", description="Review output")
+            .add_condition("check", expr="outputs['missing']")
+            .build()
+        )
+        approvals = ApprovalStore(str(tmp_path / "approvals.db"))
+        try:
+            result = WorkflowEngine(approval_store=approvals).run(graph)
+        finally:
+            approvals.close()
+
+        assert {step.node_id for step in result.steps} == {"review", "check"}
+        assert result.status == "failed"
+        assert "Condition evaluation failed" in result.final_output
