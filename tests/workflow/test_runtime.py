@@ -5,7 +5,7 @@ import time
 from openjarvis.tools.approval_store import STATUS_APPROVED, ApprovalStore
 from openjarvis.workflow.builder import WorkflowBuilder
 from openjarvis.workflow.runtime import WorkflowRuntime
-from openjarvis.workflow.serialization import graph_to_dict
+from openjarvis.workflow.serialization import graph_from_dict, graph_to_dict
 from openjarvis.workflow.store import WorkflowRunStore
 from openjarvis.workflow.types import WorkflowStepResult
 
@@ -126,6 +126,32 @@ def test_runtime_pauses_for_approval_and_resumes_without_replay(tmp_path) -> Non
     assert next_pause["context"]["_workflow_approvals"]["approve"] != approval_id
     runtime.close()
     approvals.close()
+
+
+def test_resume_recognizes_expired_approval_without_polling(tmp_path) -> None:
+    store = WorkflowRunStore(str(tmp_path / "workflow.db"))
+    approvals = ApprovalStore(str(tmp_path / "approvals.db"))
+    runtime = WorkflowRuntime(system=None, store=store, approval_store=approvals)
+    graph = graph_from_dict(
+        {
+            "nodes": [
+                {"id": "review", "type": "approval", "config": {"ttl_hours": -1}},
+                {"id": "after", "type": "transform"},
+            ],
+            "edges": [{"source": "review", "target": "after"}],
+        }
+    )
+    try:
+        run_id = runtime.submit(graph)["id"]
+        _wait_for_status(store, run_id, "waiting_approval")
+        runtime.resume(run_id)
+        result = _wait_for_terminal(store, run_id)
+        assert result["status"] == "failed"
+        assert result["error"] == "Approval expired"
+        assert all(step["node_id"] == "review" for step in result["steps"])
+    finally:
+        runtime.close()
+        approvals.close()
 
 
 def test_running_run_is_marked_interrupted_after_reopen(tmp_path) -> None:

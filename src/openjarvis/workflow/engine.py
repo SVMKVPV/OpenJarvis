@@ -273,6 +273,7 @@ class WorkflowEngine:
         approval_ids = context.setdefault("_workflow_approvals", {})
         approval_id = approval_ids.get(node.id)
         if approval_id:
+            self._approval_store.expire_stale()
             action = self._approval_store.get_action(approval_id)
             if (
                 action is None
