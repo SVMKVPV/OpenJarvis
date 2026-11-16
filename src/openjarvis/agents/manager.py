@@ -817,6 +817,10 @@ class AgentManager:
                 tool_calls = json.loads(raw)
             except (json.JSONDecodeError, TypeError):
                 tool_calls = None
+        workflow_reference = {}
+        if row["mode"] == "handoff" and row["id"].startswith("workflow:"):
+            _, run_id, _ = row["id"].split(":", 2)
+            workflow_reference["workflow_run_id"] = run_id
         return {
             "id": row["id"],
             "agent_id": row["agent_id"],
@@ -826,6 +830,7 @@ class AgentManager:
             "status": row["status"],
             "created_at": row["created_at"],
             "tool_calls": tool_calls,
+            **workflow_reference,
         }
 
     # ── Learning log ──────────────────────────────────────────

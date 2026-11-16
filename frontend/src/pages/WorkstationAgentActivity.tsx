@@ -13,6 +13,7 @@ export function WorkstationAgentActivity({
   brainContext,
   onShare,
   onSelect,
+  onOpenWorkflow,
 }: {
   agentId: string;
   stationName: string;
@@ -20,6 +21,7 @@ export function WorkstationAgentActivity({
   brainContext: string;
   onShare: (text: string) => string;
   onSelect: (id: string) => void;
+  onOpenWorkflow: (runId: string) => void;
 }) {
   const [agents, setAgents] = useState<ManagedAgent[] | null>(null);
   const [unavailable, setUnavailable] = useState(false);
@@ -195,7 +197,7 @@ export function WorkstationAgentActivity({
           )}
           {runMessage?.id === selected.id && <p role="status">{runMessage.text}</p>}
           <WorkstationAgentInbox key={selected.id} agentId={selected.id}
-            brainContext={brainContext} onShare={onShare} />
+            brainContext={brainContext} onShare={onShare} onOpenWorkflow={onOpenWorkflow} />
           {selected.summary_memory && (
             <details>
               <summary>Latest agent summary</summary>

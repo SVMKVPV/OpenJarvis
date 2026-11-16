@@ -73,6 +73,7 @@ def test_handoff_approved_run_keeps_evidence_in_workflow(tmp_path, monkeypatch):
         assert unavailable.status_code == 409
         queued, = manager.get_pending_messages(agent["id"])
         assert queued["mode"] == "handoff"
+        assert queued["workflow_run_id"] == run_id
         assert queued["content"] == (
             f"Approved workflow {run_id}\n\nPlan a delivery check."
         )

@@ -1,10 +1,11 @@
 import { type FormEvent, useEffect, useState } from 'react';
 import { askAgent, fetchAgentMessages, type AgentMessage } from '../lib/api';
 
-export function WorkstationAgentInbox({ agentId, brainContext, onShare }: {
+export function WorkstationAgentInbox({ agentId, brainContext, onShare, onOpenWorkflow }: {
   agentId: string;
   brainContext: string;
   onShare: (text: string) => string;
+  onOpenWorkflow: (runId: string) => void;
 }) {
   const [draft, setDraft] = useState('');
   const [includeBrief, setIncludeBrief] = useState(false);
@@ -76,6 +77,11 @@ export function WorkstationAgentInbox({ agentId, brainContext, onShare }: {
               <small>{message.status === 'pending' ? 'Waiting for agent' : 'Picked up by agent'}</small>
             )}
             <p>{message.content}</p>
+            {message.workflow_run_id && (
+              <button type="button" onClick={() => onOpenWorkflow(message.workflow_run_id!)}>
+                Open approved workflow
+              </button>
+            )}
             {message.direction === 'agent_to_user' && message.content.trim() && (
               <button type="button" onClick={() => setShareStatus({
                 id: message.id,

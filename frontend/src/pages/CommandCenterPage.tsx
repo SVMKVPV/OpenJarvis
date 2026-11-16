@@ -744,6 +744,7 @@ export function CommandCenterPage() {
             brainContext={brainContext}
             onShare={(text) => addBrainUpdate(selected.name, text)}
             onSelect={(id) => setStationAgentIds((previous) => ({ ...previous, [selected.id]: id }))}
+            onOpenWorkflow={openWorkflowReview}
           />
           <WorkflowBlueprint
             key={selected.id}

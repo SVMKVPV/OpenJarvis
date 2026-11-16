@@ -612,6 +612,7 @@ export interface AgentMessage {
   status: 'pending' | 'delivered' | 'responded';
   created_at: number;
   tool_calls?: PersistedToolCall[] | null;
+  workflow_run_id?: string;
 }
 
 export async function fetchManagedAgents(): Promise<ManagedAgent[]> {
