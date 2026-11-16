@@ -27,6 +27,7 @@ import { CustomDashboard, DASHBOARD_WIDGETS, DEFAULT_WIDGET_IDS } from './Custom
 import { SharedBrainPanel } from './SharedBrainPanel';
 import { SocialContentStudio } from './SocialContentStudio';
 import { SystemBuilderLab } from './SystemBuilderLab';
+import { WorkstationAgentActivity } from './WorkstationAgentActivity';
 import './command-center.css';
 import './overview-dashboard.css';
 
@@ -484,6 +485,12 @@ export function CommandCenterPage() {
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
   const [stationEditMessage, setStationEditMessage] = useState<{ id: string; text: string } | null>(null);
+  const [stationAgentIds, setStationAgentIds] = useLocalPreference<Record<string, string>>(
+    'openjarvis.command-center.station-agents.v1',
+    () => ({}),
+    (value) => !!value && typeof value === 'object' && !Array.isArray(value) &&
+      Object.values(value).every((id) => typeof id === 'string'),
+  );
   const [dashboardWidgetIds, setDashboardWidgetIds] = useLocalPreference(
     'openjarvis.command-center.widget-order.v1',
     () => DEFAULT_WIDGET_IDS,
@@ -602,6 +609,10 @@ export function CommandCenterPage() {
               Configure {selected.name} agent ↗
             </Link>
           )}
+          <WorkstationAgentActivity
+            agentId={stationAgentIds[selected.id] ?? ''}
+            onSelect={(id) => setStationAgentIds((previous) => ({ ...previous, [selected.id]: id }))}
+          />
           <WorkflowBlueprint
             key={selected.id}
             className="gold-blueprint"
