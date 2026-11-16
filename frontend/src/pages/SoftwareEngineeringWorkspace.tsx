@@ -5,10 +5,13 @@ import {
   approveAction,
   fetchPendingApprovals,
   fetchRuntimePlugins,
+  fetchWorkflowDefinitions,
   fetchWorkflowRuns,
+  runSavedWorkflow,
   startWorkflowRun,
   type PendingApproval,
   type RuntimePlugin,
+  type SavedWorkflowDefinition,
   type WorkflowRunSummary,
 } from '../lib/api';
 import { listConnectors } from '../lib/connectors-api';
@@ -52,6 +55,11 @@ export function SoftwareEngineeringWorkspace() {
   const [liveConnectors, setLiveConnectors] = useState<ConnectorInfo[] | null>(null);
   const [pluginCatalogState, setPluginCatalogState] = useState<'loading' | 'online' | 'offline'>('loading');
   const [workflowRuns, setWorkflowRuns] = useState<WorkflowRunSummary[]>([]);
+  const [definitions, setDefinitions] = useState<SavedWorkflowDefinition[]>([]);
+  const [definitionId, setDefinitionId] = useState('');
+  const [workflowInput, setWorkflowInput] = useState('');
+  const [definitionMessage, setDefinitionMessage] = useState('Loading saved workflows…');
+  const [launchingSaved, setLaunchingSaved] = useState(false);
   const [workflowApprovals, setWorkflowApprovals] = useState<PendingApproval[]>([]);
   const [workflowState, setWorkflowState] = useState<'online' | 'offline' | 'starting'>('offline');
   const [proposals, setProposals] = useState<Proposal[]>([
@@ -59,6 +67,34 @@ export function SoftwareEngineeringWorkspace() {
   ]);
   const visibleItems = useMemo(() => ITEMS.filter((item) => item.folder === selectedFolder), [selectedFolder]);
   const selectedItem = ITEMS.find((item) => item.id === selectedItemId) ?? visibleItems[0] ?? ITEMS[0];
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchWorkflowDefinitions().then((items) => {
+      if (cancelled) return;
+      setDefinitions(items);
+      setDefinitionMessage(items.length ? '' : 'No saved workflows.');
+    }).catch(() => {
+      if (!cancelled) setDefinitionMessage('Saved workflows are unavailable. Check the backend connection.');
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const launchSaved = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!definitionId || launchingSaved) return;
+    setLaunchingSaved(true);
+    setDefinitionMessage('');
+    try {
+      const run = await runSavedWorkflow(definitionId, workflowInput);
+      setWorkflowRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
+      setDefinitionMessage('Workflow queued.');
+    } catch (error) {
+      setDefinitionMessage(error instanceof Error ? error.message : 'Could not start workflow.');
+    } finally {
+      setLaunchingSaved(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -196,6 +232,25 @@ export function SoftwareEngineeringWorkspace() {
           <header><div><span>WORKFLOW RUNTIME</span><strong>DURABLE EXECUTION LEDGER</strong></div><em data-state={workflowState}>{workflowState.toUpperCase()}</em></header>
           <button className="workflow-launch" onClick={launchGuardedWorkflow} disabled={workflowState === 'starting'}>{workflowState === 'starting' ? 'STARTING…' : '+ RUN GUARDED DELIVERY'}</button>
           <p><a href="https://zie619.github.io/n8n-workflows/" target="_blank" rel="noopener noreferrer">Browse optional n8n templates ↗</a><br />Download JSON for manual import into n8n.</p>
+          {definitions.length > 0 && (
+            <form className="connector-editor" onSubmit={launchSaved}>
+              <label>Saved workflow
+                <select value={definitionId} onChange={(event) => setDefinitionId(event.target.value)}>
+                  <option value="">Choose a workflow</option>
+                  {definitions.map((definition) => (
+                    <option key={definition.id} value={definition.id}>{definition.graph.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label>Run input
+                <input value={workflowInput} onChange={(event) => setWorkflowInput(event.target.value)} />
+              </label>
+              <button className="workflow-launch" disabled={!definitionId || launchingSaved}>
+                {launchingSaved ? 'Starting…' : 'Run saved workflow'}
+              </button>
+            </form>
+          )}
+          {definitionMessage && <p role="status">{definitionMessage}</p>}
           {workflowApprovals.slice(0, 2).map((approval) => <article className="workflow-approval" key={approval.id}><div><b>CEO APPROVAL REQUIRED</b><span>{approval.description}</span></div><button onClick={() => void approveWorkflow(approval)}>APPROVE</button></article>)}
           <div className="workflow-runs">{workflowRuns.slice(0, 5).map((run) => <article key={run.id}><div><strong>{run.workflow_name}</strong><small>{run.id.slice(0, 8)} · {new Date(run.created_at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small></div><em data-status={run.status}>{run.status.replace('_', ' ').toUpperCase()}</em></article>)}</div>
           {!workflowRuns.length && <p>NO WORKFLOW RUNS RECORDED. START A GUARDED DELIVERY TO TEST THE LIVE APPROVAL PATH.</p>}

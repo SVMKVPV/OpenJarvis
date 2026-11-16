@@ -1231,6 +1231,28 @@ export async function fetchWorkflowRuns(): Promise<WorkflowRunSummary[]> {
   return data.runs || [];
 }
 
+export interface SavedWorkflowDefinition {
+  id: string;
+  graph: { name: string };
+}
+
+export async function fetchWorkflowDefinitions(): Promise<SavedWorkflowDefinition[]> {
+  const res = await apiFetch('/v1/workflows/definitions');
+  if (!res.ok) throw new Error(`Failed to load saved workflows (${res.status}).`);
+  const data = await res.json();
+  return data.definitions;
+}
+
+export async function runSavedWorkflow(id: string, initialInput: string): Promise<WorkflowRunSummary> {
+  const res = await apiFetch(`/v1/workflows/definitions/${encodeURIComponent(id)}/runs`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ initial_input: initialInput }),
+  });
+  if (!res.ok) throw new Error(`Failed to start saved workflow (${res.status}).`);
+  return res.json();
+}
+
 export async function startWorkflowRun(input: WorkflowRunInput): Promise<WorkflowRunSummary> {
   const res = await apiFetch('/v1/workflows/runs', {
     method: 'POST',
