@@ -793,13 +793,15 @@ export function SoftwareEngineeringWorkspace({
     }
   };
 
+  const [approvalNotes, setApprovalNotes] = useState<Record<string, string>>({});
+
   const decideWorkflow = async (approval: PendingApproval, decision: 'approve' | 'deny') => {
     if (decidingApprovalId) return;
     setDecidingApprovalId(approval.id);
     setApprovalMessage('');
     try {
       const submitDecision = decision === 'approve' ? approveAction : denyAction;
-      await submitDecision(approval.id);
+      await submitDecision(approval.id, approvalNotes[approval.id]?.trim());
       setWorkflowApprovals((items) => items.filter((item) => item.id !== approval.id));
       setApprovalMessage(decision === 'approve' ? 'Approval recorded.' : 'Denial recorded.');
     } catch (error) {
@@ -1358,6 +1360,9 @@ export function SoftwareEngineeringWorkspace({
                         <small>Shared Brain revision {step.metadata.shared_brain_revision}</small>
                       )}
                       {step.output && <pre>{step.output}</pre>}
+                      {typeof step.metadata.decision_note === 'string' && (
+                        <><h6>Reviewer note</h6><pre>{step.metadata.decision_note}</pre></>
+                      )}
                       {typeof step.metadata.review_input === 'string' && (
                         <details data-approval-input open={initialRunId === inspectedRunId}>
                           <summary>Input presented for approval</summary>
@@ -1378,6 +1383,11 @@ export function SoftwareEngineeringWorkspace({
                       {inspectedApprovals.map((approval) => (
                         <article className="workflow-approval" key={approval.id}>
                           <span>{approval.description}</span>
+                          <label>Reviewer note (optional)
+                            <textarea rows={2} maxLength={2000} value={approvalNotes[approval.id] ?? ''}
+                              disabled={!!decidingApprovalId}
+                              onChange={(event) => setApprovalNotes((notes) => ({ ...notes, [approval.id]: event.target.value }))} />
+                          </label>
                           <div>{approvalButtons(approval)}</div>
                         </article>
                       ))}

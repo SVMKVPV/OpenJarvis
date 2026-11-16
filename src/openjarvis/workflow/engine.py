@@ -308,6 +308,12 @@ class WorkflowEngine:
                     success=False,
                     output="Approval record was not found.",
                 )
+            decision_note = action.payload.get("decision_note")
+            decision_metadata = (
+                {"decision_note": decision_note}
+                if isinstance(decision_note, str)
+                else {}
+            )
             if action.status == STATUS_APPROVED:
                 return WorkflowStepResult(
                     node_id=node.id,
@@ -315,6 +321,7 @@ class WorkflowEngine:
                     metadata={
                         "approval_id": approval_id,
                         "approval_status": "approved",
+                        **decision_metadata,
                     },
                 )
             if action.status in {STATUS_DENIED, STATUS_EXPIRED}:
@@ -325,6 +332,7 @@ class WorkflowEngine:
                     metadata={
                         "approval_id": approval_id,
                         "approval_status": action.status,
+                        **decision_metadata,
                     },
                 )
             return WorkflowStepResult(

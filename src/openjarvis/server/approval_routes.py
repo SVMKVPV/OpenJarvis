@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from openjarvis.tools.approval_store import (
     STATUS_APPROVED,
@@ -72,14 +74,20 @@ async def list_pending_approvals(request: Request) -> Dict[str, Any]:
     return {"actions": actions, "count": len(actions)}
 
 
-def _decide(action_id: str, request: Request, decision: str) -> Dict[str, Any]:
+def _decide(
+    action_id: str, request: Request, decision: str, *, note: str = ""
+) -> Dict[str, Any]:
     store = _get_store()
     action = store.get_action(action_id)
     if action is None:
         raise HTTPException(status_code=404, detail="Action not found")
     if "workflow_node_id" in action.payload:
         runtime = _workflow_runtime(request)
-        decided = runtime is not None and runtime.decide_approval(action, decision)
+        decided = runtime is not None and runtime.decide_approval(
+            action, decision, note=note
+        )
+    elif note:
+        raise HTTPException(400, "Review notes require a workflow approval")
     else:
         decided = store.decide_pending(action_id, decision)
     if not decided:
@@ -96,6 +104,21 @@ async def approve_action(action_id: str, request: Request) -> Dict[str, Any]:
 @router.post("/v1/approvals/{action_id}/deny")
 async def deny_action(action_id: str, request: Request) -> Dict[str, Any]:
     return _decide(action_id, request, STATUS_DENIED)
+
+
+class WorkflowDecisionNote(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    decision: Literal["approve", "deny"]
+    note: str = Field(min_length=1, max_length=2000)
+
+
+@router.post("/v1/approvals/{action_id}/decide-with-note")
+async def decide_workflow_with_note(
+    action_id: str, request: Request, payload: WorkflowDecisionNote
+) -> Dict[str, Any]:
+    decision = STATUS_APPROVED if payload.decision == "approve" else STATUS_DENIED
+    return _decide(action_id, request, decision, note=payload.note)
 
 
 __all__ = ["get_approval_store", "router"]

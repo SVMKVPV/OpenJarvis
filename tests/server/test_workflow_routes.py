@@ -68,8 +68,17 @@ def test_parallel_approvals_survive_runtime_restart(tmp_path, monkeypatch) -> No
             step for step in paused["steps"] if step["node_id"] == "second"
         )
         assert second_step["metadata"]["review_input"] == "Evidence for reviewer"
-        assert client.post(f"/v1/approvals/{second_id}/approve").status_code == 200
-        wait_status(client, run_id, "succeeded")
+        path = f"/v1/approvals/{second_id}/decide-with-note"
+        note = {"decision": "approve", "note": "Evidence checked against the source."}
+        assert client.post(path, json=note).status_code == 200
+        repeat = client.post(path, json={**note, "note": "Replacement"})
+        assert repeat.status_code == 409
+        completed = wait_status(client, run_id, "succeeded")
+        assert any(
+            step["node_id"] == "second"
+            and step["metadata"].get("decision_note") == note["note"]
+            for step in completed["steps"]
+        )
     restarted.state.workflow_runtime.close()
     approvals.close()
 
