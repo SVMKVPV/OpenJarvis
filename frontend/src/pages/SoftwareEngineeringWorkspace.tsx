@@ -154,6 +154,16 @@ const GUARDED_GRAPH_JSON = JSON.stringify({
   edges: GUARDED_DELIVERY.edges,
 }, null, 2);
 
+function downloadWorkflowJson(filename: string, data: object) {
+  const file = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(file);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 type DraftEdge = { source: string; target: string; condition?: string };
 
 type DraftNode = { id: string; type?: string; agent?: string; config?: Record<string, unknown> };
@@ -622,15 +632,29 @@ export function SoftwareEngineeringWorkspace({
   const exportSaved = () => {
     if (!selectedDefinition) return;
     const { graph } = selectedDefinition;
-    const file = new Blob([JSON.stringify(graph, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(file);
-    const link = document.createElement('a');
     const safeName = graph.name.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '');
-    link.href = url;
-    link.download = `${safeName || 'workflow'}.openjarvis.json`;
-    link.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    downloadWorkflowJson(`${safeName || 'workflow'}.openjarvis.json`, graph);
   };
+
+  const exportRun = (run: WorkflowRunDetail) => downloadWorkflowJson(
+    `workflow-run-${run.id}.json`,
+    {
+      id: run.id,
+      workflow_name: run.workflow_name,
+      status: run.status,
+      initial_input: run.initial_input,
+      final_output: run.final_output,
+      error: run.error,
+      parent_run_id: run.parent_run_id,
+      cancel_requested: run.cancel_requested,
+      created_at: run.created_at,
+      scheduled_at: run.scheduled_at,
+      started_at: run.started_at,
+      finished_at: run.finished_at,
+      graph: run.graph,
+      steps: run.steps,
+    },
+  );
 
   const importDraft = async (file: File) => {
     if (file.size > 1024 * 1024) {
@@ -1211,6 +1235,10 @@ export function SoftwareEngineeringWorkspace({
                       <button type="submit" disabled={runActionPending || !newRunTime}>Reschedule run</button>
                     </form>
                   )}
+                  <button type="button" onClick={() => exportRun(runDetail)}
+                    title="Includes the original input, workflow definition, and step evidence">
+                    Download run evidence
+                  </button>
                   {runDetail.initial_input && (
                     <details>
                       <summary>Original run input</summary>
