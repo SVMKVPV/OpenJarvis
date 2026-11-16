@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import { Check, ChevronRight, Folder, FolderPlus, Monitor, Plus, Settings2 } from 'lucide-react';
 import {
   approveAction,
+  denyAction,
   fetchPendingApprovals,
   fetchRuntimePlugins,
   fetchWorkflowDefinitions,
@@ -147,6 +148,8 @@ export function SoftwareEngineeringWorkspace() {
   const [stepType, setStepType] = useState<NewStepType>('transform');
   const [stepSetting, setStepSetting] = useState('');
   const [workflowApprovals, setWorkflowApprovals] = useState<PendingApproval[]>([]);
+  const [decidingApprovalId, setDecidingApprovalId] = useState('');
+  const [approvalMessage, setApprovalMessage] = useState('');
   const [workflowState, setWorkflowState] = useState<'online' | 'offline' | 'starting'>('offline');
   const [proposals, setProposals] = useState<Proposal[]>([
     { id: 'p-1', connector: 'OpenAI / ChatGPT', text: 'Prepared the command-center component boundary and preserved existing voice routing.', approved: false },
@@ -326,9 +329,20 @@ export function SoftwareEngineeringWorkspace() {
     }
   };
 
-  const approveWorkflow = async (approval: PendingApproval) => {
-    await approveAction(approval.id);
-    setWorkflowApprovals((items) => items.filter((item) => item.id !== approval.id));
+  const decideWorkflow = async (approval: PendingApproval, decision: 'approve' | 'deny') => {
+    if (decidingApprovalId) return;
+    setDecidingApprovalId(approval.id);
+    setApprovalMessage('');
+    try {
+      const submitDecision = decision === 'approve' ? approveAction : denyAction;
+      await submitDecision(approval.id);
+      setWorkflowApprovals((items) => items.filter((item) => item.id !== approval.id));
+      setApprovalMessage(decision === 'approve' ? 'Approval recorded.' : 'Denial recorded.');
+    } catch {
+      setApprovalMessage('Could not record the decision. Check the backend and try again.');
+    } finally {
+      setDecidingApprovalId('');
+    }
   };
 
   const pluginCounts = useMemo(() => runtimePlugins.reduce<Record<string, number>>((counts, plugin) => {
@@ -504,7 +518,18 @@ export function SoftwareEngineeringWorkspace() {
             </form>
           )}
           {definitionMessage && <p role="status">{definitionMessage}</p>}
-          {workflowApprovals.slice(0, 2).map((approval) => <article className="workflow-approval" key={approval.id}><div><b>CEO APPROVAL REQUIRED</b><span>{approval.description}</span></div><button onClick={() => void approveWorkflow(approval)}>APPROVE</button></article>)}
+          {workflowApprovals.slice(0, 2).map((approval) => (
+            <article className="workflow-approval" key={approval.id}>
+              <div><b>CEO APPROVAL REQUIRED</b><span>{approval.description}</span></div>
+              <div>
+                <button type="button" disabled={!!decidingApprovalId}
+                  onClick={() => void decideWorkflow(approval, 'approve')}>Approve</button>
+                <button type="button" disabled={!!decidingApprovalId}
+                  onClick={() => void decideWorkflow(approval, 'deny')}>Deny</button>
+              </div>
+            </article>
+          ))}
+          {approvalMessage && <p role="status">{approvalMessage}</p>}
           <div className="workflow-runs">
             {workflowRuns.slice(0, 5).map((run) => (
               <article key={run.id}>
