@@ -1307,6 +1307,41 @@ export async function fetchGmailReviewCandidates(signal?: AbortSignal): Promise<
   return candidates;
 }
 
+export type SavedLead = {
+  id: string;
+  organization: string;
+  source_reference: string;
+  created_at: number;
+};
+
+export async function fetchSavedLeads(signal?: AbortSignal): Promise<SavedLead[]> {
+  const response = await apiFetch('/v1/leads', { signal });
+  if (!response.ok) throw new Error('Lead register unavailable.');
+  const { leads } = await response.json();
+  return leads;
+}
+
+export async function fetchLeadCount(signal?: AbortSignal): Promise<number> {
+  const response = await apiFetch('/v1/leads/summary', { signal });
+  if (!response.ok) throw new Error('Lead register unavailable.');
+  const { count } = await response.json();
+  if (!Number.isInteger(count)) throw new Error('Lead register unavailable.');
+  return count;
+}
+
+export async function saveLead(organization: string, sourceReference: string): Promise<SavedLead> {
+  const response = await apiFetch('/v1/leads', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ organization, source_reference: sourceReference }),
+  });
+  if (!response.ok) {
+    const result = await response.json().catch(() => null);
+    throw new Error(typeof result?.detail === 'string' ? result.detail : 'Could not save lead.');
+  }
+  return response.json();
+}
+
 export type Ga4PropertySettings = {
   property_id: string;
   environment_override: boolean;

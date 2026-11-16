@@ -26,6 +26,7 @@ import { SoftwareEngineeringWorkspace, type WorkspaceEntry } from './SoftwareEng
 import { CustomDashboard, DASHBOARD_WIDGETS, DEFAULT_WIDGET_IDS } from './CustomDashboard';
 import { SharedBrainPanel } from './SharedBrainPanel';
 import { GmailReviewList } from './GmailReviewList';
+import { LeadRegister } from './LeadRegister';
 import { Ga4PropertyForm } from './Ga4PropertyForm';
 import { SocialContentStudio } from './SocialContentStudio';
 import { SystemBuilderLab } from './SystemBuilderLab';
@@ -695,6 +696,7 @@ export function CommandCenterPage() {
               <p>Search indexed invoices and receipts, then review the draft against its sources.</p>
             </section>
           )}
+          {selected.id === 'growth' && <LeadRegister />}
           {selected.id === 'email' && <GmailReviewList onOpenWorkflow={openGmailReplyWorkflow} />}
           {selected.id === 'marketing' && <><Ga4PropertyForm /><SocialContentStudio /></>}
           {selected.id === 'system-builder' && <SystemBuilderLab />}
