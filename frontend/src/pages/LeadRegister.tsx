@@ -62,6 +62,7 @@ export function LeadRegister({ onOpenDiscovery }: { onOpenDiscovery: () => void 
             <li key={lead.id} className="py-2 break-all">
               <strong>{lead.organization}</strong>
               <div>{lead.source_reference}</div>
+              {lead.workflow_run_id && <small>Reviewed workflow {lead.workflow_run_id.slice(0, 8)}</small>}
             </li>
           ))}
         </ul>

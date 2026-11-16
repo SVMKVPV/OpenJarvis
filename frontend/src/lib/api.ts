@@ -1312,6 +1312,7 @@ export type SavedLead = {
   organization: string;
   source_reference: string;
   created_at: number;
+  workflow_run_id?: string | null;
 };
 
 export async function fetchSavedLeads(signal?: AbortSignal): Promise<SavedLead[]> {
@@ -1329,11 +1330,13 @@ export async function fetchLeadCount(signal?: AbortSignal): Promise<number> {
   return count;
 }
 
-export async function saveLead(organization: string, sourceReference: string): Promise<SavedLead> {
+export async function saveLead(
+  organization: string, sourceReference: string, workflowRunId?: string,
+): Promise<SavedLead> {
   const response = await apiFetch('/v1/leads', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ organization, source_reference: sourceReference }),
+    body: JSON.stringify({ organization, source_reference: sourceReference, workflow_run_id: workflowRunId }),
   });
   if (!response.ok) {
     const result = await response.json().catch(() => null);

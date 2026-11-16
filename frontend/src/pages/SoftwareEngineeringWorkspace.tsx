@@ -29,6 +29,7 @@ import { getSyncStatus, listConnectors } from '../lib/connectors-api';
 import { isEmbedOnlyModel } from '../lib/model-capabilities';
 import { useAppStore } from '../lib/store';
 import type { ConnectorInfo, SyncStatus } from '../types/connectors';
+import { ReviewedLeadForm } from './ReviewedLeadForm';
 import { WorkflowDraftMap } from './WorkflowDraftMap';
 import './software-workspace.css';
 
@@ -1368,6 +1369,9 @@ export function SoftwareEngineeringWorkspace({
                     </li>
                   ))}</ol> : <p>No steps recorded yet.</p>}
                   {runDetail.final_output && <><h5>Final output</h5><pre>{runDetail.final_output}</pre></>}
+                  {runDetail.status === 'succeeded' && runDetail.steps.some((step) =>
+                    step.node_id === 'lead-review' && step.metadata.approval_status === 'approved'
+                  ) && <ReviewedLeadForm key={runDetail.id} runId={runDetail.id} />}
                   {runDetail.status === 'waiting_approval' && !cancellationPending && inspectedApprovals.length > 0 && (
                     <div>
                       <h5>Pending approvals for this run</h5>
