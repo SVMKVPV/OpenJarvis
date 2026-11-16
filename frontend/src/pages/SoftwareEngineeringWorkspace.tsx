@@ -11,7 +11,7 @@ import {
   fetchWorkflowDefinition,
   fetchWorkflowDefinitions,
   fetchWorkflowRun,
-  fetchWorkflowRuns,
+  fetchWorkflowHistory,
   requestWorkflowRunAction,
   rescheduleWorkflowRun,
   runSavedWorkflow,
@@ -227,6 +227,11 @@ export function SoftwareEngineeringWorkspace({
     (source) => source.connector_id === syncConnectorId && source.connected,
   ) ?? false;
   const [workflowRuns, setWorkflowRuns] = useState<WorkflowRunSummary[]>([]);
+  const [historyCursors, setHistoryCursors] = useState<string[]>(['']);
+  const historyBefore = historyCursors[historyCursors.length - 1];
+  const [historyPaging, setHistoryPaging] = useState(false);
+  const [historyLoadedFor, setHistoryLoadedFor] = useState<string | null>(null);
+  const currentHistory = historyLoadedFor === historyBefore ? workflowRuns : [];
   const [inspectedRunId, setInspectedRunId] = useState(initialRunId);
   const runInspector = useRef<HTMLElement>(null);
   const [runDetail, setRunDetail] = useState<WorkflowRunDetail | null>(null);
@@ -298,6 +303,7 @@ export function SoftwareEngineeringWorkspace({
           : current);
       }
       if (retry) {
+        setHistoryCursors(['']);
         setWorkflowRuns((current) => [retry, ...current.filter((run) => run.id !== retry.id)]);
         inspectRun(retry.id);
       }
@@ -559,6 +565,7 @@ export function SoftwareEngineeringWorkspace({
     try {
       const run = await runSavedWorkflow(attempt.definitionId, attempt.input, attempt.key, attempt.scheduledAt);
       savedLaunch.current = null;
+      setHistoryCursors(['']);
       setWorkflowRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
       setDefinitionMessage(repeated ? 'Workflow run confirmed.' : run.status === 'scheduled' ? 'Workflow scheduled.' : 'Workflow queued.');
     } catch (error) {
@@ -670,9 +677,11 @@ export function SoftwareEngineeringWorkspace({
     let cancelled = false;
     const refresh = async () => {
       try {
-        const [runs, approvals] = await Promise.all([fetchWorkflowRuns(), fetchPendingApprovals()]);
+        const [history, approvals] = await Promise.all([fetchWorkflowHistory(historyBefore), fetchPendingApprovals()]);
         if (!cancelled) {
-          setWorkflowRuns(runs);
+          setWorkflowRuns(history.runs);
+          setHistoryPaging(history.supportsPaging);
+          setHistoryLoadedFor(historyBefore);
           setWorkflowApprovals(approvals.filter((item) => typeof item.payload.workflow_run_id === 'string'));
           setWorkflowState('online');
         }
@@ -683,7 +692,7 @@ export function SoftwareEngineeringWorkspace({
     void refresh();
     const timer = window.setInterval(refresh, 2500);
     return () => { cancelled = true; window.clearInterval(timer); };
-  }, []);
+  }, [historyBefore]);
 
   const launchGuardedWorkflow = async () => {
     if (launchingGuarded) return;
@@ -695,6 +704,7 @@ export function SoftwareEngineeringWorkspace({
         initial_input: 'Prepare a reviewed command-center delivery',
         context: { owner: 'CEO Director', station: 'System Builder' },
       });
+      setHistoryCursors(['']);
       setWorkflowRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
       inspectRun(run.id);
     } catch (error) {
@@ -1129,7 +1139,7 @@ export function SoftwareEngineeringWorkspace({
           })}
           {approvalMessage && <p role="status">{approvalMessage}</p>}
           <div className="workflow-runs">
-            {workflowRuns.slice(0, 5).map((run) => (
+            {currentHistory.slice(0, 5).map((run) => (
               <article key={run.id}>
                 <div><strong>{run.workflow_name}</strong><small>{run.id.slice(0, 8)} · {new Date(run.created_at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small></div>
                 <em data-status={run.status}>{run.status.replace('_', ' ').toUpperCase()}</em>
@@ -1139,6 +1149,18 @@ export function SoftwareEngineeringWorkspace({
                 </button>
               </article>
             ))}
+          </div>
+          <div aria-label="Workflow history pages">
+            {historyCursors.length > 1 && (
+              <button type="button" onClick={() => setHistoryCursors((pages) => pages.slice(0, -1))}>
+                Newer runs
+              </button>
+            )}
+            {historyPaging && currentHistory.length > 5 && (
+              <button type="button" onClick={() => setHistoryCursors((pages) => [...pages, currentHistory[4].id])}>
+                Older runs
+              </button>
+            )}
           </div>
           {inspectedRunId && (
             <section ref={runInspector} tabIndex={-1} className="workflow-run-detail" aria-label="Workflow run details">

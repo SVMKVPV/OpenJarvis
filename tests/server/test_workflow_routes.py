@@ -509,3 +509,30 @@ def test_retry_with_input_preserves_original_run_and_graph(tmp_path, monkeypatch
     finally:
         app.state.workflow_runtime.close()
         approvals.close()
+
+def test_workflow_history_cursor_is_stable_when_new_runs_arrive(tmp_path, monkeypatch):
+    from openjarvis.server import approval_routes
+    from openjarvis.tools.approval_store import ApprovalStore
+
+    monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(tmp_path / "workflow.db"))
+    approvals = ApprovalStore(str(tmp_path / "approvals.db"))
+    monkeypatch.setattr(approval_routes, "_store", approvals)
+    app = FastAPI()
+    app.state.workflow_system = None
+    app.include_router(create_workflow_runs_router())
+    base = "/v1/workflows/runs"
+
+    try:
+        with TestClient(app) as client:
+            payload = {"nodes": [{"id": "first", "type": "transform"}]}
+            ids = [client.post(base, json=payload).json()["id"] for _ in range(4)]
+            latest = client.get(base, params={"limit": 2}).json()["runs"]
+            assert [run["id"] for run in latest] == ids[2:][::-1]
+            cursor = latest[-1]["id"]
+            assert client.post(base, json=payload).status_code == 202
+            older = client.get(base, params={"limit": 2, "before": cursor}).json()
+            assert older["before"] == cursor
+            assert [run["id"] for run in older["runs"]] == ids[:2][::-1]
+    finally:
+        app.state.workflow_runtime.close()
+        approvals.close()

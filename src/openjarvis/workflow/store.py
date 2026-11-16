@@ -381,17 +381,28 @@ class WorkflowRunStore:
             ).fetchall()
         return self._serialize_run(row, step_rows, include_graph=include_graph)
 
-    def list_runs(self, *, status: str = "", limit: int = 50) -> list[dict[str, Any]]:
+    def list_runs(
+        self, *, status: str = "", limit: int = 50, before: str = ""
+    ) -> list[dict[str, Any]]:
         limit = max(1, min(int(limit), 200))
-        query = "SELECT * FROM workflow_runs"
+        filters: list[str] = []
         params: list[Any] = []
         if status:
-            query += " WHERE status = ?"
+            filters.append("status = ?")
             params.append(status)
+        if before:
+            filters.append(
+                "(created_at, id) < "
+                "(SELECT created_at, id FROM workflow_runs WHERE id = ?)"
+            )
+            params.append(before)
+        query = "SELECT * FROM workflow_runs"
+        if filters:
+            query += " WHERE " + " AND ".join(filters)
         if status == "scheduled":
-            query += " ORDER BY scheduled_at, created_at LIMIT ?"
+            query += " ORDER BY scheduled_at, created_at, id LIMIT ?"
         else:
-            query += " ORDER BY created_at DESC LIMIT ?"
+            query += " ORDER BY created_at DESC, id DESC LIMIT ?"
         params.append(limit)
         with self._lock:
             rows = self._conn.execute(query, params).fetchall()

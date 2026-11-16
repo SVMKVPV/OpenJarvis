@@ -1329,6 +1329,21 @@ export async function fetchWorkflowRuns(status?: WorkflowRunStatus): Promise<Wor
   return data.runs || [];
 }
 
+export async function fetchWorkflowHistory(before: string): Promise<{
+  runs: WorkflowRunSummary[];
+  supportsPaging: boolean;
+}> {
+  const query = new URLSearchParams({ limit: '6' });
+  if (before) query.set('before', before);
+  const response = await apiFetch(`/v1/workflows/runs?${query}`);
+  if (!response.ok) throw new Error('Workflow history unavailable.');
+  const page = await response.json();
+  if (!Array.isArray(page.runs) || (before && page.before !== before)) {
+    throw new Error('Workflow history paging is unavailable on this backend.');
+  }
+  return { runs: page.runs, supportsPaging: page.before === before };
+}
+
 export interface WorkflowRunDetail extends WorkflowRunSummary {
   initial_input: string;
   graph: SavedWorkflowDefinition['graph'];
