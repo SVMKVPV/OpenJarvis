@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { fetchManagedAgents, runManagedAgent, type ManagedAgent } from '../lib/api';
+import { WorkstationAgentInbox } from './WorkstationAgentInbox';
 
 export function WorkstationAgentActivity({
   agentId,
@@ -83,6 +84,7 @@ export function WorkstationAgentActivity({
             {starting ? 'Starting…' : 'Run linked agent'}
           </button>
           {runMessage?.id === selected.id && <p role="status">{runMessage.text}</p>}
+          <WorkstationAgentInbox key={selected.id} agentId={selected.id} />
           {selected.summary_memory && (
             <details>
               <summary>Latest agent summary</summary>
