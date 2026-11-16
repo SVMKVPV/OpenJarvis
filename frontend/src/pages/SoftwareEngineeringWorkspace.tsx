@@ -47,6 +47,23 @@ const GUARDED_GRAPH_JSON = JSON.stringify({
   edges: GUARDED_DELIVERY.edges,
 }, null, 2);
 
+type DraftEdge = { source: string; target: string; condition?: string };
+
+function readDraftEdges(draft: string): DraftEdge[] | null {
+  try {
+    const graph = JSON.parse(draft);
+    if (!graph || !Array.isArray(graph.nodes)) return null;
+    const edges: unknown = graph.edges ?? [];
+    if (!Array.isArray(edges)) return null;
+    if (!edges.every((edge) => edge && typeof edge.source === 'string' &&
+      typeof edge.target === 'string' &&
+      (edge.condition === undefined || typeof edge.condition === 'string'))) return null;
+    return edges;
+  } catch {
+    return null;
+  }
+}
+
 const INITIAL_CONNECTORS: Connector[] = [
   { id: 'openai', code: 'OAI', provider: 'OpenAI', product: 'ChatGPT', role: 'Implementation + code review', model: 'GPT-5', status: 'setup', enabled: true, contributions: 14 },
   { id: 'anthropic', code: 'ANT', provider: 'Anthropic', product: 'Claude', role: 'Architecture + long-context review', model: 'Claude Sonnet', status: 'setup', enabled: true, contributions: 9 },
@@ -88,6 +105,7 @@ export function SoftwareEngineeringWorkspace() {
   const [savingDefinition, setSavingDefinition] = useState(false);
   const [workflowName, setWorkflowName] = useState(GUARDED_DELIVERY.name);
   const [workflowGraph, setWorkflowGraph] = useState(GUARDED_GRAPH_JSON);
+  const draftEdges = useMemo(() => readDraftEdges(workflowGraph), [workflowGraph]);
   const [workflowApprovals, setWorkflowApprovals] = useState<PendingApproval[]>([]);
   const [workflowState, setWorkflowState] = useState<'online' | 'offline' | 'starting'>('offline');
   const [proposals, setProposals] = useState<Proposal[]>([
@@ -131,6 +149,15 @@ export function SoftwareEngineeringWorkspace() {
     } finally {
       setSavingDefinition(false);
     }
+  };
+
+  const changeBranch = (index: number, condition: string) => {
+    if (!draftEdges?.[index]) return;
+    const graph = JSON.parse(workflowGraph);
+    const edges = draftEdges.map((edge, position) =>
+      position === index ? { ...edge, condition } : edge,
+    );
+    setWorkflowGraph(JSON.stringify({ ...graph, edges }, null, 2));
   };
 
   const launchSaved = async (event: FormEvent) => {
@@ -287,6 +314,22 @@ export function SoftwareEngineeringWorkspace() {
             </button>
             <details className="workflow-graph-editor">
               <summary>Edit workflow definition</summary>
+              <fieldset>
+                <legend>Branch conditions</legend>
+                {draftEdges?.map((edge, index) => (
+                  <label key={index}>
+                    {edge.source} → {edge.target}
+                    <select value={edge.condition?.trim().toLowerCase() ?? ''}
+                      onChange={(event) => changeBranch(index, event.target.value)}>
+                      <option value="">Always</option>
+                      <option value="true">When true</option>
+                      <option value="false">When false</option>
+                    </select>
+                  </label>
+                ))}
+                {draftEdges === null && <small>Fix the workflow JSON to edit its branch conditions here.</small>}
+                {draftEdges?.length === 0 && <small>Add edges in the workflow JSON to configure branches.</small>}
+              </fieldset>
               <label>OpenJarvis workflow JSON
                 <textarea rows={12} spellCheck={false} value={workflowGraph}
                   onChange={(event) => setWorkflowGraph(event.target.value)} />
