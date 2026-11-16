@@ -20,10 +20,12 @@ function DraftStepNode({ id, data }: NodeProps<StepNode>) {
 
 const nodeTypes = { draftStep: DraftStepNode };
 
-export function WorkflowDraftMap({ steps, connections, onOpen }: {
+export function WorkflowDraftMap({ steps, connections, onOpen, canConnect, onConnect }: {
   steps: DraftStep[];
   connections: DraftConnection[];
   onOpen: (id: string) => void;
+  canConnect: (source: string, target: string) => boolean;
+  onConnect: (source: string, target: string) => void;
 }) {
   const { nodes, edges } = useMemo(() => {
     const known = new Set(steps.map((step) => step.id));
@@ -77,7 +79,10 @@ export function WorkflowDraftMap({ steps, connections, onOpen }: {
     <div className="workflow-draft-map" aria-label="Saved workflow diagram">
       <ReactFlow<StepNode> nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView
         fitViewOptions={{ padding: 0.12, maxZoom: 1 }} minZoom={0.2}
-        nodesDraggable={false} nodesConnectable={false} nodesFocusable={false}
+        isValidConnection={({ source, target }) => canConnect(source, target)}
+        onConnect={({ source, target }) => onConnect(source, target)}
+        connectionLineStyle={{ stroke: '#d6ad52', strokeWidth: 2 }}
+        nodesDraggable={false} nodesFocusable={false}
         edgesFocusable={false} preventScrolling={false} zoomOnDoubleClick={false}>
         <Background color="#3b2e15" gap={18} />
       </ReactFlow>

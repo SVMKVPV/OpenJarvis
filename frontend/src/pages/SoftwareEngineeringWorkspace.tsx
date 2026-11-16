@@ -204,6 +204,7 @@ export function SoftwareEngineeringWorkspace({ initialRunId = '' }: { initialRun
   const [workflowName, setWorkflowName] = useState(GUARDED_DELIVERY.name);
   const [workflowGraph, setWorkflowGraph] = useState(GUARDED_GRAPH_JSON);
   const draftGraph = useMemo(() => readDraftGraph(workflowGraph), [workflowGraph]);
+  const [graphEditorOpen, setGraphEditorOpen] = useState(false);
   const stepElements = useRef(new Map<string, HTMLLIElement>());
   const openWorkflowStep = (id: string) => stepElements.current.get(id)?.focus();
   const [edgeSource, setEdgeSource] = useState('');
@@ -376,10 +377,28 @@ export function SoftwareEngineeringWorkspace({ initialRunId = '' }: { initialRun
     setStepSetting('');
     setJsonField('');
   };
-  const canAddEdge = draftGraph && edgeSource !== edgeTarget &&
-    draftGraph.nodes.some((node) => node.id === edgeSource) &&
-    draftGraph.nodes.some((node) => node.id === edgeTarget) &&
-    !draftEdges.some((edge) => edge.source === edgeSource && edge.target === edgeTarget);
+  const canConnectSteps = (source: string, target: string): boolean => {
+    if (savingDefinition || !draftGraph || source === target ||
+      !draftGraph.nodes.some((node) => node.id === source) ||
+      !draftGraph.nodes.some((node) => node.id === target) ||
+      draftEdges.some((edge) => edge.source === source && edge.target === target)) return false;
+
+    const pending = [target];
+    const visited = new Set<string>();
+    while (pending.length) {
+      const next = pending.pop()!;
+      if (next === source) return false;
+      if (visited.has(next)) continue;
+      visited.add(next);
+      for (const edge of draftEdges) {
+        if (edge.source === next) pending.push(edge.target);
+      }
+    }
+    return true;
+  };
+  const connectSteps = (source: string, target: string) => {
+    if (canConnectSteps(source, target)) replaceEdges([...draftEdges, { source, target }]);
+  };
   const changeBranch = (index: number, condition: string) => {
     replaceEdges(draftEdges.map((edge, position) =>
       position === index ? { ...edge, condition } : edge,
@@ -715,7 +734,8 @@ export function SoftwareEngineeringWorkspace({ initialRunId = '' }: { initialRun
                 Save as copy
               </button>
             )}
-            <details className="workflow-graph-editor">
+            <details className="workflow-graph-editor"
+              onToggle={(event) => setGraphEditorOpen(event.currentTarget.open)}>
               <summary>Edit workflow definition</summary>
               <label>Replace draft from OpenJarvis JSON
                 <input type="file" accept=".json,application/json" disabled={savingDefinition}
@@ -728,9 +748,12 @@ export function SoftwareEngineeringWorkspace({ initialRunId = '' }: { initialRun
               {draftGraph && (
                 <fieldset>
                   <legend>Workflow steps</legend>
-                  {draftGraph.nodes.length > 0 && (
-                    <WorkflowDraftMap steps={draftGraph.nodes} connections={draftGraph.edges ?? []}
-                      onOpen={openWorkflowStep} />
+                  {graphEditorOpen && draftGraph.nodes.length > 0 && (
+                    <>
+                      <WorkflowDraftMap steps={draftGraph.nodes} connections={draftEdges}
+                        onOpen={openWorkflowStep} canConnect={canConnectSteps} onConnect={connectSteps} />
+                      <small>Drag between step handles or use the connection controls. A connection cannot create a cycle.</small>
+                    </>
                   )}
                   <ul>{draftGraph.nodes.map((node) => (
                     <li key={node.id} tabIndex={-1} ref={(element) => {
@@ -891,9 +914,8 @@ export function SoftwareEngineeringWorkspace({ initialRunId = '' }: { initialRun
                       <option value="">Choose a step</option>
                       {draftGraph.nodes.map((node) => <option key={node.id} value={node.id}>{node.id}</option>)}
                     </select></label>
-                    <button type="button" disabled={!canAddEdge} onClick={() => {
-                      if (canAddEdge) replaceEdges([...draftEdges, { source: edgeSource, target: edgeTarget }]);
-                    }}>Add connection</button>
+                    <button type="button" disabled={!canConnectSteps(edgeSource, edgeTarget)}
+                      onClick={() => connectSteps(edgeSource, edgeTarget)}>Add connection</button>
                   </div>
                 )}
               </fieldset>

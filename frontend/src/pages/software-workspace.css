@@ -43,3 +43,11 @@
 }
 .workflow-map-step small { color: #b19b70; text-transform: uppercase; }
 .workflow-graph-editor li[tabindex]:focus { outline: 1px solid #d6ad52; }
+
+.workflow-draft-map .react-flow__handle {
+  width: 11px;
+  height: 11px;
+  border: 2px solid #191206;
+  border-radius: 0;
+  background: #d6ad52;
+}
