@@ -8,6 +8,7 @@ import respx
 
 from openjarvis.core.types import Message, Role
 from openjarvis.engine.openai_compat_engines import (
+    OmniRouteEngine,
     OpenAICompatEngine,
     VLLMEngine,
     normalize_openai_base_url,
@@ -21,6 +22,23 @@ _CHAT_RESPONSE = {
 
 
 class TestAuthorizationHeader:
+    def test_omniroute_uses_its_own_key_and_preserves_model_id(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("OMNIROUTE_API_KEY", "gateway-test")
+        monkeypatch.setenv("LMSTUDIO_API_KEY", "studio-test")
+        monkeypatch.setenv("OMNIROUTE_HOST", "http://unrelated.invalid")
+        engine = OmniRouteEngine()
+        model = "ollama/qwen2.5-coder:3b"
+        with respx.mock:
+            route = respx.post("http://127.0.0.1:20128/v1/chat/completions").mock(
+                return_value=httpx.Response(200, json=_CHAT_RESPONSE)
+            )
+            engine.generate([Message(role=Role.USER, content="hi")], model=model)
+        request = route.calls.last.request
+        assert request.headers["Authorization"] == "Bearer gateway-test"
+        assert model.encode() in request.content
+
     def test_bearer_header_sent_when_api_key_set(self) -> None:
         engine = OpenAICompatEngine(host="http://testhost:9000", api_key="sk-test")
         with respx.mock:

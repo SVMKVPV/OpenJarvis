@@ -132,7 +132,11 @@ def discover_engines(config: JarvisConfig) -> List[Tuple[str, InferenceEngine]]:
     # threads collapses that to roughly the slowest single probe. The
     # healthy.sort() below normalizes order, so completion order is
     # irrelevant and the result is identical to the serial version (#263).
-    keys = list(EngineRegistry.keys())
+    keys = [
+        key
+        for key in EngineRegistry.keys()
+        if key != "omniroute" or config.engine.default == key
+    ]
 
     def _probe(key: str) -> Tuple[str, InferenceEngine] | None:
         try:

@@ -55,7 +55,23 @@ class OpenAICompatEngine(_OpenAICompatibleEngine):
     _api_prefix = "/v1"
 
 
+@EngineRegistry.register("omniroute")
+class OmniRouteEngine(_OpenAICompatibleEngine):
+    """The locally installed routing gateway, selected explicitly."""
+
+    engine_id = "omniroute"
+    _default_host = "http://127.0.0.1:20128"
+    _trust_env = False
+
+    def __init__(self) -> None:
+        super().__init__(host=self._default_host)
+
+    def _resolve_model_id(self, model: str) -> str:
+        return model
+
+
 __all__ = [name for name, _, _ in _ENGINES.values()] + [
+    "OmniRouteEngine",
     "OpenAICompatEngine",
     "normalize_openai_base_url",
 ]

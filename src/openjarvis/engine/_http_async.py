@@ -63,6 +63,7 @@ class AsyncHTTPEngineMixin:
     # ``None`` defaults keep engine ``__init__``s free of mixin bookkeeping.
     _async_client: httpx.AsyncClient | None = None
     _async_client_loop: asyncio.AbstractEventLoop | None = None
+    _trust_env: bool = True
 
     def _make_async_client(self) -> httpx.AsyncClient:
         """Build an async client that honours the configured timeout."""
@@ -71,6 +72,7 @@ class AsyncHTTPEngineMixin:
             timeout=self._timeout,
             headers=getattr(self, "_headers", None),
             transport=self._async_transport,
+            trust_env=self._trust_env,
         )
 
     def _get_async_client(self) -> httpx.AsyncClient:

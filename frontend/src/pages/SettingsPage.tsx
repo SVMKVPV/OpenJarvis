@@ -640,8 +640,8 @@ export function SettingsPage() {
                     className="text-sm px-3 py-1.5 cursor-pointer"
                     onClick={() => {
                       setCustomHost(OMNIROUTE_LOCAL_URL);
-                      setCustomModel('auto');
-                      setCustomEngine('lmstudio');
+                      setCustomModel('');
+                      setCustomEngine('omniroute');
                       setCustomKey('');
                       setSrcMsg('Enter your OmniRoute gateway key before saving.');
                     }}
@@ -664,6 +664,7 @@ export function SettingsPage() {
                     className="text-sm px-3 py-1.5 rounded-lg outline-none w-56"
                     style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}>
                     <option value="lmstudio">LM Studio</option>
+                    <option value="omniroute">OmniRoute</option>
                     <option value="vllm">vLLM</option>
                     <option value="sglang">SGLang</option>
                     <option value="llamacpp">llama.cpp</option>

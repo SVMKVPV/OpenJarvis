@@ -2632,6 +2632,11 @@ async fn set_inference_source(
         if cfg.model.as_deref().unwrap_or("").is_empty() {
             return Err("A model name is required for a custom endpoint.".into());
         }
+        if cfg.engine.as_deref() == Some("omniroute")
+            && cfg.host.as_deref() != Some(normalize_host(OMNIROUTE_LOOPBACK).as_str())
+        {
+            return Err("Use the local OmniRoute gateway address for this server type.".into());
+        }
     }
 
     let store = SystemInferenceCredentialStore;

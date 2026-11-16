@@ -71,7 +71,10 @@ class _OpenAICompatibleEngine(AsyncHTTPEngineMixin, InferenceEngine):
         # server. ``None`` in production so httpx uses its default networking.
         self._async_transport: httpx.AsyncBaseTransport | None = None
         self._client = httpx.Client(
-            base_url=self._host, timeout=timeout, headers=headers
+            base_url=self._host,
+            timeout=timeout,
+            headers=headers,
+            trust_env=self._trust_env,
         )
 
     # -- InferenceEngine interface ------------------------------------------
