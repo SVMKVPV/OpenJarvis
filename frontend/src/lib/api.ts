@@ -1211,6 +1211,7 @@ export interface WorkflowRunSummary {
   status: WorkflowRunStatus;
   final_output: string;
   error: string;
+  parent_run_id: string | null;
   created_at: number;
   started_at: number | null;
   finished_at: number | null;
@@ -1249,7 +1250,10 @@ export async function fetchWorkflowRun(id: string, signal?: AbortSignal): Promis
 
 export type WorkflowRunAction = 'cancel' | 'retry' | 'resume';
 
-export async function requestWorkflowRunAction(id: string, action: WorkflowRunAction): Promise<void> {
+export async function requestWorkflowRunAction(
+  id: string,
+  action: WorkflowRunAction,
+): Promise<WorkflowRunSummary | undefined> {
   const res = await apiFetch(`/v1/workflows/runs/${encodeURIComponent(id)}/${action}`, {
     method: 'POST',
   });
@@ -1258,6 +1262,7 @@ export async function requestWorkflowRunAction(id: string, action: WorkflowRunAc
     throw new Error(typeof body?.detail === 'string'
       ? body.detail : `Workflow action failed (${res.status}).`);
   }
+  if (action === 'retry') return res.json();
 }
 
 export interface SavedWorkflowDefinition {

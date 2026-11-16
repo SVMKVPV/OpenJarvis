@@ -112,20 +112,28 @@ export function SoftwareEngineeringWorkspace() {
   const [runDetailError, setRunDetailError] = useState('');
   const [runActionPending, setRunActionPending] = useState(false);
   const [runActionMessage, setRunActionMessage] = useState<{ id: string; text: string } | null>(null);
-  const inspectedRunStatus = workflowRuns.find((run) => run.id === inspectedRunId)?.status;
+  const inspectRun = (id: string) => {
+    setRunDetail(null);
+    setRunDetailError('');
+    setInspectedRunId(id);
+  };
 
   const actOnRun = async (id: string, action: WorkflowRunAction) => {
     if (runActionPending) return;
     setRunActionPending(true);
     setRunActionMessage(null);
     try {
-      await requestWorkflowRunAction(id, action);
+      const retry = await requestWorkflowRunAction(id, action);
+      if (retry) {
+        setWorkflowRuns((current) => [retry, ...current.filter((run) => run.id !== retry.id)]);
+        inspectRun(retry.id);
+      }
       const messages = {
         cancel: 'Cancellation requested.',
         retry: 'Retry queued as a new run.',
         resume: 'Resume requested. Any pending approval still applies.',
       };
-      setRunActionMessage({ id, text: messages[action] });
+      setRunActionMessage({ id: retry?.id ?? id, text: messages[action] });
     } catch (error) {
       setRunActionMessage({ id, text: error instanceof Error ? error.message : 'Workflow action failed.' });
     } finally {
@@ -160,15 +168,26 @@ export function SoftwareEngineeringWorkspace() {
   useEffect(() => {
     if (!inspectedRunId) return;
     const controller = new AbortController();
-    fetchWorkflowRun(inspectedRunId, controller.signal).then((detail) => {
-      if (controller.signal.aborted) return;
-      setRunDetail(detail);
-      setRunDetailError('');
-    }).catch((error) => {
-      if (!controller.signal.aborted) setRunDetailError(error instanceof Error ? error.message : 'Could not load run details.');
-    });
-    return () => controller.abort();
-  }, [inspectedRunId, inspectedRunStatus]);
+    let timer: number | undefined;
+    const refresh = async () => {
+      try {
+        const detail = await fetchWorkflowRun(inspectedRunId, controller.signal);
+        if (controller.signal.aborted) return;
+        setRunDetail(detail);
+        setRunDetailError('');
+        if (!['queued', 'running', 'waiting_approval'].includes(detail.status)) return;
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setRunDetailError(error instanceof Error ? error.message : 'Could not load run details.');
+      }
+      timer = window.setTimeout(refresh, 2500);
+    };
+    void refresh();
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [inspectedRunId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -582,11 +601,10 @@ export function SoftwareEngineeringWorkspace() {
               <article key={run.id}>
                 <div><strong>{run.workflow_name}</strong><small>{run.id.slice(0, 8)} · {new Date(run.created_at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small></div>
                 <em data-status={run.status}>{run.status.replace('_', ' ').toUpperCase()}</em>
-                <button type="button" aria-pressed={inspectedRunId === run.id} onClick={() => {
-                  setRunDetail(null);
-                  setRunDetailError('');
-                  setInspectedRunId(inspectedRunId === run.id ? '' : run.id);
-                }}>{inspectedRunId === run.id ? 'Close run details' : 'Inspect run'}</button>
+                <button type="button" aria-pressed={inspectedRunId === run.id}
+                  onClick={() => inspectRun(inspectedRunId === run.id ? '' : run.id)}>
+                  {inspectedRunId === run.id ? 'Close run details' : 'Inspect run'}
+                </button>
               </article>
             ))}
           </div>
@@ -596,6 +614,12 @@ export function SoftwareEngineeringWorkspace() {
               {runDetail?.id === inspectedRunId ? (
                 <>
                   <h4>{runDetail.workflow_name}</h4>
+                  <p>Run status: {runDetail.status.replace('_', ' ')}</p>
+                  {runDetail.parent_run_id && (
+                    <button type="button" onClick={() => inspectRun(runDetail.parent_run_id ?? '')}>
+                      Inspect original run {runDetail.parent_run_id.slice(0, 8)}
+                    </button>
+                  )}
                   <div>
                     {['queued', 'running', 'waiting_approval'].includes(runDetail.status) && (
                       <button type="button" disabled={runActionPending}

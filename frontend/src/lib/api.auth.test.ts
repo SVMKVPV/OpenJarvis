@@ -134,6 +134,20 @@ describe('managed agent channels', () => {
   });
 });
 
+describe('workflow run actions', () => {
+  it('returns the new run and its original run ID after a retry', async () => {
+    const retry = { id: 'retry-run', parent_run_id: 'original/run', status: 'queued' };
+    fetchMock.mockResolvedValue(Response.json(retry, { status: 202 }));
+    const { requestWorkflowRunAction } = await freshApi();
+
+    await expect(requestWorkflowRunAction('original/run', 'retry')).resolves.toEqual(retry);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/v1\/workflows\/runs\/original%2Frun\/retry$/),
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+});
+
 describe('tool credentials', () => {
   it('reads credential status from the local server', async () => {
     fetchMock.mockResolvedValue(
