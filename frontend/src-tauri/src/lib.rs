@@ -372,8 +372,16 @@ fn project_root_near_executable(exe: &std::path::Path) -> Option<std::path::Path
         return Some(exe_dir.to_path_buf());
     }
 
-    // The Windows installer places the desktop executable in OpenJarvis/ and
-    // clones the matching Python backend into OpenJarvis/src/.
+    // Command Center installers ship a version-matched backend beside the app.
+    let packaged_backend = exe_dir.join(concat!(
+        "command-center-backend-",
+        env!("CARGO_PKG_VERSION")
+    ));
+    if packaged_backend.join("pyproject.toml").is_file() {
+        return Some(packaged_backend);
+    }
+
+    // Older Windows installers paired the app with a checkout in OpenJarvis/src/.
     let installed_checkout = exe_dir.join("src");
     if installed_checkout.join("pyproject.toml").is_file() {
         return Some(installed_checkout);
@@ -3576,6 +3584,14 @@ mod tests {
 
         let exe = install_dir.join("openjarvis-desktop.exe");
         assert_eq!(project_root_near_executable(&exe), Some(bundled_checkout));
+
+        let packaged_backend = install_dir.join(concat!(
+            "command-center-backend-",
+            env!("CARGO_PKG_VERSION")
+        ));
+        std::fs::create_dir_all(&packaged_backend).unwrap();
+        std::fs::write(packaged_backend.join("pyproject.toml"), "[project]\n").unwrap();
+        assert_eq!(project_root_near_executable(&exe), Some(packaged_backend));
 
         std::fs::remove_dir_all(root).unwrap();
     }
