@@ -94,6 +94,21 @@ def test_get_digest_404(tmp_path):
     assert resp.status_code == 404
 
 
+def test_digest_reads_close_the_database(tmp_path):
+    from fastapi.testclient import TestClient
+
+    db_path = tmp_path / "reopen.db"
+    app = _make_app(str(db_path))
+    assert not db_path.exists()
+    with TestClient(app) as client:
+        assert client.get("/api/digest").status_code == 404
+        assert client.get("/api/digest/audio").status_code == 404
+        assert client.get("/api/digest/history").json() == []
+        db_path.unlink()
+        assert client.get("/api/digest/history").json() == []
+    db_path.unlink()
+
+
 def test_get_history(store, tmp_path):
     from fastapi.testclient import TestClient
 

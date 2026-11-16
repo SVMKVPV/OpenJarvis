@@ -467,6 +467,14 @@ def create_app(
             except Exception:
                 logger.debug("Memory backend shutdown failed", exc_info=True)
 
+        if runtime_drained and app.state.trace_store is not None:
+            try:
+                app.state.trace_store.close()
+            except Exception:
+                logger.debug("Trace store shutdown failed", exc_info=True)
+            else:
+                app.state.trace_store = None
+
     # Wire up trace store if traces are enabled.
     #
     # We deliberately do NOT subscribe the trace store to the bus. The chat

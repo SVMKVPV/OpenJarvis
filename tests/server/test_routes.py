@@ -1867,6 +1867,19 @@ class TestTraceRecording:
         assert trace.query == "What is 2+2?"
         assert trace.result == "traced reply"
 
+    def test_shutdown_closes_owned_trace_store(self, tmp_path):
+        import sqlite3
+
+        config = _traces_enabled_config(tmp_path)
+        app = create_app(_make_engine(), "test-model", config=config)
+        store = app.state.trace_store
+        assert store is not None
+        with TestClient(app):
+            assert store.count() == 0
+        assert app.state.trace_store is None
+        with pytest.raises(sqlite3.ProgrammingError, match="closed database"):
+            store.count()
+
     def test_streaming_completion_creates_trace(self, tmp_path):
         """A streamed completion (no agent) records the assembled response."""
         engine = _make_engine()

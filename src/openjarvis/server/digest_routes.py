@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import closing
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
@@ -36,12 +37,12 @@ def _generate_digest_sync() -> str:
 def create_digest_router(*, db_path: str = "") -> APIRouter:
     """Create a digest API router with the given store path."""
     router = APIRouter(prefix="/api/digest", tags=["digest"])
-    store = DigestStore(db_path=db_path) if db_path else DigestStore()
 
     @router.get("")
     async def get_digest():
         """Return the latest digest artifact."""
-        artifact = store.get_today()
+        with closing(DigestStore(db_path=db_path)) as store:
+            artifact = store.get_today()
         if artifact is None:
             raise HTTPException(status_code=404, detail="No digest for today")
         return {
@@ -59,7 +60,8 @@ def create_digest_router(*, db_path: str = "") -> APIRouter:
     @router.get("/audio")
     async def get_digest_audio():
         """Stream the digest audio file."""
-        artifact = store.get_today()
+        with closing(DigestStore(db_path=db_path)) as store:
+            artifact = store.get_today()
         if artifact is None:
             raise HTTPException(status_code=404, detail="No digest for today")
         if not artifact.audio_path.exists():
@@ -82,7 +84,8 @@ def create_digest_router(*, db_path: str = "") -> APIRouter:
     @router.get("/history")
     async def get_digest_history():
         """Return past digests."""
-        history = store.history(limit=10)
+        with closing(DigestStore(db_path=db_path)) as store:
+            history = store.history(limit=10)
         return [
             {
                 "text": a.text[:200],
