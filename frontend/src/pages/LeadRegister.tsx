@@ -1,7 +1,7 @@
 import { type FormEvent, useEffect, useState } from 'react';
 import { fetchSavedLeads, saveLead, type SavedLead } from '../lib/api';
 
-export function LeadRegister() {
+export function LeadRegister({ onOpenDiscovery }: { onOpenDiscovery: () => void }) {
   const [leads, setLeads] = useState<SavedLead[] | null>(null);
   const [organization, setOrganization] = useState('');
   const [source, setSource] = useState('');
@@ -39,7 +39,10 @@ export function LeadRegister() {
 
   return (
     <section className="station-widget-options" aria-label="Lead register">
-      <div><strong>Lead register</strong></div>
+      <div>
+        <strong>Lead register</strong>
+        <button type="button" onClick={onOpenDiscovery}>Open lead discovery workflow</button>
+      </div>
       <form onSubmit={submit}>
         <label>Organization
           <input value={organization} onChange={(event) => setOrganization(event.target.value)}

@@ -689,14 +689,16 @@ export function CommandCenterPage() {
             <section className="station-widget-options" aria-label="Finance workpapers">
               <div>
                 <strong>Finance workpapers</strong>
-                <button type="button" onClick={() => openWorkspace({ initialFinanceWorkpaper: true })}>
+                <button type="button" onClick={() => openWorkspace({ initialStarter: 'finance' })}>
                   Open workpaper workflow
                 </button>
               </div>
               <p>Search indexed invoices and receipts, then review the draft against its sources.</p>
             </section>
           )}
-          {selected.id === 'growth' && <LeadRegister />}
+          {selected.id === 'growth' && (
+            <LeadRegister onOpenDiscovery={() => openWorkspace({ initialStarter: 'leads' })} />
+          )}
           {selected.id === 'email' && <GmailReviewList onOpenWorkflow={openGmailReplyWorkflow} />}
           {selected.id === 'marketing' && <><Ga4PropertyForm /><SocialContentStudio /></>}
           {selected.id === 'system-builder' && <SystemBuilderLab />}

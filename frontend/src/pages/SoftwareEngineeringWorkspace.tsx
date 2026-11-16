@@ -110,6 +110,32 @@ const FINANCE_EVIDENCE_REVIEW = {
   ],
 } satisfies SavedWorkflowDefinition['graph'];
 
+const LEAD_DISCOVERY = {
+  name: 'Review leads from indexed evidence',
+  nodes: [
+    { id: 'lead-source', type: 'tool', config: {
+      tool_name: 'knowledge_search', query_from_input: true, source: 'upload', require_match: true,
+    } },
+    { id: 'lead-candidates', type: 'agent', agent: 'none', config: {
+      instruction: [
+        'Identify organizations that explicitly expressed interest, asked for a quote, or were referred as potential customers in the indexed evidence.',
+        'List the organization, exact source reference, and a brief reason grounded in the evidence for each candidate.',
+        'Consolidate repeated mentions of one organization. Exclude vendors and other organizations with no evidence of customer interest.',
+        'If no candidate is supported, report that result. Leave qualification and outreach decisions to the reviewer.',
+      ].join(' '),
+    } },
+    { id: 'lead-review', type: 'approval', config: {
+      description: 'Verify each candidate and its source before saving it in the Growth lead register.',
+      tier: 'high',
+    } },
+  ],
+  edges: [
+    { source: 'lead-source', target: 'lead-candidates' },
+    { source: 'lead-source', target: 'lead-review' },
+    { source: 'lead-candidates', target: 'lead-review' },
+  ],
+} satisfies SavedWorkflowDefinition['graph'];
+
 const EMAIL_REPLY_REVIEW = {
   name: 'Draft and review a Gmail reply',
   nodes: [
@@ -213,11 +239,11 @@ const ITEMS: WorkItem[] = [
 export type WorkspaceEntry = {
   initialRunId?: string;
   initialGmailReference?: string;
-  initialFinanceWorkpaper?: boolean;
+  initialStarter?: 'finance' | 'leads';
 };
 
 export function SoftwareEngineeringWorkspace({
-  initialRunId = '', initialGmailReference = '', initialFinanceWorkpaper = false,
+  initialRunId = '', initialGmailReference = '', initialStarter,
 }: WorkspaceEntry = {}) {
   const [folders, setFolders] = useState(INITIAL_FOLDERS);
   const [selectedFolder, setSelectedFolder] = useState('04-frontend');
@@ -369,15 +395,15 @@ export function SoftwareEngineeringWorkspace({
     definitionId: string; input: string; key: string; scheduledAt?: number;
   } | null>(null);
   const [savingDefinition, setSavingDefinition] = useState(false);
-  const initialGraph = initialFinanceWorkpaper
-    ? FINANCE_EVIDENCE_REVIEW
-    : initialGmailReference ? EMAIL_REPLY_REVIEW : GUARDED_DELIVERY;
+  const initialGraph = initialStarter === 'finance' ? FINANCE_EVIDENCE_REVIEW
+    : initialStarter === 'leads' ? LEAD_DISCOVERY
+      : initialGmailReference ? EMAIL_REPLY_REVIEW : GUARDED_DELIVERY;
   const [workflowName, setWorkflowName] = useState(initialGraph.name);
   const [workflowGraph, setWorkflowGraph] = useState(() =>
     JSON.stringify({ nodes: initialGraph.nodes, edges: initialGraph.edges }, null, 2));
   useEffect(() => {
-    if (initialGmailReference || initialFinanceWorkpaper) workflowNameInput.current?.focus();
-  }, [initialGmailReference, initialFinanceWorkpaper]);
+    if (initialGmailReference || initialStarter) workflowNameInput.current?.focus();
+  }, [initialGmailReference, initialStarter]);
   const draftGraph = useMemo(() => readDraftGraph(workflowGraph), [workflowGraph]);
   const [graphEditorOpen, setGraphEditorOpen] = useState(false);
   const stepElements = useRef(new Map<string, HTMLLIElement>());
