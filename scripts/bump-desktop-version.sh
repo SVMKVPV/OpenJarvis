@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Bump the desktop app version across all 3 config files.
+# Bump the desktop app version in the manifests and lockfiles.
 # Usage: ./scripts/bump-desktop-version.sh <semver>
 # Example: ./scripts/bump-desktop-version.sh 1.0.1
 
@@ -21,36 +21,39 @@ fi
 
 FRONTEND_DIR="$(cd "$(dirname "$0")/../frontend" && pwd)"
 
-# 1. package.json
-node -e "
-  const fs = require('fs');
-  const path = '${FRONTEND_DIR}/package.json';
-  const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
-  pkg.version = '${VERSION}';
-  fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
-"
-echo "Updated frontend/package.json -> ${VERSION}"
+node - "$FRONTEND_DIR" "$VERSION" <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+const [frontendDir, version] = process.argv.slice(2);
+const updates = new Map();
 
-# 2. tauri.conf.json
-node -e "
-  const fs = require('fs');
-  const path = '${FRONTEND_DIR}/src-tauri/tauri.conf.json';
-  const conf = JSON.parse(fs.readFileSync(path, 'utf8'));
-  conf.version = '${VERSION}';
-  fs.writeFileSync(path, JSON.stringify(conf, null, 2) + '\n');
-"
-echo "Updated frontend/src-tauri/tauri.conf.json -> ${VERSION}"
+for (const filename of ['package.json', 'package-lock.json', 'src-tauri/tauri.conf.json']) {
+  const filepath = path.join(frontendDir, filename);
+  const manifest = JSON.parse(fs.readFileSync(filepath, 'utf8'));
+  manifest.version = version;
+  if (filename === 'package-lock.json') {
+    manifest.packages[''].version = version;
+  }
+  updates.set(filepath, JSON.stringify(manifest, null, 2) + '\n');
+}
 
-# 3. Cargo.toml
-sed -i.bak "s/^version = \".*\"/version = \"${VERSION}\"/" "${FRONTEND_DIR}/src-tauri/Cargo.toml"
-rm -f "${FRONTEND_DIR}/src-tauri/Cargo.toml.bak"
-echo "Updated frontend/src-tauri/Cargo.toml -> ${VERSION}"
+for (const filename of ['src-tauri/Cargo.toml', 'src-tauri/Cargo.lock']) {
+  const filepath = path.join(frontendDir, filename);
+  const contents = fs.readFileSync(filepath, 'utf8');
+  const entry = /^(name = "openjarvis-desktop"\r?\nversion = ")[^"\r\n]+(")$/m;
+  if (!entry.test(contents)) throw new Error(`Desktop package entry missing from ${filename}`);
+  updates.set(filepath, contents.replace(entry, (_, prefix, suffix) => prefix + version + suffix));
+}
 
-echo ""
-echo "Version bumped to ${VERSION} in all 3 files."
+for (const [filepath, contents] of updates) {
+  fs.writeFileSync(filepath, contents);
+}
+NODE
+
+echo "Desktop manifests and lockfiles bumped to ${VERSION}."
 echo ""
 echo "Next steps:"
-echo "  git add frontend/package.json frontend/src-tauri/tauri.conf.json frontend/src-tauri/Cargo.toml"
+echo "  git add frontend/package{,-lock}.json frontend/src-tauri/{tauri.conf.json,Cargo.toml,Cargo.lock}"
 echo "  git commit -m \"chore(desktop): bump version to ${VERSION}\""
 echo "  git tag desktop-v${VERSION}"
 echo "  git push origin main --tags"
