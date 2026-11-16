@@ -521,6 +521,53 @@ class TestAgentManagerStreaming:
         assert "Echo:" in full_content
         assert "Hello world" in full_content
 
+    def test_ollama_retries_text_tool_request(
+        self, manager, stream_client, monkeypatch
+    ):
+        from openjarvis.engine._stubs import StreamChunk
+
+        engine = stream_client.app.state.engine
+        engine.engine_id = "ollama"
+        calls = []
+
+        async def stream(messages, **kwargs):
+            calls.append(kwargs)
+            if kwargs.get("tools"):
+                yield StreamChunk(content='{"name":"memory_retrieve",')
+                yield StreamChunk(content='"arguments":{"query":"headline"}}')
+            else:
+                yield StreamChunk(content="Use beautiful instead of beatiful.")
+            yield StreamChunk(finish_reason="stop")
+
+        engine.stream_full = stream
+        toolkit = MagicMock()
+        toolkit.instances = []
+        toolkit.by_name = {"memory_retrieve": MagicMock()}
+        toolkit.openai_specs = [
+            {"type": "function", "function": {"name": "memory_retrieve"}}
+        ]
+        monkeypatch.setattr(
+            "openjarvis.server.agent_manager_routes.resolve_agent_tools",
+            lambda *args, **kwargs: toolkit,
+        )
+        agent = manager.create_agent(name="Reviewer", config={"max_turns": 1})
+        response = stream_client.post(
+            f"/v1/managed-agents/{agent['id']}/messages",
+            json={"content": "Check 'A beatiful day'.", "stream": True},
+        )
+
+        assert response.status_code == 200
+        assert "memory_retrieve" not in response.text
+        assert "Use beautiful instead of beatiful." in response.text
+        assert len(calls) == 2
+        assert "tools" in calls[0] and "tools" not in calls[1]
+        replies = [
+            row["content"]
+            for row in manager.list_messages(agent["id"])
+            if row["direction"] == "agent_to_user"
+        ]
+        assert replies == ["Use beautiful instead of beatiful."]
+
     def test_send_message_stream_stores_response(self, manager, stream_client):
         """After streaming, agent response is persisted in the DB."""
         agent = manager.create_agent(

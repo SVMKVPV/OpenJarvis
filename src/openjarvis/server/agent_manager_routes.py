@@ -1408,9 +1408,29 @@ async def _stream_managed_agent(
         except Exception as _qs_exc:
             logger.warning("Log query_start failed: %s", _qs_exc)
 
+        def content_event(content: str) -> str:
+            data = {
+                "id": chunk_id,
+                "object": "chat.completion.chunk",
+                "model": model,
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {"content": content},
+                        "finish_reason": None,
+                    }
+                ],
+            }
+            return f"data: {json.dumps(data)}\n\n"
+
+        turn_kwargs = dict(stream_kwargs)
         while turns < max_turns:
             turns += 1
             turn_content = ""
+            buffered_content = ""
+            inspect_json = getattr(engine, "engine_id", "") == "ollama" and bool(
+                turn_kwargs.get("tools")
+            )
             tool_call_fragments: Dict[int, Dict[str, Any]] = {}
             current_finish_reason = None
 
@@ -1420,27 +1440,25 @@ async def _stream_managed_agent(
                     model=model,
                     temperature=temperature,
                     max_tokens=max_tokens,
-                    **stream_kwargs,
+                    **turn_kwargs,
                 ):
-                    # Stream content tokens immediately to the client
                     if chunk.content:
                         turn_content += chunk.content
-                        # Mirror partial content so a disconnect during
-                        # generation still saves what we've produced.
-                        persist_state["content"] = collected_content + turn_content
-                        chunk_data = {
-                            "id": chunk_id,
-                            "object": "chat.completion.chunk",
-                            "model": model,
-                            "choices": [
-                                {
-                                    "index": 0,
-                                    "delta": {"content": chunk.content},
-                                    "finish_reason": None,
-                                }
-                            ],
-                        }
-                        yield f"data: {json.dumps(chunk_data)}\n\n"
+                        if inspect_json:
+                            buffered_content += chunk.content
+                            prefix = buffered_content.lstrip()
+                            if (not prefix or prefix.startswith("{")) and (
+                                len(buffered_content) < 8192
+                            ):
+                                visible_content = ""
+                            else:
+                                inspect_json = False
+                                visible_content, buffered_content = buffered_content, ""
+                        else:
+                            visible_content = chunk.content
+                        if visible_content:
+                            persist_state["content"] = collected_content + turn_content
+                            yield content_event(visible_content)
 
                     # Accumulate tool_call fragments
                     if chunk.tool_calls:
@@ -1469,6 +1487,36 @@ async def _stream_managed_agent(
                 yield f"data: {json.dumps(error_data)}\n\n"
                 yield "data: [DONE]\n\n"
                 return
+
+            if buffered_content:
+                # Some local models return a tool request as text. Treat it
+                # as a failed generation, never as authorization to call a tool.
+                try:
+                    candidate = json.loads(buffered_content)
+                except json.JSONDecodeError:
+                    candidate = None
+                if (
+                    not tool_call_fragments
+                    and isinstance(candidate, dict)
+                    and isinstance(candidate.get("name"), str)
+                    and candidate["name"] in resolved_by_name
+                    and isinstance(candidate.get("arguments"), dict)
+                ):
+                    turn_kwargs.pop("tools")
+                    messages_for_llm.append(
+                        Message(
+                            role=Role.USER,
+                            content=(
+                                "Answer the request in plain language. Use the "
+                                "supplied information and identify any missing facts. "
+                                "Do not emit a tool request."
+                            ),
+                        )
+                    )
+                    turns -= 1
+                    continue
+                persist_state["content"] = collected_content + turn_content
+                yield content_event(buffered_content)
 
             # Handle tool calls: execute tools and loop for next turn
             if tool_call_fragments and current_finish_reason == "tool_calls":
