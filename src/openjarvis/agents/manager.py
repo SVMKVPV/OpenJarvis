@@ -404,7 +404,7 @@ class AgentManager:
         self._conn.execute(
             "DELETE FROM agent_checkpoints WHERE agent_id = ? AND id NOT IN "
             "(SELECT id FROM agent_checkpoints WHERE agent_id = ?"
-            " ORDER BY created_at DESC LIMIT ?)",
+            " ORDER BY created_at DESC, rowid DESC LIMIT ?)",
             (agent_id, agent_id, self._CHECKPOINT_RETENTION),
         )
         self._conn.commit()
@@ -419,7 +419,7 @@ class AgentManager:
     def list_checkpoints(self, agent_id: str) -> list:
         rows = self._conn.execute(
             "SELECT * FROM agent_checkpoints"
-            " WHERE agent_id = ? ORDER BY created_at DESC",
+            " WHERE agent_id = ? ORDER BY created_at DESC, rowid DESC",
             (agent_id,),
         ).fetchall()
         return [self._row_to_checkpoint(r) for r in rows]
@@ -428,7 +428,7 @@ class AgentManager:
     def get_latest_checkpoint(self, agent_id: str) -> Optional[Dict[str, Any]]:
         row = self._conn.execute(
             "SELECT * FROM agent_checkpoints"
-            " WHERE agent_id = ? ORDER BY created_at DESC LIMIT 1",
+            " WHERE agent_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1",
             (agent_id,),
         ).fetchone()
         return self._row_to_checkpoint(row) if row else None
@@ -676,6 +676,8 @@ class AgentManager:
         agent_id: str,
         content: str,
         tool_calls: Optional[list] = None,
+        *,
+        delivered_message_ids: tuple[str, ...] = (),
     ) -> dict:
         """Store an agent-to-user response message.
 
@@ -687,14 +689,20 @@ class AgentManager:
         msg_id = uuid4().hex[:16]
         now = time.time()
         tool_calls_json = json.dumps(tool_calls) if tool_calls else None
-        self._conn.execute(
-            "INSERT INTO agent_messages"
-            " (id, agent_id, direction, content, mode, status, created_at,"
-            " tool_calls)"
-            " VALUES (?, ?, 'agent_to_user', ?, 'immediate', 'delivered', ?, ?)",
-            (msg_id, agent_id, content, now, tool_calls_json),
-        )
-        self._conn.commit()
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO agent_messages"
+                " (id, agent_id, direction, content, mode, status, created_at,"
+                " tool_calls)"
+                " VALUES (?, ?, 'agent_to_user', ?, 'immediate', 'delivered', ?, ?)",
+                (msg_id, agent_id, content, now, tool_calls_json),
+            )
+            self._conn.executemany(
+                "UPDATE agent_messages SET status = 'delivered'"
+                " WHERE id = ? AND agent_id = ? AND direction = 'user_to_agent'"
+                " AND status = 'pending'",
+                ((message_id, agent_id) for message_id in delivered_message_ids),
+            )
         return {
             "id": msg_id,
             "agent_id": agent_id,

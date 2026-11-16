@@ -5,6 +5,7 @@ description = "Tracks delivery, dependencies, and blockers and prepares an opera
 icon = "OPS"
 agent_type = "monitor_operative"
 schedule_type = "manual"
+schedule_value = ""
 tools = []
 max_turns = 12
 temperature = 0.2

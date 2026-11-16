@@ -265,7 +265,7 @@ def test_error_retry_success(scenario_harness: ScenarioHarness) -> None:
 
 
 def test_error_exhaustion(scenario_harness: ScenarioHarness) -> None:
-    """FakeEngine always raises RetryableError. Agent ends in error state."""
+    """A failed manager tick keeps queued work available for recovery."""
     h = scenario_harness
     h.engine._responses = [
         {"raise": RetryableError("fail-1")},
@@ -274,18 +274,30 @@ def test_error_exhaustion(scenario_harness: ScenarioHarness) -> None:
     ]
     h.engine._call_count = 0
 
-    agent = h.manager.create_agent(
-        name="exhaust-agent",
-        config={"schedule_type": "manual", "instruction": "Always fail."},
-    )
+    agent = h.manager.create_from_template("general_manager", "General Manager")
     aid = agent["id"]
+    queued = h.manager.send_message(aid, "Keep this instruction", mode="queued")
 
     with patch("openjarvis.agents.executor.time.sleep"):
         h.executor.execute_tick(aid)
+    pending = h.manager.get_pending_messages(aid)
+    assert [item["id"] for item in pending] == [queued["id"]]
 
     agent = h.manager.get_agent(aid)
     assert agent is not None
     assert agent["status"] == "error"
+
+    h.engine._responses = [{"content": "Recovered: assigned launch owner confirmed."}]
+    h.engine._call_count = 0
+    h.manager.recover_agent(aid)
+    h.executor.execute_tick(aid)
+
+    assert h.manager.get_pending_messages(aid) == []
+    history = h.manager.list_messages(aid)
+    assert any(item["content"] == h.engine._responses[0]["content"] for item in history)
+    assert any(item["id"] == queued["id"] and item["status"] == "delivered"
+               for item in history)
+    assert any("Keep this instruction" in msg.content for msg in h.engine.last_messages)
 
 
 # ---------------------------------------------------------------------------

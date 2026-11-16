@@ -668,11 +668,15 @@ class AgentExecutor:
             base = tick_note or "Continue your assigned task."
             input_text = f"Current date: {today}\n\n{base}"
         pending = self._manager.get_pending_messages(agent["id"])
+        defer_delivery = (
+            agent["agent_type"] == "monitor_operative" and not tool_instances
+        )
         if pending:
             user_msgs = "\n".join(f"User: {m['content']}" for m in pending)
             input_text = f"{input_text}\n\nNew instructions:\n{user_msgs}"
-            for m in pending:
-                self._manager.mark_message_delivered(m["id"])
+            if not defer_delivery:
+                for m in pending:
+                    self._manager.mark_message_delivered(m["id"])
             logger.info(
                 "Agent %s: delivering %d pending message(s)",
                 agent["name"],
@@ -764,6 +768,11 @@ class AgentExecutor:
         finally:
             resolved_toolkit.close()
 
+        if defer_delivery and (result.content or "").strip():
+            result.metadata["_delivered_message_ids"] = tuple(
+                message["id"] for message in pending
+            )
+
         _elapsed = time.time() - _t0
         logger.info(
             "Agent %s: agent.run() completed in %.1fs, "
@@ -821,7 +830,18 @@ class AgentExecutor:
                 duration,
                 len(result.content or "") if result else 0,
             )
-            self._manager.end_tick(agent_id)
+            try:
+                if result:
+                    self._manager.store_agent_response(
+                        agent_id,
+                        result.content,
+                        tool_calls=_tool_calls_for_storage(result),
+                        delivered_message_ids=result.metadata.pop(
+                            "_delivered_message_ids", ()
+                        ),
+                    )
+            finally:
+                self._manager.end_tick(agent_id)
             self._manager.update_agent(agent_id, total_runs_increment=1)
 
             # Accumulate budget metrics from AgentResult metadata
@@ -853,11 +873,6 @@ class AgentExecutor:
                 # message keeps the complete report. The old [:2000] slices
                 # double-truncated and cut findings off mid-sentence.
                 self._manager.update_summary_memory(agent_id, result.content)
-                self._manager.store_agent_response(
-                    agent_id,
-                    result.content,
-                    tool_calls=_tool_calls_for_storage(result),
-                )
 
             # Budget enforcement (post-tick check)
             agent_data = self._manager.get_agent(agent_id)

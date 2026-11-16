@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import sqlite3
 import tempfile
 import threading
 import time
@@ -330,10 +331,12 @@ class TestCheckpoints:
         assert latest["tick_id"] == "tick-002"
         assert latest["conversation_state"]["v"] == 2
 
-    def test_checkpoint_retention_max_5(self, manager):
+    def test_checkpoint_retention_max_5(self, manager, monkeypatch):
         agent = manager.create_agent(name="test", agent_type="simple")
-        for i in range(8):
-            manager.save_checkpoint(agent["id"], f"tick-{i:03d}", {"v": i}, {})
+        with monkeypatch.context() as clock:
+            clock.setattr("openjarvis.agents.manager.time.time", lambda: 100.0)
+            for i in range(8):
+                manager.save_checkpoint(agent["id"], f"tick-{i:03d}", {"v": i}, {})
 
         checkpoints = manager.list_checkpoints(agent["id"])
         assert len(checkpoints) == 5
@@ -420,6 +423,28 @@ class TestMessageQueue:
         manager.store_agent_response(agent["id"], "plain reply")
         messages = manager.list_messages(agent["id"])
         assert messages[0]["tool_calls"] is None
+
+    def test_saving_reply_and_delivering_instruction_is_atomic(self, manager):
+        agent_id = manager.create_agent(name="test")["id"]
+        instruction = manager.send_message(agent_id, "Queue this")
+        manager._conn.execute(
+            "CREATE TRIGGER reject_delivery BEFORE UPDATE OF status ON agent_messages "
+            "BEGIN SELECT RAISE(ABORT, 'delivery failed'); END"
+        )
+        with pytest.raises(sqlite3.IntegrityError, match="delivery failed"):
+            manager.store_agent_response(
+                agent_id, "Reply", delivered_message_ids=(instruction["id"],)
+            )
+        assert [item["id"] for item in manager.list_messages(agent_id)] == [
+            instruction["id"],
+        ]
+        assert manager.get_pending_messages(agent_id)[0]["id"] == instruction["id"]
+        manager._conn.execute("DROP TRIGGER reject_delivery")
+        manager.store_agent_response(
+            agent_id, "Reply", delivered_message_ids=(instruction["id"],)
+        )
+        assert manager.list_messages(agent_id)[0]["content"] == "Reply"
+        assert manager.get_pending_messages(agent_id) == []
 
 
 def test_update_agent_budget_fields(tmp_path):
