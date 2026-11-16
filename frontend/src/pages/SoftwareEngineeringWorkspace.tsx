@@ -8,6 +8,7 @@ import {
   fetchWorkflowDefinitions,
   fetchWorkflowRun,
   fetchWorkflowRuns,
+  requestWorkflowRunAction,
   runSavedWorkflow,
   saveWorkflowDefinition,
   startWorkflowRun,
@@ -16,6 +17,7 @@ import {
   type SavedWorkflowDefinition,
   type WorkflowRunSummary,
   type WorkflowRunDetail,
+  type WorkflowRunAction,
 } from '../lib/api';
 import { listConnectors } from '../lib/connectors-api';
 import type { ConnectorInfo } from '../types/connectors';
@@ -107,7 +109,28 @@ export function SoftwareEngineeringWorkspace() {
   const [inspectedRunId, setInspectedRunId] = useState('');
   const [runDetail, setRunDetail] = useState<WorkflowRunDetail | null>(null);
   const [runDetailError, setRunDetailError] = useState('');
+  const [runActionPending, setRunActionPending] = useState(false);
+  const [runActionMessage, setRunActionMessage] = useState<{ id: string; text: string } | null>(null);
   const inspectedRunStatus = workflowRuns.find((run) => run.id === inspectedRunId)?.status;
+
+  const actOnRun = async (id: string, action: WorkflowRunAction) => {
+    if (runActionPending) return;
+    setRunActionPending(true);
+    setRunActionMessage(null);
+    try {
+      await requestWorkflowRunAction(id, action);
+      const messages = {
+        cancel: 'Cancellation requested.',
+        retry: 'Retry queued as a new run.',
+        resume: 'Resume requested. Any pending approval still applies.',
+      };
+      setRunActionMessage({ id, text: messages[action] });
+    } catch (error) {
+      setRunActionMessage({ id, text: error instanceof Error ? error.message : 'Workflow action failed.' });
+    } finally {
+      setRunActionPending(false);
+    }
+  };
   const [definitions, setDefinitions] = useState<SavedWorkflowDefinition[]>([]);
   const [definitionId, setDefinitionId] = useState('');
   const selectedDefinition = definitions.find((item) => item.id === definitionId);
@@ -501,6 +524,21 @@ export function SoftwareEngineeringWorkspace() {
               {runDetail?.id === inspectedRunId ? (
                 <>
                   <h4>{runDetail.workflow_name}</h4>
+                  <div>
+                    {['queued', 'running', 'waiting_approval'].includes(runDetail.status) && (
+                      <button type="button" disabled={runActionPending}
+                        onClick={() => void actOnRun(runDetail.id, 'cancel')}>Cancel run</button>
+                    )}
+                    {['failed', 'cancelled', 'interrupted'].includes(runDetail.status) && (
+                      <button type="button" disabled={runActionPending}
+                        onClick={() => void actOnRun(runDetail.id, 'retry')}>Retry as new run</button>
+                    )}
+                    {runDetail.status === 'waiting_approval' && (
+                      <button type="button" disabled={runActionPending}
+                        onClick={() => void actOnRun(runDetail.id, 'resume')}>Request resume</button>
+                    )}
+                  </div>
+                  {runActionMessage?.id === runDetail.id && <p role="status">{runActionMessage.text}</p>}
                   {runDetail.error && <p>{runDetail.error}</p>}
                   {runDetail.steps.length ? <ol>{runDetail.steps.map((step) => (
                     <li key={`${step.node_id}-${step.attempt}`}>

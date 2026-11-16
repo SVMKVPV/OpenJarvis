@@ -1247,6 +1247,19 @@ export async function fetchWorkflowRun(id: string, signal?: AbortSignal): Promis
   return res.json();
 }
 
+export type WorkflowRunAction = 'cancel' | 'retry' | 'resume';
+
+export async function requestWorkflowRunAction(id: string, action: WorkflowRunAction): Promise<void> {
+  const res = await apiFetch(`/v1/workflows/runs/${encodeURIComponent(id)}/${action}`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(typeof body?.detail === 'string'
+      ? body.detail : `Workflow action failed (${res.status}).`);
+  }
+}
+
 export interface SavedWorkflowDefinition {
   id: string;
   graph: Pick<WorkflowRunInput, 'name' | 'nodes' | 'edges'>;
