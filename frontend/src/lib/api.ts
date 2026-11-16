@@ -164,6 +164,22 @@ export async function shareWorkflowWithBrain(runId: string, summary: string): Pr
   return result.added;
 }
 
+export async function assignWorkflowFollowUp(
+  runId: string, agentId: string, instruction: string,
+): Promise<boolean> {
+  const response = await apiFetch(`/v1/workflows/runs/${encodeURIComponent(runId)}/assign-workstation`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ agent_id: agentId, instruction }),
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok || typeof result?.queued !== 'boolean') {
+    throw new Error(typeof result?.detail === 'string'
+      ? result.detail : 'The workstation assignment could not be confirmed.');
+  }
+  return result.queued;
+}
+
 export type RuntimePlugin = {
   id: string;
   name: string;

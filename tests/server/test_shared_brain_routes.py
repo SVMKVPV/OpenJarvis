@@ -12,7 +12,8 @@ from fastapi.testclient import TestClient  # noqa: E402
 from openjarvis.server.app import create_app  # noqa: E402
 
 
-def test_share_completed_approved_run_without_copying_evidence(tmp_path, monkeypatch):
+def test_handoff_approved_run_keeps_evidence_in_workflow(tmp_path, monkeypatch):
+    from openjarvis.agents.manager import AgentManager
     from openjarvis.server import approval_routes
     from openjarvis.tools.approval_store import ApprovalStore
 
@@ -20,7 +21,9 @@ def test_share_completed_approved_run_without_copying_evidence(tmp_path, monkeyp
     monkeypatch.setattr("openjarvis.core.shared_brain.get_config_dir", lambda: tmp_path)
     approvals = ApprovalStore(str(tmp_path / "approvals.db"))
     monkeypatch.setattr(approval_routes, "_store", approvals)
-    app = create_app(MagicMock(), "test")
+    manager = AgentManager(str(tmp_path / "agents.db"))
+    agent = manager.create_agent("Operations")
+    app = create_app(MagicMock(), "test", agent_manager=manager)
     brief_path = "/v1/shared-brain/brief"
     with TestClient(app) as client:
         assert client.put(
@@ -34,8 +37,11 @@ def test_share_completed_approved_run_without_copying_evidence(tmp_path, monkeyp
         run_id = started.json()["id"]
         run_path = f"/v1/workflows/runs/{run_id}"
         share_path = f"{run_path}/share-to-brain"
+        assign_path = f"{run_path}/assign-workstation"
+        assignment = {"agent_id": agent["id"], "instruction": "Plan a delivery check."}
         summary = {"summary": "Delivery wording confirmed."}
         assert client.post(share_path, json=summary).status_code == 409
+        assert client.post(assign_path, json=assignment).status_code == 409
 
         def wait_for(expected):
             deadline = time.monotonic() + 3
@@ -59,7 +65,19 @@ def test_share_completed_approved_run_without_copying_evidence(tmp_path, monkeyp
             ),
             "revision": 2,
         }
+        assert client.post(assign_path, json=assignment).json() == {"queued": True}
+        assert client.post(assign_path, json=assignment).json() == {"queued": False}
+        unavailable = client.post(
+            assign_path, json={**assignment, "agent_id": "missing"}
+        )
+        assert unavailable.status_code == 409
+        queued, = manager.get_pending_messages(agent["id"])
+        assert queued["mode"] == "handoff"
+        assert queued["content"] == (
+            f"Approved workflow {run_id}\n\nPlan a delivery check."
+        )
     approvals.close()
+    manager.close()
 
 
 def test_shared_brief_is_authenticated_persistent_and_revisioned(

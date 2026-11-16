@@ -32,6 +32,7 @@ import type { ConnectorInfo, SyncStatus } from '../types/connectors';
 import { ReviewedLeadForm } from './ReviewedLeadForm';
 import { WorkflowDraftMap } from './WorkflowDraftMap';
 import { WorkflowBrainHandoff } from './WorkflowBrainHandoff';
+import { WorkflowWorkstationAssignment, type WorkflowRecipient } from './WorkflowWorkstationAssignment';
 import { WorkflowEvidenceUpload } from './WorkflowEvidenceUpload';
 import { WorkflowRecurrenceEditor } from './WorkflowRecurrenceEditor';
 import './software-workspace.css';
@@ -332,7 +333,11 @@ export type WorkspaceEntry = {
 
 export function SoftwareEngineeringWorkspace({
   initialRunId = '', initialDefinitionId = '', initialGmailReference = '', initialStarter,
-}: WorkspaceEntry = {}) {
+  recipients = [], onOpenStation,
+}: WorkspaceEntry & {
+  recipients?: WorkflowRecipient[];
+  onOpenStation?: (stationId: string) => void;
+} = {}) {
   const [folders, setFolders] = useState(INITIAL_FOLDERS);
   const [selectedFolder, setSelectedFolder] = useState('04-frontend');
   const [selectedItemId, setSelectedItemId] = useState('shell');
@@ -1513,7 +1518,13 @@ export function SoftwareEngineeringWorkspace({
                   {runDetail.final_output && <><h5>Final output</h5><pre>{runDetail.final_output}</pre></>}
                   {runDetail.status === 'succeeded' && runDetail.steps.some((step) =>
                     step.metadata.approval_status === 'approved'
-                  ) && <WorkflowBrainHandoff key={runDetail.id} runId={runDetail.id} />}
+                  ) && (
+                    <div key={runDetail.id}>
+                      <WorkflowBrainHandoff runId={runDetail.id} />
+                      <WorkflowWorkstationAssignment runId={runDetail.id} recipients={recipients}
+                        onOpenStation={onOpenStation} />
+                    </div>
+                  )}
                   {runDetail.status === 'succeeded' && runDetail.steps.some((step) =>
                     step.node_id === 'lead-review' && step.metadata.approval_status === 'approved'
                   ) && <ReviewedLeadForm key={runDetail.id} runId={runDetail.id} />}

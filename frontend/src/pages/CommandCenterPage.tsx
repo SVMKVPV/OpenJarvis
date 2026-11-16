@@ -574,6 +574,10 @@ export function CommandCenterPage() {
     (value) => !!value && typeof value === 'object' && !Array.isArray(value) &&
       Object.values(value).every((id) => typeof id === 'string'),
   );
+  const workflowRecipients = stations.flatMap((station) => {
+    const agentId = stationAgentIds[station.id];
+    return agentId ? [{ stationId: station.id, name: station.name, agentId }] : [];
+  });
   const [dashboardWidgetIds, setDashboardWidgetIds] = useLocalPreference(
     'openjarvis.command-center.widget-order.v1',
     () => DEFAULT_WIDGET_IDS,
@@ -647,7 +651,7 @@ export function CommandCenterPage() {
         </nav>
         <div className="header-telemetry"><span><i /> SYSTEM ONLINE</span><span>{stations.length} STATIONS</span><span>LOCAL FIRST</span></div>
       </header>
-      {view === 'overview' ? <OrganizationOverview stations={stations} onOpen={openStation} /> : view === 'workspace' ? <SoftwareEngineeringWorkspace {...workspaceEntry} /> : view === 'dashboard' ? <CustomDashboard widgetIds={dashboardWidgetIds} setWidgetIds={setDashboardWidgetIds} onOpenStation={openStation} onOpenWorkflow={openWorkflowReview}
+      {view === 'overview' ? <OrganizationOverview stations={stations} onOpen={openStation} /> : view === 'workspace' ? <SoftwareEngineeringWorkspace {...workspaceEntry} recipients={workflowRecipients} onOpenStation={openStation} /> : view === 'dashboard' ? <CustomDashboard widgetIds={dashboardWidgetIds} setWidgetIds={setDashboardWidgetIds} onOpenStation={openStation} onOpenWorkflow={openWorkflowReview}
         onOpenRecurringWorkflow={(initialDefinitionId) => openWorkspace({ initialDefinitionId })} /> : <div className="command-grid">
         <aside className="station-rail">
           <div className="rail-head"><div><span>WORKSTATIONS</span><strong>{stations.length} ACTIVE</strong></div><button onClick={() => setAdding((value) => !value)} aria-label="Add workstation"><Plus size={15} /></button></div>

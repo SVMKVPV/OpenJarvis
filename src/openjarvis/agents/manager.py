@@ -689,6 +689,31 @@ class AgentManager:
         }
 
     @_db_locked
+    def queue_workflow_handoff(
+        self, agent_id: str, run_id: str, instruction: str
+    ) -> bool:
+        """Queue one follow-up per approved workflow and recipient."""
+        message_id = f"workflow:{run_id}:{agent_id}"
+        content = f"Approved workflow {run_id}\n\n{instruction}"
+        with self._conn:
+            result = self._conn.execute(
+                "INSERT INTO agent_messages "
+                "(id, agent_id, direction, content, mode, status, created_at) "
+                "SELECT ?, id, 'user_to_agent', ?, 'handoff', 'pending', ? "
+                "FROM managed_agents WHERE id = ? AND status != 'archived' "
+                "ON CONFLICT(id) DO NOTHING",
+                (message_id, content, time.time(), agent_id),
+            )
+            if result.rowcount:
+                return True
+            existing = self._conn.execute(
+                "SELECT 1 FROM agent_messages WHERE id = ?", (message_id,)
+            ).fetchone()
+            if existing is None:
+                raise ValueError("The recipient agent is missing or archived.")
+            return False
+
+    @_db_locked
     def store_agent_response(
         self,
         agent_id: str,

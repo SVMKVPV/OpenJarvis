@@ -61,6 +61,11 @@ class WorkflowHandoff(BaseModel):
     summary: str = Field(min_length=1, max_length=750)
 
 
+class WorkflowAgentHandoff(BaseModel):
+    agent_id: str = Field(min_length=1, max_length=128)
+    instruction: str = Field(min_length=1, max_length=2000)
+
+
 class WorkflowDefinitionUpdate(WorkflowDefinition):
     expected_revision: str | None = None
 
@@ -145,8 +150,7 @@ def create_workflow_runs_router() -> APIRouter:
             raise HTTPException(status_code=404, detail="Workflow run not found")
         return run
 
-    @router.post("/{run_id}/share-to-brain")
-    def share_to_brain(run_id: str, payload: WorkflowHandoff, request: Request) -> dict:
+    def require_approved_run(run_id: str, request: Request) -> None:
         run = _runtime(request).store.get_run(run_id)
         if run is None:
             raise HTTPException(status_code=404, detail="Workflow run not found")
@@ -155,8 +159,13 @@ def create_workflow_runs_router() -> APIRouter:
             for step in run["steps"]
         ):
             raise HTTPException(
-                status_code=409, detail="Only successful, approved runs can be shared."
+                status_code=409,
+                detail="Only successful, approved runs support handoff.",
             )
+
+    @router.post("/{run_id}/share-to-brain")
+    def share_to_brain(run_id: str, payload: WorkflowHandoff, request: Request) -> dict:
+        require_approved_run(run_id, request)
         summary = payload.summary.strip()
         if not summary:
             raise HTTPException(status_code=422, detail="Enter a handoff summary.")
@@ -168,6 +177,29 @@ def create_workflow_runs_router() -> APIRouter:
             ) from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @router.post("/{run_id}/assign-workstation")
+    def assign_workstation(
+        run_id: str, payload: WorkflowAgentHandoff, request: Request
+    ) -> dict:
+        require_approved_run(run_id, request)
+        instruction = payload.instruction.strip()
+        if not instruction:
+            raise HTTPException(
+                status_code=422, detail="Enter a follow-up instruction."
+            )
+        manager = getattr(request.app.state, "agent_manager", None)
+        if manager is None:
+            raise HTTPException(
+                status_code=503, detail="Managed agents are unavailable."
+            )
+        try:
+            queued = manager.queue_workflow_handoff(
+                payload.agent_id, run_id, instruction
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"queued": queued}
 
     @router.patch("/{run_id}/schedule")
     def reschedule_run(
