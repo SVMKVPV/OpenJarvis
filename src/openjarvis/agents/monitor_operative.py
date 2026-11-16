@@ -446,6 +446,15 @@ class MonitorOperativeAgent(ToolUsingAgent):
             text = fence.group(1).strip()
         if not text.startswith("{"):
             return None
+        # Some local models emit the n8n tool name as a bare identifier.
+        # Normalize that exact prefix, then validate the entire JSON envelope.
+        if "search_nodes" in allowed:
+            text = re.sub(
+                r'^({\s*"name"\s*:\s*)search_nodes(?=\s*,)',
+                r'\g<1>"search_nodes"',
+                text,
+                count=1,
+            )
         try:
             call = json.loads(text)
         except (ValueError, RecursionError):

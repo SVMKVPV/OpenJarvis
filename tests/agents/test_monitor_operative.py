@@ -118,6 +118,17 @@ class TestMonitorOperativeAgent:
         assert MonitorOperativeAgent._extract_json_search(
             f"Example:\n{fenced}", allowed
         ) is None
+        bare_name = call.replace('"search_nodes"', "search_nodes", 1)
+        assert MonitorOperativeAgent._extract_json_search(bare_name, allowed) == (
+            "search_nodes",
+            '{"query": "schedule trigger"}',
+        )
+        assert (
+            MonitorOperativeAgent._extract_json_search(
+                bare_name.replace(':"schedule trigger"', ':schedule trigger'), allowed
+            )
+            is None
+        )
         mutation = call.replace("search_nodes", "n8n_create_workflow")
         assert MonitorOperativeAgent._extract_json_search(mutation, allowed) is None
 
