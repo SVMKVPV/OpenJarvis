@@ -1360,8 +1360,17 @@ export type GmailReviewCandidate = {
   received_at: string;
 };
 
-export async function fetchGmailReviewCandidates(signal?: AbortSignal): Promise<GmailReviewCandidate[]> {
-  const response = await apiFetch('/v1/dashboard/gmail-review/candidates', { signal });
+export async function fetchGmailReviewCandidates(
+  signal?: AbortSignal, evidenceQuery = '',
+): Promise<GmailReviewCandidate[]> {
+  const response = evidenceQuery
+    ? await apiFetch('/v1/dashboard/gmail-evidence/search', {
+      signal,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: evidenceQuery }),
+    })
+    : await apiFetch('/v1/dashboard/gmail-review/candidates', { signal });
   if (!response.ok) throw new Error('Gmail index unavailable.');
   const { candidates } = await response.json();
   if (!Array.isArray(candidates)) throw new Error('Gmail index unavailable.');

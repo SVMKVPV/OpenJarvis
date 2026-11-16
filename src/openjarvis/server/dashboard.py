@@ -447,6 +447,19 @@ def gmail_review_candidates(response: Response) -> dict:
         return {"candidates": store.gmail_review_candidates()}
 
 
+class GmailEvidenceSearch(BaseModel):
+    query: str = Field(min_length=1, max_length=160)
+
+
+@dashboard_router.post("/v1/dashboard/gmail-evidence/search")
+def search_gmail_evidence(payload: GmailEvidenceSearch, response: Response) -> dict:
+    from openjarvis.connectors.store import KnowledgeStore
+
+    response.headers["Cache-Control"] = "no-store"
+    with KnowledgeStore() as store:
+        return {"candidates": store.search_gmail_messages(payload.query)}
+
+
 class Ga4PropertySettings(BaseModel):
     property_id: str = Field(max_length=30)
 

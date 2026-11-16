@@ -617,6 +617,35 @@ class KnowledgeStore(MemoryBackend):
             """,
             (limit,),
         ).fetchall()
+        return self._gmail_candidate_rows(rows)
+
+    def search_gmail_messages(
+        self, query: str, *, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        """Find indexed messages by subject, sender, or body."""
+        terms = re.findall(r"\w+", query)
+        if not terms:
+            return []
+        fts_query = " AND ".join(f'"{term}"' for term in terms)
+        rows = self._conn.execute(
+            """
+            SELECT DISTINCT kc.doc_id, kc.source_id, kc.title, kc.author, kc.timestamp
+            FROM knowledge_fts
+            JOIN knowledge_chunks AS kc ON kc.rowid = knowledge_fts.rowid
+            WHERE knowledge_fts MATCH ? AND kc.source = 'gmail'
+                AND kc.doc_type = 'email'
+                AND kc.doc_id LIKE 'gmail:%' AND kc.source_id = substr(kc.doc_id, 7)
+                AND kc.deleted_at IS NULL
+                AND COALESCE(kc.channel, '') != 'DRAFT'
+            ORDER BY julianday(kc.timestamp) DESC, kc.doc_id
+            LIMIT ?
+            """,
+            (fts_query, limit),
+        ).fetchall()
+        return self._gmail_candidate_rows(rows)
+
+    @staticmethod
+    def _gmail_candidate_rows(rows: Iterable[sqlite3.Row]) -> list[dict[str, Any]]:
         return [
             {"id": row[0], "message_id": row[1], "subject": row[2] or "(No subject)",
              "sender": row[3], "received_at": row[4]}

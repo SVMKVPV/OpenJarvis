@@ -11,6 +11,8 @@ export function GmailReviewList({ onOpenWorkflow, onOpenFinance }: {
   const [revision, setRevision] = useState(0);
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [query, setQuery] = useState('');
 
   const openFinance = async (messageId: string) => {
     if (!onOpenFinance || importing) return;
@@ -32,17 +34,19 @@ export function GmailReviewList({ onOpenWorkflow, onOpenFinance }: {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetchGmailReviewCandidates(controller.signal).then((items) => {
+    fetchGmailReviewCandidates(controller.signal, query).then((items) => {
       if (controller.signal.aborted) return;
       setCandidates(items);
-      setMessage(items.length ? '' : 'No review candidates in the Gmail index.');
+      setMessage(items.length ? '' : query
+        ? 'No indexed Gmail messages matched your search.'
+        : 'No review candidates in the Gmail index.');
     }).catch(() => {
       if (controller.signal.aborted) return;
       setCandidates(null);
       setMessage('Gmail index unavailable.');
     });
     return () => controller.abort();
-  }, [revision]);
+  }, [revision, query]);
 
   return (
     <section className="station-widget-options" aria-label="Gmail review candidates">
@@ -50,7 +54,30 @@ export function GmailReviewList({ onOpenWorkflow, onOpenFinance }: {
         <strong>Gmail review candidates</strong>
         <button type="button" onClick={() => setRevision((previous) => previous + 1)}>Refresh</button>
       </div>
-      <p>Up to 10 threads whose latest indexed inbox or sent message is inbound.</p>
+      {onOpenFinance && (
+        <form className="station-details-editor" onSubmit={(event) => {
+          event.preventDefault();
+          if (importing || !searchInput.trim()) return;
+          setCandidates(null);
+          setMessage('Searching indexed Gmail messages…');
+          setQuery(searchInput.trim());
+          setRevision((previous) => previous + 1);
+        }}>
+          <label>Search indexed Gmail for evidence
+            <input value={searchInput} maxLength={160} disabled={importing}
+              onChange={(event) => setSearchInput(event.target.value)} />
+          </label>
+          <button type="submit" disabled={importing || !searchInput.trim()}>Search Gmail index</button>
+          {query && <button type="button" disabled={importing} onClick={() => {
+            setSearchInput('');
+            setQuery('');
+            setCandidates(null);
+            setMessage('Checking the Gmail index…');
+          }}>Show recent messages</button>}
+        </form>
+      )}
+      <p>{query ? 'Up to 20 matching indexed messages.'
+        : 'Up to 10 threads whose latest indexed inbox or sent message is inbound.'}</p>
       {message && <p role="status">{message}</p>}
       {importMessage && <p role="status">{importMessage}</p>}
       {!!candidates?.length && (

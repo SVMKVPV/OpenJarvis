@@ -64,6 +64,43 @@ def test_gmail_review_counts_threads_with_inbound_latest_message(tmp_path, monke
         finally:
             manager.close()
 
+def test_finance_can_find_an_older_indexed_message_without_returning_its_body(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr("openjarvis.core.config.DEFAULT_CONFIG_DIR", tmp_path)
+    with KnowledgeStore() as store:
+        for chunk in range(2):
+            store.store(
+                "Northwind Invoice M-42 with private line items",
+                source="gmail", source_id="abc123", doc_id="gmail:abc123",
+                doc_type="email", title="Northwind billing",
+                author="vendor@example.test", channel="INBOX",
+                timestamp="2026-07-01T10:00:00+00:00", chunk_index=chunk,
+            )
+        store.store(
+            "Northwind Invoice M-42 newer draft",
+            source="gmail", source_id="abc124", doc_id="gmail:abc124",
+            doc_type="email", channel="DRAFT", timestamp="2026-11-01T00:00:00+00:00",
+        )
+        store.store(
+            "Northwind Invoice M-42 in a different data source", source="upload",
+            doc_id="gmail:abc125", source_id="abc125", doc_type="email",
+        )
+    app = FastAPI()
+    app.include_router(dashboard_router)
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/dashboard/gmail-evidence/search", json={"query": "Northwind M-42"}
+        )
+        assert response.status_code == 200
+        assert response.headers["Cache-Control"] == "no-store"
+        assert response.json() == {"candidates": [{
+            "id": "gmail:abc123", "message_id": "abc123",
+            "subject": "Northwind billing",
+            "sender": "vendor@example.test", "received_at": "2026-07-01T10:00:00+00:00",
+        }]}
+
+
 def test_exact_gmail_reference_excludes_other_messages_and_attachments(tmp_path):
     with KnowledgeStore(tmp_path / "knowledge.db") as store:
         for reference, source_id, body, chunk in [
