@@ -183,9 +183,15 @@ const ITEMS: WorkItem[] = [
   { id: 'tests', folder: '06-tests', name: 'command-center.spec.ts', type: 'QUALITY', state: 'COMPLETE', owner: 'Local AI', detail: 'Keyboard, mobile, disconnected-state, and no-network verification.' },
 ];
 
+export type WorkspaceEntry = {
+  initialRunId?: string;
+  initialGmailReference?: string;
+  initialFinanceWorkpaper?: boolean;
+};
+
 export function SoftwareEngineeringWorkspace({
-  initialRunId = '', initialGmailReference = '',
-}: { initialRunId?: string; initialGmailReference?: string } = {}) {
+  initialRunId = '', initialGmailReference = '', initialFinanceWorkpaper = false,
+}: WorkspaceEntry = {}) {
   const [folders, setFolders] = useState(INITIAL_FOLDERS);
   const [selectedFolder, setSelectedFolder] = useState('04-frontend');
   const [selectedItemId, setSelectedItemId] = useState('shell');
@@ -321,15 +327,15 @@ export function SoftwareEngineeringWorkspace({
     definitionId: string; input: string; key: string; scheduledAt?: number;
   } | null>(null);
   const [savingDefinition, setSavingDefinition] = useState(false);
-  const [workflowName, setWorkflowName] = useState(
-    initialGmailReference ? EMAIL_REPLY_REVIEW.name : GUARDED_DELIVERY.name,
-  );
-  const [workflowGraph, setWorkflowGraph] = useState(() => initialGmailReference
-    ? JSON.stringify({ nodes: EMAIL_REPLY_REVIEW.nodes, edges: EMAIL_REPLY_REVIEW.edges }, null, 2)
-    : GUARDED_GRAPH_JSON);
+  const initialGraph = initialFinanceWorkpaper
+    ? FINANCE_EVIDENCE_REVIEW
+    : initialGmailReference ? EMAIL_REPLY_REVIEW : GUARDED_DELIVERY;
+  const [workflowName, setWorkflowName] = useState(initialGraph.name);
+  const [workflowGraph, setWorkflowGraph] = useState(() =>
+    JSON.stringify({ nodes: initialGraph.nodes, edges: initialGraph.edges }, null, 2));
   useEffect(() => {
-    if (initialGmailReference) workflowNameInput.current?.focus();
-  }, [initialGmailReference]);
+    if (initialGmailReference || initialFinanceWorkpaper) workflowNameInput.current?.focus();
+  }, [initialGmailReference, initialFinanceWorkpaper]);
   const draftGraph = useMemo(() => readDraftGraph(workflowGraph), [workflowGraph]);
   const [graphEditorOpen, setGraphEditorOpen] = useState(false);
   const stepElements = useRef(new Map<string, HTMLLIElement>());

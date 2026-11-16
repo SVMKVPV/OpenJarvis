@@ -22,7 +22,7 @@ import { useTts } from '../hooks/useTts';
 import { useLocalPreference } from '../hooks/useLocalPreference';
 import { streamChat } from '../lib/sse';
 import { useAppStore } from '../lib/store';
-import { SoftwareEngineeringWorkspace } from './SoftwareEngineeringWorkspace';
+import { SoftwareEngineeringWorkspace, type WorkspaceEntry } from './SoftwareEngineeringWorkspace';
 import { CustomDashboard, DASHBOARD_WIDGETS, DEFAULT_WIDGET_IDS } from './CustomDashboard';
 import { SharedBrainPanel } from './SharedBrainPanel';
 import { GmailReviewList } from './GmailReviewList';
@@ -524,18 +524,14 @@ function BasicDashboard({ stations, onOpen }: { stations: Station[]; onOpen: (id
 
 export function CommandCenterPage() {
   const [view, setView] = useState<'overview' | 'workstations' | 'workspace' | 'dashboard'>('overview');
-  const [workspaceRunId, setWorkspaceRunId] = useState('');
-  const [workspaceGmailReference, setWorkspaceGmailReference] = useState('');
-  const openWorkflowReview = (id: string) => {
-    setWorkspaceRunId(id);
-    setWorkspaceGmailReference('');
+  const [workspaceEntry, setWorkspaceEntry] = useState<WorkspaceEntry>({});
+  const openWorkspace = (entry: WorkspaceEntry) => {
+    setWorkspaceEntry(entry);
     setView('workspace');
   };
-  const openGmailReplyWorkflow = (reference: string) => {
-    setWorkspaceRunId('');
-    setWorkspaceGmailReference(reference);
-    setView('workspace');
-  };
+  const openWorkflowReview = (id: string) => openWorkspace({ initialRunId: id });
+  const openGmailReplyWorkflow = (reference: string) =>
+    openWorkspace({ initialGmailReference: reference });
   const [stations, setStations] = useLocalPreference(
     'openjarvis.command-center.stations.v1',
     () => INITIAL_STATIONS,
@@ -649,7 +645,7 @@ export function CommandCenterPage() {
         </nav>
         <div className="header-telemetry"><span><i /> SYSTEM ONLINE</span><span>{stations.length} STATIONS</span><span>LOCAL FIRST</span></div>
       </header>
-      {view === 'overview' ? <OrganizationOverview stations={stations} onOpen={openStation} /> : view === 'workspace' ? <SoftwareEngineeringWorkspace initialRunId={workspaceRunId} initialGmailReference={workspaceGmailReference} /> : view === 'dashboard' ? <CustomDashboard widgetIds={dashboardWidgetIds} setWidgetIds={setDashboardWidgetIds} onOpenStation={openStation} onOpenWorkflow={openWorkflowReview} /> : <div className="command-grid">
+      {view === 'overview' ? <OrganizationOverview stations={stations} onOpen={openStation} /> : view === 'workspace' ? <SoftwareEngineeringWorkspace {...workspaceEntry} /> : view === 'dashboard' ? <CustomDashboard widgetIds={dashboardWidgetIds} setWidgetIds={setDashboardWidgetIds} onOpenStation={openStation} onOpenWorkflow={openWorkflowReview} /> : <div className="command-grid">
         <aside className="station-rail">
           <div className="rail-head"><div><span>WORKSTATIONS</span><strong>{stations.length} ACTIVE</strong></div><button onClick={() => setAdding((value) => !value)} aria-label="Add workstation"><Plus size={15} /></button></div>
           {adding && <form className="station-add" onSubmit={addStation}><input autoFocus value={newName} onChange={(event) => setNewName(event.target.value)} placeholder="Station name" /><button type="submit">ADD</button></form>}
@@ -687,6 +683,17 @@ export function CommandCenterPage() {
               return <button key={widget.id} className={added ? 'added' : ''} onClick={() => setDashboardWidgetIds(added ? dashboardWidgetIds.filter((id) => id !== widget.id) : [...dashboardWidgetIds, widget.id])}>{added ? 'REMOVE' : '+ ADD'} {widget.name.toUpperCase()}</button>;
             })}</div>
           </section>
+          {selected.id === 'finance' && (
+            <section className="station-widget-options" aria-label="Finance workpapers">
+              <div>
+                <strong>Finance workpapers</strong>
+                <button type="button" onClick={() => openWorkspace({ initialFinanceWorkpaper: true })}>
+                  Open workpaper workflow
+                </button>
+              </div>
+              <p>Search indexed invoices and receipts, then review the draft against its sources.</p>
+            </section>
+          )}
           {selected.id === 'email' && <GmailReviewList onOpenWorkflow={openGmailReplyWorkflow} />}
           {selected.id === 'marketing' && <SocialContentStudio />}
           {selected.id === 'system-builder' && <SystemBuilderLab />}
