@@ -131,6 +131,36 @@ def test_runtime_pauses_for_approval_and_resumes_without_replay(tmp_path) -> Non
     approvals.close()
 
 
+@pytest.mark.parametrize(
+    ("decision", "expected"), [("approved", "succeeded"), ("denied", "failed")]
+)
+def test_parallel_approval_keeps_other_checkpoint_available(
+    tmp_path, decision, expected
+) -> None:
+    store = WorkflowRunStore(str(tmp_path / "workflow.db"))
+    approvals = ApprovalStore(str(tmp_path / "approvals.db"))
+    runtime = WorkflowRuntime(system=None, store=store, approval_store=approvals)
+    try:
+        graph = (
+            WorkflowBuilder("parallel review")
+            .add_approval("a", action_type="review", description="Review A")
+            .add_approval("b", action_type="review", description="Review B")
+            .build()
+        )
+        run_id = runtime.submit(graph)["id"]
+        _wait_for_status(store, run_id, "waiting_approval")
+        first, second = approvals.list_pending()
+        assert runtime.decide_approval(first, STATUS_APPROVED)
+        assert store.get_run(run_id)["status"] == "waiting_approval"
+        assert runtime.is_waiting_for(second)
+        assert runtime.decide_approval(second, decision)
+        final = _wait_for_terminal(store, run_id)
+        assert final["status"] == expected
+    finally:
+        runtime.close()
+        approvals.close()
+
+
 def test_resume_recognizes_expired_approval_without_polling(tmp_path) -> None:
     store = WorkflowRunStore(str(tmp_path / "workflow.db"))
     approvals = ApprovalStore(str(tmp_path / "approvals.db"))

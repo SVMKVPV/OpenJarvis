@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { Check, ChevronRight, Folder, FolderPlus, Monitor, Plus, Settings2 } from 'lucide-react';
 import {
+  ApprovalDecisionError,
   approveAction,
   denyAction,
   fetchPendingApprovals,
@@ -177,7 +178,9 @@ export function SoftwareEngineeringWorkspace() {
   const [workflowApprovals, setWorkflowApprovals] = useState<PendingApproval[]>([]);
   const [decidingApprovalId, setDecidingApprovalId] = useState('');
   const [approvalMessage, setApprovalMessage] = useState('');
-  const [workflowState, setWorkflowState] = useState<'online' | 'offline' | 'starting'>('offline');
+  const [workflowState, setWorkflowState] = useState<'online' | 'offline'>('offline');
+  const [launchingGuarded, setLaunchingGuarded] = useState(false);
+  const [guardedLaunchError, setGuardedLaunchError] = useState('');
   const [proposals, setProposals] = useState<Proposal[]>([
     { id: 'p-1', connector: 'OpenAI / ChatGPT', text: 'Prepared the command-center component boundary and preserved existing voice routing.', approved: false },
   ]);
@@ -463,17 +466,21 @@ export function SoftwareEngineeringWorkspace() {
   }, []);
 
   const launchGuardedWorkflow = async () => {
-    setWorkflowState('starting');
+    if (launchingGuarded) return;
+    setLaunchingGuarded(true);
+    setGuardedLaunchError('');
     try {
-      await startWorkflowRun({
+      const run = await startWorkflowRun({
         ...GUARDED_DELIVERY,
         initial_input: 'Prepare a reviewed command-center delivery',
         context: { owner: 'CEO Director', station: 'System Builder' },
       });
-      setWorkflowRuns(await fetchWorkflowRuns());
-      setWorkflowState('online');
-    } catch {
-      setWorkflowState('offline');
+      setWorkflowRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
+      inspectRun(run.id);
+    } catch (error) {
+      setGuardedLaunchError(error instanceof Error ? error.message : 'Could not start guarded delivery.');
+    } finally {
+      setLaunchingGuarded(false);
     }
   };
 
@@ -486,8 +493,13 @@ export function SoftwareEngineeringWorkspace() {
       await submitDecision(approval.id);
       setWorkflowApprovals((items) => items.filter((item) => item.id !== approval.id));
       setApprovalMessage(decision === 'approve' ? 'Approval recorded.' : 'Denial recorded.');
-    } catch {
-      setApprovalMessage('Could not record the decision. Check the backend and try again.');
+    } catch (error) {
+      if (error instanceof ApprovalDecisionError && [404, 409].includes(error.status)) {
+        setWorkflowApprovals((items) => items.filter((item) => item.id !== approval.id));
+        setApprovalMessage('This approval is no longer pending.');
+      } else {
+        setApprovalMessage(error instanceof Error ? error.message : 'Could not record the decision.');
+      }
     } finally {
       setDecidingApprovalId('');
     }
@@ -590,7 +602,10 @@ export function SoftwareEngineeringWorkspace() {
         </section>
         <section className="workflow-runtime">
           <header><div><span>WORKFLOW RUNTIME</span><strong>DURABLE EXECUTION LEDGER</strong></div><em data-state={workflowState}>{workflowState.toUpperCase()}</em></header>
-          <button className="workflow-launch" onClick={launchGuardedWorkflow} disabled={workflowState === 'starting'}>{workflowState === 'starting' ? 'STARTING…' : '+ RUN GUARDED DELIVERY'}</button>
+          <button type="button" className="workflow-launch" onClick={launchGuardedWorkflow} disabled={launchingGuarded}>
+            {launchingGuarded ? 'Starting…' : '+ Run guarded delivery'}
+          </button>
+          {guardedLaunchError && <p role="status">{guardedLaunchError}</p>}
           <form className="connector-editor" onSubmit={saveDefinition}>
             <label>Workflow name
               <input ref={workflowNameInput} value={workflowName}

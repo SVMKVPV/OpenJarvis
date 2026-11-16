@@ -150,6 +150,19 @@ describe('workstation messages', () => {
   });
 });
 
+describe('approval decisions', () => {
+  it('preserves the status of a stale decision for the approval inbox', async () => {
+    fetchMock.mockResolvedValue(Response.json(
+      { detail: 'Action is no longer pending' }, { status: 409 },
+    ));
+    const { ApprovalDecisionError, approveAction } = await freshApi();
+
+    await expect(approveAction('stale-approval')).rejects.toEqual(
+      new ApprovalDecisionError(409, 'Action is no longer pending'),
+    );
+  });
+});
+
 describe('workflow definitions', () => {
   it('explains how to save edits when the backend rejects definition updates', async () => {
     fetchMock.mockResolvedValue(Response.json({ detail: 'Method Not Allowed' }, { status: 405 }));

@@ -1196,14 +1196,27 @@ export async function fetchPendingApprovals(): Promise<PendingApproval[]> {
   return data.actions || [];
 }
 
+export class ApprovalDecisionError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+  }
+}
+
+async function decideApproval(actionId: string, decision: 'approve' | 'deny'): Promise<void> {
+  const res = await apiFetch(`/v1/approvals/${encodeURIComponent(actionId)}/${decision}`, { method: 'POST' });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new ApprovalDecisionError(res.status, typeof body?.detail === 'string'
+      ? body.detail : `Could not record the decision (${res.status}).`);
+  }
+}
+
 export async function approveAction(actionId: string): Promise<void> {
-  const res = await apiFetch(`/v1/approvals/${actionId}/approve`, { method: 'POST' });
-  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  await decideApproval(actionId, 'approve');
 }
 
 export async function denyAction(actionId: string): Promise<void> {
-  const res = await apiFetch(`/v1/approvals/${actionId}/deny`, { method: 'POST' });
-  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  await decideApproval(actionId, 'deny');
 }
 
 // ---------------------------------------------------------------------------
@@ -1335,7 +1348,11 @@ export async function startWorkflowRun(input: WorkflowRunInput): Promise<Workflo
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
-  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(typeof body?.detail === 'string'
+      ? body.detail : `Failed to start workflow (${res.status}).`);
+  }
   return res.json();
 }
 

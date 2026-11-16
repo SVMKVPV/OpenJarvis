@@ -8,7 +8,12 @@ import time
 from typing import Any, Mapping
 
 from openjarvis.core.events import EventBus
-from openjarvis.tools.approval_store import ApprovalStore, PendingAction
+from openjarvis.tools.approval_store import (
+    STATUS_APPROVED,
+    STATUS_PENDING,
+    ApprovalStore,
+    PendingAction,
+)
 from openjarvis.workflow.engine import WorkflowEngine
 from openjarvis.workflow.graph import WorkflowGraph
 from openjarvis.workflow.serialization import graph_from_dict, graph_to_dict
@@ -216,7 +221,22 @@ class WorkflowRuntime:
                 return False
             if not self.approval_store.decide_pending(action.id, decision):
                 return False
-            self.resume(action.payload["workflow_run_id"])
+            run_id = action.payload["workflow_run_id"]
+            if decision == STATUS_APPROVED:
+                run = self.store.get_run(run_id)
+                self.approval_store.expire_stale()
+                checkpoint_ids = run["context"].get("_workflow_approvals", {}).values()
+                checkpoints = [
+                    self.approval_store.get_action(action_id)
+                    for action_id in checkpoint_ids
+                ]
+                statuses = {item.status if item else None for item in checkpoints}
+                if (
+                    STATUS_PENDING in statuses
+                    and statuses <= {STATUS_PENDING, STATUS_APPROVED}
+                ):
+                    return True
+            self.resume(run_id)
             return True
 
     def cancel(self, run_id: str) -> bool:

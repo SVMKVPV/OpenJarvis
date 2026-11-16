@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from openjarvis.server.workflow_routes import create_workflow_runs_router  # noqa: E402
 
 
-def test_approval_reopens_runtime_after_restart(tmp_path, monkeypatch) -> None:
+def test_parallel_approvals_survive_runtime_restart(tmp_path, monkeypatch) -> None:
     from openjarvis.server import approval_routes
     from openjarvis.tools.approval_store import ApprovalStore
 
@@ -39,19 +39,27 @@ def test_approval_reopens_runtime_after_restart(tmp_path, monkeypatch) -> None:
     with TestClient(original) as client:
         response = client.post(
             "/v1/workflows/runs",
-            json={"nodes": [{"id": "review", "type": "approval"}]},
+            json={"nodes": [
+                {"id": "first", "type": "approval"},
+                {"id": "second", "type": "approval"},
+            ]},
         )
         assert response.status_code == 202
         run_id = response.json()["id"]
         paused = wait_status(client, run_id, "waiting_approval")
+        approvals_by_node = paused["context"]["_workflow_approvals"]
+        first_id = approvals_by_node["first"]
+        second_id = approvals_by_node["second"]
+        assert client.post(f"/v1/approvals/{first_id}/approve").status_code == 200
+        pending = client.get("/v1/approvals/pending").json()
+        assert [action["id"] for action in pending["actions"]] == [second_id]
     original.state.workflow_runtime.close()
 
     restarted = new_app()
     with TestClient(restarted) as client:
-        approval_id = paused["steps"][0]["metadata"]["approval_id"]
         pending = client.get("/v1/approvals/pending").json()
-        assert [action["id"] for action in pending["actions"]] == [approval_id]
-        assert client.post(f"/v1/approvals/{approval_id}/approve").status_code == 200
+        assert [action["id"] for action in pending["actions"]] == [second_id]
+        assert client.post(f"/v1/approvals/{second_id}/approve").status_code == 200
         wait_status(client, run_id, "succeeded")
     restarted.state.workflow_runtime.close()
     approvals.close()
