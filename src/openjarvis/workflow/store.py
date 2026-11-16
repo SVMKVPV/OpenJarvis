@@ -30,6 +30,11 @@ class WorkflowRunStore:
         with self._lock:
             self._conn.executescript(
                 """
+                CREATE TABLE IF NOT EXISTS workflow_definitions (
+                    id TEXT PRIMARY KEY,
+                    graph_json TEXT NOT NULL,
+                    created_at REAL NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS workflow_runs (
                     id TEXT PRIMARY KEY,
                     workflow_name TEXT NOT NULL,
@@ -73,6 +78,39 @@ class WorkflowRunStore:
                 "WHERE status IN ('queued', 'running')"
             )
             self._conn.commit()
+
+    def save_definition(self, graph: Mapping[str, Any]) -> dict[str, Any]:
+        definition_id = uuid.uuid4().hex
+        created_at = time.time()
+        with self._lock, self._conn:
+            self._conn.execute(
+                "INSERT INTO workflow_definitions VALUES (?, ?, ?)",
+                (definition_id, json.dumps(dict(graph)), created_at),
+            )
+        return {"id": definition_id, "graph": dict(graph), "created_at": created_at}
+
+    def get_definition(self, definition_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM workflow_definitions WHERE id = ?", (definition_id,)
+            ).fetchone()
+        return self._definition(row) if row is not None else None
+
+    def list_definitions(self, limit: int) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM workflow_definitions ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [self._definition(row) for row in rows]
+
+    @staticmethod
+    def _definition(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "graph": json.loads(row["graph_json"]),
+            "created_at": row["created_at"],
+        }
 
     def create_run(
         self,

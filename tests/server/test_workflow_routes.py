@@ -11,6 +11,32 @@ from fastapi.testclient import TestClient  # noqa: E402
 from openjarvis.server.workflow_routes import create_workflow_runs_router  # noqa: E402
 
 
+def test_saved_definition_survives_runtime_restart(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(tmp_path / "workflow.db"))
+    app = FastAPI()
+    app.state.workflow_system = None
+    app.include_router(create_workflow_runs_router())
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/workflows/definitions",
+            json={"name": "Reusable", "nodes": [{"id": "format", "type": "transform"}]},
+        )
+        assert response.status_code == 201
+        saved = response.json()
+        app.state.workflow_runtime.close()
+        app.state.workflow_runtime = None
+        assert client.get("/v1/workflows/definitions").json()["definitions"] == [saved]
+        response = client.post(
+            f"/v1/workflows/definitions/{saved['id']}/runs",
+            json={"initial_input": "new input"},
+        )
+        assert response.status_code == 202
+        assert response.json()["workflow_name"] == "Reusable"
+        assert response.json()["initial_input"] == "new input"
+        app.state.workflow_runtime.close()
+
+
 def test_workflow_run_routes_persist_execution(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(tmp_path / "workflow.db"))
     app = FastAPI()

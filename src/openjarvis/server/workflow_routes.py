@@ -11,20 +11,28 @@ from pydantic import BaseModel, Field
 
 from openjarvis.server.approval_routes import get_approval_store
 from openjarvis.workflow.runtime import WorkflowRuntime
-from openjarvis.workflow.serialization import graph_from_dict
+from openjarvis.workflow.serialization import graph_from_dict, graph_to_dict
 from openjarvis.workflow.store import WorkflowRunStore
 
 
-class WorkflowRunRequest(BaseModel):
+class WorkflowDefinition(BaseModel):
     name: str = "workflow"
     nodes: list[Dict[str, Any]] = Field(min_length=1)
     edges: list[Dict[str, Any]] = Field(default_factory=list)
+
+
+class WorkflowInputs(BaseModel):
     initial_input: str = ""
     context: Dict[str, Any] = Field(default_factory=dict)
 
 
+class WorkflowRunRequest(WorkflowDefinition, WorkflowInputs):
+    pass
+
+
 def create_workflow_runs_router() -> APIRouter:
-    router = APIRouter(prefix="/v1/workflows/runs", tags=["workflow-runs"])
+    root = APIRouter(prefix="/v1/workflows", tags=["workflows"])
+    router = APIRouter(prefix="/runs")
     creation_lock = threading.Lock()
 
     def _runtime(request: Request) -> WorkflowRuntime:
@@ -108,7 +116,41 @@ def create_workflow_runs_router() -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    return router
+    @root.post("/definitions", status_code=status.HTTP_201_CREATED)
+    def save_definition(payload: WorkflowDefinition, request: Request) -> dict:
+        try:
+            graph = graph_from_dict(payload.model_dump())
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return _runtime(request).store.save_definition(graph_to_dict(graph))
+
+    @root.get("/definitions")
+    def list_definitions(
+        request: Request, limit: int = Query(50, ge=1, le=200)
+    ) -> dict:
+        definitions = _runtime(request).store.list_definitions(limit)
+        return {"definitions": definitions, "count": len(definitions)}
+
+    @root.get("/definitions/{definition_id}")
+    def get_definition(definition_id: str, request: Request) -> dict:
+        definition = _runtime(request).store.get_definition(definition_id)
+        if definition is None:
+            raise HTTPException(status_code=404, detail="Workflow definition not found")
+        return definition
+
+    @root.post("/definitions/{definition_id}/runs", status_code=202)
+    def run_definition(
+        definition_id: str, payload: WorkflowInputs, request: Request
+    ) -> dict:
+        definition = get_definition(definition_id, request)
+        return _runtime(request).submit(
+            graph_from_dict(definition["graph"]),
+            initial_input=payload.initial_input,
+            context=payload.context,
+        )
+
+    root.include_router(router)
+    return root
 
 
 __all__ = ["WorkflowRunRequest", "create_workflow_runs_router"]
