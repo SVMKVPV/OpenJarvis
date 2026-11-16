@@ -206,7 +206,9 @@ function DotVoice({ station }: { station: Station }) {
     }
   };
 
-  const localResponse = (text: string) => `${station.name} is online through Dot. I’ve received “${text.slice(0, 90)}${text.length > 90 ? '…' : ''}”. The station is currently ${station.current.toLowerCase()}. I can route this into its workflow or return a status brief.`;
+  const unavailableResponse = selectedModel
+    ? 'Dot could not get a reply from the selected model. Check the inference connection in Settings and try again.'
+    : 'Dot needs an inference model. Open Settings, connect your backend, and select a model.';
 
   const send = async (raw: string) => {
     const text = raw.trim();
@@ -235,13 +237,10 @@ function DotVoice({ station }: { station: Station }) {
           } catch { /* non-completion event */ }
         }
       } catch {
-        response = localResponse(text);
+        response = unavailableResponse;
       }
-    } else {
-      await new Promise((resolve) => window.setTimeout(resolve, 450));
-      response = localResponse(text);
     }
-    const reply: VoiceMessage = { id: `d-${Date.now()}`, role: 'dot', text: response || localResponse(text) };
+    const reply: VoiceMessage = { id: `d-${Date.now()}`, role: 'dot', text: response.trim() || unavailableResponse };
     setMessages((current) => [...current, reply]);
     setThinking(false);
     void speakResponse(reply.id, reply.text);
