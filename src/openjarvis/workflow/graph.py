@@ -32,6 +32,8 @@ class WorkflowGraph:
             raise ValueError(f"Source node '{edge.source}' not found")
         if edge.target not in self._nodes:
             raise ValueError(f"Target node '{edge.target}' not found")
+        if edge.condition and edge.condition.strip().lower() not in {"true", "false"}:
+            raise ValueError("Workflow edge condition must be true or false")
         self._edges.append(edge)
         self._adjacency[edge.source].append(edge.target)
         self._reverse[edge.target].append(edge.source)
@@ -46,6 +48,22 @@ class WorkflowGraph:
     @property
     def edges(self) -> List[WorkflowEdge]:
         return list(self._edges)
+
+    def active_predecessors(self, node_id: str, outputs: Dict[str, str]) -> List[str]:
+        """Return executed predecessors whose outgoing edge matches their output."""
+        return list(
+            dict.fromkeys(
+                edge.source
+                for edge in self._edges
+                if edge.target == node_id
+                and edge.source in outputs
+                and (
+                    not edge.condition
+                    or edge.condition.strip().lower()
+                    == outputs[edge.source].strip().lower()
+                )
+            )
+        )
 
     def validate(self) -> Tuple[bool, str]:
         """Validate the graph: check for cycles and orphan nodes."""

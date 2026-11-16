@@ -80,7 +80,15 @@ class WorkflowEngine:
 
         stages = graph.execution_stages()
         for stage in stages:
-            stage = [node_id for node_id in stage if node_id not in completed]
+            stage = [
+                node_id
+                for node_id in stage
+                if node_id not in completed
+                and (
+                    not graph.predecessors(node_id)
+                    or graph.active_predecessors(node_id, outputs)
+                )
+            ]
             if not stage:
                 continue
             if should_cancel and should_cancel():
@@ -339,7 +347,11 @@ class WorkflowEngine:
         """Get input for a node from predecessor outputs."""
         preds = graph.predecessors(node.id)
         if preds:
-            parts = [outputs.get(p, "") for p in preds if outputs.get(p)]
+            parts = [
+                outputs[p]
+                for p in graph.active_predecessors(node.id, outputs)
+                if outputs[p]
+            ]
             if parts or not fallback_on_empty:
                 return "\n\n".join(parts)
         return outputs.get("_input", "")

@@ -163,3 +163,31 @@ class TestWorkflowEngine:
         event_types = {e.event_type for e in bus.history}
         assert EventType.WORKFLOW_START in event_types
         assert EventType.WORKFLOW_END in event_types
+
+    def test_conditional_edges_skip_unselected_branch(self):
+        graph = (
+            WorkflowBuilder("conditional")
+            .add_condition("check", expr="outputs['_input'] == 'yes'")
+            .add_transform("accepted")
+            .add_transform("rejected")
+            .add_transform("rejected_followup")
+            .add_transform("merge")
+            .connect("check", "accepted", condition="true")
+            .connect("check", "rejected", condition="false")
+            .connect("rejected", "rejected_followup")
+            .connect("accepted", "merge")
+            .connect("rejected_followup", "merge")
+            .build()
+        )
+        engine = WorkflowEngine()
+        yes = engine.run(graph, initial_input="yes")
+        assert yes.success
+        assert [step.node_id for step in yes.steps] == ["check", "accepted", "merge"]
+        no = engine.run(graph, initial_input="no")
+        assert no.success
+        assert [step.node_id for step in no.steps] == [
+            "check",
+            "rejected",
+            "rejected_followup",
+            "merge",
+        ]
