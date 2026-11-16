@@ -54,8 +54,9 @@ export function WorkflowRecurrenceEditor({ definitionId, initialInput }: {
           <input type="number" min="1" max="525600" step="1" required value={interval}
             onChange={(event) => setInterval(event.target.value)} />
         </label>
-        <small>Uses the run input above and the latest saved workflow. If the backend was offline,
-          only the latest missed occurrence runs when it returns.</small>
+        <small>Uses the run input above and the latest saved workflow. A scheduled start is skipped
+          while the previous run is active or waiting for approval. After downtime, only the
+          latest missed start is considered.</small>
         <button disabled={pending}>Create recurring schedule</button>
       </form>
       {schedules.length > 0 && (
@@ -64,6 +65,9 @@ export function WorkflowRecurrenceEditor({ definitionId, initialInput }: {
             <li key={schedule.id}>
               Every {schedule.interval_seconds / 60} min. Next recorded start{' '}
               {new Date(schedule.next_due_at * 1000).toLocaleString()}{' '}
+              {!!schedule.skipped_while_active && (
+                <span>Skipped while active {schedule.skipped_while_active}{' '}</span>
+              )}
               <button type="button" disabled={pending}
                 onClick={() => void changeSchedule(schedule.id)}>Remove schedule</button>
             </li>

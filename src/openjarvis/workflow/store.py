@@ -64,7 +64,8 @@ class WorkflowRunStore:
                     definition_id TEXT NOT NULL REFERENCES workflow_definitions(id),
                     initial_input TEXT NOT NULL,
                     next_due_at REAL NOT NULL,
-                    interval_seconds INTEGER NOT NULL
+                    interval_seconds INTEGER NOT NULL,
+                    skipped_while_active INTEGER NOT NULL DEFAULT 0
                 );
                 CREATE INDEX IF NOT EXISTS idx_workflow_recurrences_due
                     ON workflow_recurrences(next_due_at);
@@ -104,6 +105,23 @@ class WorkflowRunStore:
                 self._conn.execute(
                     "ALTER TABLE workflow_runs ADD COLUMN scheduled_at REAL"
                 )
+            if "recurrence_id" not in columns:
+                self._conn.execute(
+                    "ALTER TABLE workflow_runs ADD COLUMN recurrence_id TEXT"
+                )
+            recurrence_columns = {row["name"] for row in self._conn.execute(
+                "PRAGMA table_info(workflow_recurrences)"
+            )}
+            if "skipped_while_active" not in recurrence_columns:
+                self._conn.execute(
+                    "ALTER TABLE workflow_recurrences ADD COLUMN "
+                    "skipped_while_active INTEGER NOT NULL DEFAULT 0"
+                )
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_workflow_runs_recurrence "
+                "ON workflow_runs(recurrence_id, status) "
+                "WHERE recurrence_id IS NOT NULL"
+            )
             self._conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_workflow_runs_due "
                 "ON workflow_runs(status, scheduled_at)"
@@ -272,13 +290,16 @@ class WorkflowRunStore:
             "initial_input": initial_input,
             "next_due_at": next_due_at,
             "interval_seconds": interval_seconds,
+            "skipped_while_active": 0,
         }
         with self._lock, self._conn:
             if self.get_definition(definition_id) is None:
                 raise KeyError(definition_id)
             self._conn.execute(
-                "INSERT INTO workflow_recurrences VALUES (:id, :definition_id, "
-                ":initial_input, :next_due_at, :interval_seconds)",
+                "INSERT INTO workflow_recurrences "
+                "(id, definition_id, initial_input, next_due_at, interval_seconds) "
+                "VALUES (:id, :definition_id, :initial_input, :next_due_at, "
+                ":interval_seconds)",
                 recurrence,
             )
         return recurrence
@@ -309,7 +330,10 @@ class WorkflowRunStore:
                 return
             self._conn.execute("BEGIN IMMEDIATE")
             rows = self._conn.execute(
-                "SELECT recurrence.*, definition.graph_json "
+                "SELECT recurrence.*, definition.graph_json, EXISTS ("
+                "SELECT 1 FROM workflow_runs WHERE recurrence_id = recurrence.id "
+                "AND status IN ('scheduled', 'queued', 'running', 'waiting_approval')"
+                ") AS has_active_run "
                 "FROM workflow_recurrences AS recurrence JOIN workflow_definitions "
                 "AS definition ON definition.id = recurrence.definition_id "
                 "WHERE next_due_at <= ? ORDER BY next_due_at, recurrence.id LIMIT ?",
@@ -319,19 +343,23 @@ class WorkflowRunStore:
                 interval = row["interval_seconds"]
                 elapsed_intervals = int((now - row["next_due_at"]) // interval)
                 due_at = row["next_due_at"] + elapsed_intervals * interval
+                self._conn.execute(
+                    "UPDATE workflow_recurrences SET next_due_at = ?, "
+                    "skipped_while_active = skipped_while_active + ? WHERE id = ?",
+                    (due_at + interval, row["has_active_run"], row["id"]),
+                )
+                if row["has_active_run"]:
+                    continue
                 graph = json.loads(row["graph_json"])
                 self._conn.execute(
                     "INSERT INTO workflow_runs (id, workflow_name, status, graph_json, "
-                    "initial_input, context_json, created_at, scheduled_at) "
-                    "VALUES (?, ?, 'scheduled', ?, ?, '{}', ?, ?)",
+                    "initial_input, context_json, created_at, scheduled_at, "
+                    "recurrence_id) "
+                    "VALUES (?, ?, 'scheduled', ?, ?, '{}', ?, ?, ?)",
                     (
                         uuid.uuid4().hex, str(graph.get("name", "workflow")),
-                        row["graph_json"], row["initial_input"], now, due_at,
+                        row["graph_json"], row["initial_input"], now, due_at, row["id"],
                     ),
-                )
-                self._conn.execute(
-                    "UPDATE workflow_recurrences SET next_due_at = ? WHERE id = ?",
-                    (due_at + interval, row["id"]),
                 )
 
     def due_runs(self, now: float, limit: int = 20) -> list[str]:
@@ -524,6 +552,7 @@ class WorkflowRunStore:
             "cancel_requested": bool(row["cancel_requested"]),
             "created_at": row["created_at"],
             "scheduled_at": row["scheduled_at"],
+            "recurrence_id": row["recurrence_id"],
             "started_at": row["started_at"],
             "finished_at": row["finished_at"],
             "steps": [

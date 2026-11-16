@@ -1278,6 +1278,7 @@ export interface WorkflowRunSummary {
   cancel_requested: boolean;
   created_at: number;
   scheduled_at?: number | null;
+  recurrence_id?: string | null;
   started_at: number | null;
   finished_at: number | null;
 }
@@ -1538,6 +1539,7 @@ export type WorkflowRecurrence = {
   id: string;
   next_due_at: number;
   interval_seconds: number;
+  skipped_while_active?: number;
 };
 
 export async function workflowRecurrences(

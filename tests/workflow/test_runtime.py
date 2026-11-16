@@ -35,6 +35,42 @@ def _wait_for_status(store: WorkflowRunStore, run_id: str, expected: str) -> dic
     raise AssertionError(f"workflow run did not reach {expected}")
 
 
+def test_recurrence_skips_an_active_review_after_restart(tmp_path) -> None:
+    path = str(tmp_path / "workflow.db")
+    start = 1000
+    store = WorkflowRunStore(path)
+    graph = WorkflowBuilder("Recurring review").add_transform("format").build()
+    definition = store.save_definition(graph_to_dict(graph))
+    definition_id = definition["id"]
+    recurrence = store.save_recurrence(definition_id, "primary", start, 60)
+    other = store.save_recurrence(definition_id, "independent", start + 60, 60)
+    store.enqueue_due_recurrences(start)
+    first, = store.list_runs()
+    assert first["recurrence_id"] == recurrence["id"]
+    assert store.claim_scheduled_run(first["id"], start)
+    store.pause(first["id"], context={})
+    store.close()
+
+    reopened = WorkflowRunStore(path)
+    try:
+        reopened.enqueue_due_recurrences(start + 60)
+        scheduled = reopened.list_runs(status="scheduled")
+        assert [run["recurrence_id"] for run in scheduled] == [other["id"]]
+        schedules = {
+            entry["id"]: entry for entry in reopened.list_recurrences(definition_id)
+        }
+        assert schedules[recurrence["id"]]["skipped_while_active"] == 1
+        assert schedules[recurrence["id"]]["next_due_at"] == start + 120
+        reopened.finish(first["id"], status="succeeded")
+        reopened.enqueue_due_recurrences(start + 120)
+        assert {
+            (run["recurrence_id"], run["scheduled_at"])
+            for run in reopened.list_runs(status="scheduled")
+        } == {(other["id"], start + 60), (recurrence["id"], start + 120)}
+    finally:
+        reopened.close()
+
+
 def test_store_persists_run_and_step_history(tmp_path) -> None:
     path = tmp_path / "workflow.db"
     graph = WorkflowBuilder("persisted").add_transform("format").build()

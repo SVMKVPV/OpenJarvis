@@ -744,6 +744,7 @@ export function SoftwareEngineeringWorkspace({
       cancel_requested: run.cancel_requested,
       created_at: run.created_at,
       scheduled_at: run.scheduled_at,
+      recurrence_id: run.recurrence_id,
       started_at: run.started_at,
       finished_at: run.finished_at,
       graph: run.graph,
@@ -1350,7 +1351,8 @@ export function SoftwareEngineeringWorkspace({
                     )}
                   </dl>
                   {runDetail.scheduled_at && (
-                    <p>Scheduled time {new Date(runDetail.scheduled_at * 1000).toLocaleString()}</p>
+                    <p>{runDetail.recurrence_id ? 'Recurring start' : 'Scheduled time'}{' '}
+                      {new Date(runDetail.scheduled_at * 1000).toLocaleString()}</p>
                   )}
                   {runDetail.status === 'scheduled' && !cancellationPending && (
                     <form className="connector-editor" onSubmit={moveRun}>
