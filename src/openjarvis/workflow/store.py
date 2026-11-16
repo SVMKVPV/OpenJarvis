@@ -377,7 +377,10 @@ class WorkflowRunStore:
         if status:
             query += " WHERE status = ?"
             params.append(status)
-        query += " ORDER BY created_at DESC LIMIT ?"
+        if status == "scheduled":
+            query += " ORDER BY scheduled_at, created_at LIMIT ?"
+        else:
+            query += " ORDER BY created_at DESC LIMIT ?"
         params.append(limit)
         with self._lock:
             rows = self._conn.execute(query, params).fetchall()

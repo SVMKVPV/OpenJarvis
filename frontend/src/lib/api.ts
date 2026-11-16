@@ -1283,8 +1283,9 @@ export interface WorkflowRunInput {
   context?: Record<string, unknown>;
 }
 
-export async function fetchWorkflowRuns(): Promise<WorkflowRunSummary[]> {
-  const res = await apiFetch('/v1/workflows/runs?limit=8');
+export async function fetchWorkflowRuns(status?: WorkflowRunStatus): Promise<WorkflowRunSummary[]> {
+  const query = status ? `&status=${encodeURIComponent(status)}` : '';
+  const res = await apiFetch(`/v1/workflows/runs?limit=8${query}`);
   if (!res.ok) throw new Error(`Failed: ${res.status}`);
   const data = await res.json();
   return data.runs || [];

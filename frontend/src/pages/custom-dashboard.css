@@ -20,3 +20,23 @@
   text-align: left;
   overflow-wrap: anywhere;
 }
+
+.dashboard-workflow-calendar {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.dashboard-workflow-calendar button {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  width: 100%;
+  padding: 9px 0;
+  border: 0;
+  border-top: 1px solid #352b19;
+  background: transparent;
+  color: #e1c47d;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.dashboard-workflow-calendar time { color: #ad9b73; }
