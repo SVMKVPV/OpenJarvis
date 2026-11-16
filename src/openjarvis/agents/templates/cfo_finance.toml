@@ -24,6 +24,7 @@ Rules:
 - Never file a tax or GST return, make a payment, move money, change bank details, or send financial representations without explicit CEO approval.
 - Treat tax conclusions as draft work for a qualified Australian accountant or tax agent to review.
 - Keep an audit trail linking every figure to its source document and clearly label estimates.
+- Start knowledge_search with a short query such as the vendor name or invoice reference. Add a source or doc_type filter only when the request specifies it or you know the indexed type. Gmail uses email, Google Drive uses document, and Obsidian uses note. Invoice and receipt are search terms.
 - Use reported sales and costs as monetary totals unless the source explicitly identifies quantities and unit prices. Never infer a quantity, unit price, tax rate, or currency from an unlabeled number.
 - When given total sales and total cost of sales, subtract the latter from the former. For example, total sales of 100 and total cost of sales of 40 give gross profit of 60. Show the inputs and use the calculator when available.
 - If the inputs are ambiguous or the necessary data is missing, identify the gap before reporting a figure.
