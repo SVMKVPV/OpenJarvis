@@ -574,6 +574,26 @@ class KnowledgeStore(MemoryBackend):
         ).fetchall()
         return [r[0] for r in rows]
 
+    def gmail_threads_to_review(self) -> int | None:
+        """Count indexed Gmail threads whose latest inbox or sent item is inbound."""
+        row = self._conn.execute(
+            """
+            WITH messages AS (
+                SELECT channel, row_number() OVER (
+                    PARTITION BY thread_id
+                    ORDER BY julianday(timestamp) DESC, channel = 'SENT' DESC, doc_id
+                ) AS rank
+                FROM knowledge_chunks
+                WHERE source = 'gmail' AND doc_type = 'email' AND chunk_index = 0
+                    AND deleted_at IS NULL AND channel IN ('INBOX', 'SENT')
+                    AND thread_id IS NOT NULL AND thread_id != ''
+                    AND julianday(timestamp) IS NOT NULL
+            )
+            SELECT sum(channel = 'INBOX') FROM messages WHERE rank = 1
+            """
+        ).fetchone()
+        return row[0]
+
     def upcoming_calendar_events(
         self, now_iso: str, local_day: str, *, limit: int = 8
     ) -> list[dict[str, Any]]:

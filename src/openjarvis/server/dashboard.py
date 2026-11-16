@@ -428,6 +428,15 @@ setInterval(refresh, 5000);
 """
 
 
+@dashboard_router.get("/v1/dashboard/gmail-review")
+def gmail_review_summary(response: Response) -> dict:
+    from openjarvis.connectors.store import KnowledgeStore
+
+    response.headers["Cache-Control"] = "no-store"
+    with KnowledgeStore() as store:
+        return {"threads_to_review": store.gmail_threads_to_review()}
+
+
 @dashboard_router.get("/v1/dashboard/calendar")
 def upcoming_calendar_events(response: Response, local_day: date | None = None) -> dict:
     from openjarvis.connectors.store import KnowledgeStore

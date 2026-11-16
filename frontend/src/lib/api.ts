@@ -1283,6 +1283,14 @@ export interface WorkflowRunInput {
   context?: Record<string, unknown>;
 }
 
+export async function fetchGmailReviewCount(signal?: AbortSignal): Promise<number | null> {
+  const response = await apiFetch('/v1/dashboard/gmail-review', { signal });
+  if (!response.ok) throw new Error('Gmail index unavailable.');
+  const { threads_to_review } = await response.json();
+  if (threads_to_review === null || Number.isInteger(threads_to_review)) return threads_to_review;
+  throw new Error('Gmail index unavailable.');
+}
+
 export type IndexedCalendarEvent = {
   id: string;
   title: string;

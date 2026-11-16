@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, Grip, Plus, Settings2, X } from 'lucide-react';
 import { useLocalPreference } from '../hooks/useLocalPreference';
 import {
-  fetchIndexedCalendarEvents, fetchPendingApprovals, fetchWorkflowRuns,
+  fetchGmailReviewCount, fetchIndexedCalendarEvents, fetchPendingApprovals, fetchWorkflowRuns,
   type IndexedCalendarEvent, type PendingApproval, type WorkflowRunSummary,
 } from '../lib/api';
 import {
@@ -18,7 +18,7 @@ export const DASHBOARD_WIDGETS: DashboardWidget[] = [
   { id: 'content-approval', stationId: 'marketing', station: 'MARKETING', name: 'Content to approve', value: '', detail: 'Waiting for review', kind: 'queue' },
   { id: 'social-pipeline', stationId: 'marketing', station: 'MARKETING', name: 'Social content pipeline', value: '', detail: 'Recent drafts and planned content', kind: 'content' },
   { id: 'analytics-views', stationId: 'marketing', station: 'MARKETING', name: 'Google Analytics views', value: '24.8K', detail: '+18.6% VS PRIOR PERIOD', kind: 'trend' },
-  { id: 'email-replies', stationId: 'email', station: 'EMAIL REPLY', name: 'Email replies due', value: '19', detail: '6 REQUIRE APPROVAL', kind: 'queue' },
+  { id: 'email-replies', stationId: 'email', station: 'EMAIL REPLY', name: 'Gmail threads to review', value: '', detail: 'Latest indexed message is inbound', kind: 'queue' },
   { id: 'comment-replies', stationId: 'email', station: 'EMAIL REPLY', name: 'Comment replies due', value: '31', detail: 'SOCIAL + COMMUNITY', kind: 'queue' },
   { id: 'revenue', stationId: 'finance', station: 'FINANCE', name: 'Revenue MTD', value: '$184K', detail: '72% OF MONTHLY TARGET', kind: 'trend' },
   { id: 'calendar', stationId: 'operations-manager', station: 'OPERATIONS MANAGER', name: 'Operating calendar', value: '', detail: 'Upcoming workflow runs', kind: 'calendar' },
@@ -142,7 +142,37 @@ export function CustomDashboard({ widgetIds, setWidgetIds, onOpenStation, onOpen
   }, [showSocialQueue]);
 
   const socialMessage = socialUnavailable ? 'Marketing queue unavailable.' : 'Checking Marketing queue…';
+  const showGmail = widgetIds.includes('email-replies');
+  const [gmail, setGmail] = useState<{ count: number | null; detail: string }>({
+    count: null, detail: 'Checking Gmail index…',
+  });
+
+  useEffect(() => {
+    if (!showGmail) return;
+    const controller = new AbortController();
+    let timer: number | undefined;
+    const refresh = async () => {
+      try {
+        const count = await fetchGmailReviewCount(controller.signal);
+        if (!controller.signal.aborted) setGmail({
+          count,
+          detail: count === null ? 'No indexed inbox or sent threads' : 'Latest indexed inbox or sent message is inbound',
+        });
+      } catch {
+        if (!controller.signal.aborted) setGmail({ count: null, detail: 'Gmail index unavailable' });
+      } finally {
+        if (!controller.signal.aborted) timer = window.setTimeout(() => void refresh(), 15000);
+      }
+    };
+    void refresh();
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [showGmail]);
+
   const queueMetrics: Record<string, { value: string | number; detail: string }> = {
+    'email-replies': { value: gmail.count ?? '—', detail: gmail.detail },
     approvals: { value: approvalCount ?? '—', detail: approvalDetail },
     'content-approval': {
       value: socialQueue?.review_count ?? '—',
@@ -161,7 +191,7 @@ export function CustomDashboard({ widgetIds, setWidgetIds, onOpenStation, onOpen
   const move = (index: number, delta: number) => { const next = [...widgetIds]; const target = index + delta; if (target < 0 || target >= next.length) return; [next[index], next[target]] = [next[target], next[index]]; setWidgetIds(next); };
   return <main className="custom-dashboard"><div className="dashboard-title"><div><span>CUSTOM DASHBOARD</span><h2>CEO operating picture</h2><p>Station-owned widgets. Add what matters, remove what does not.</p></div><button className={editing ? 'active' : ''} onClick={() => setEditing(!editing)}><Settings2 size={13}/>{editing ? 'DONE EDITING' : 'EDIT DASHBOARD'}</button></div>
     {editing && <section className="widget-catalog"><header><div><span>ADD WIDGET</span><strong>AVAILABLE FROM WORKSTATIONS</strong></div><em>{available.length} AVAILABLE</em></header><div>{available.length ? available.map((widget) => <button key={widget.id} onClick={() => setWidgetIds([...widgetIds, widget.id])}><Plus size={11}/><span><b>{widget.name}</b><small>{widget.station}</small></span></button>) : <p>All available widgets are already on the dashboard.</p>}</div></section>}
-    {widgets.length ? <section className="widget-grid">{widgets.map((widget,index) => <article key={widget.id} className={`dashboard-widget ${sizes[widget.id] ?? (widget.kind === 'calendar' ? 'large' : 'small')}`}><header><button onClick={() => onOpenStation(widget.stationId)}>{widget.station}</button><span>{widget.id === 'approvals' ? (approvalCount !== null ? 'LIVE DATA' : 'BACKEND') : widget.kind === 'calendar' ? (scheduledRuns !== null ? 'LIVE WORKFLOWS' : 'BACKEND') : widget.id === 'content-approval' || widget.id === 'social-pipeline' ? (socialQueue ? 'LIVE QUEUE' : 'BACKEND') : 'DEMO DATA'}</span></header><div className="widget-content"><span>{widget.name}</span>{widget.kind !== 'content' && widget.kind !== 'calendar' && <><strong>{queueMetrics[widget.id]?.value ?? widget.value}</strong><small>{queueMetrics[widget.id]?.detail ?? widget.detail}</small></>}{widget.id === 'approvals' && workflowApprovals.length > 0 && (
+    {widgets.length ? <section className="widget-grid">{widgets.map((widget,index) => <article key={widget.id} className={`dashboard-widget ${sizes[widget.id] ?? (widget.kind === 'calendar' ? 'large' : 'small')}`}><header><button onClick={() => onOpenStation(widget.stationId)}>{widget.station}</button><span>{widget.id === 'approvals' ? (approvalCount !== null ? 'LIVE DATA' : 'BACKEND') : widget.kind === 'calendar' ? (scheduledRuns !== null ? 'LIVE WORKFLOWS' : 'BACKEND') : widget.id === 'content-approval' || widget.id === 'social-pipeline' ? (socialQueue ? 'LIVE QUEUE' : 'BACKEND') : widget.id === 'email-replies' ? 'GMAIL INDEX' : 'DEMO DATA'}</span></header><div className="widget-content"><span>{widget.name}</span>{widget.kind !== 'content' && widget.kind !== 'calendar' && <><strong>{queueMetrics[widget.id]?.value ?? widget.value}</strong><small>{queueMetrics[widget.id]?.detail ?? widget.detail}</small></>}{widget.id === 'approvals' && workflowApprovals.length > 0 && (
       <ul className="dashboard-workflow-approvals" aria-label="Workflow approvals">
         {workflowApprovals.slice(0, 3).map(({ approval, runId }) => (
           <li key={approval.id}>
