@@ -254,8 +254,14 @@ class TestWorkflowEngine:
         assert result.status == "failed"
         assert result.final_output == "Model unavailable"
 
-    def test_connector_search_filters_by_source(self, tmp_path, monkeypatch):
+    @pytest.mark.parametrize("source", ["gmail", "gmail_imap"])
+    def test_connector_search_filters_by_source(self, tmp_path, monkeypatch, source):
+        from openjarvis.connectors.gmail_imap import GmailIMAPConnector
         from openjarvis.connectors.store import KnowledgeStore
+        from openjarvis.core.registry import ConnectorRegistry
+
+        if not ConnectorRegistry.contains("gmail_imap"):
+            ConnectorRegistry.register_value("gmail_imap", GmailIMAPConnector)
 
         monkeypatch.setattr("openjarvis.core.config.DEFAULT_CONFIG_DIR", tmp_path)
         with KnowledgeStore() as store:
@@ -268,7 +274,7 @@ class TestWorkflowEngine:
                 "config": {
                     "tool_name": "knowledge_search",
                     "query_from_input": True,
-                    "source": "gmail",
+                    "source": source,
                 },
             }],
         })

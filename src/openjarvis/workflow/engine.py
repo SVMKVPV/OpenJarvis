@@ -468,6 +468,7 @@ class WorkflowEngine:
         self, node: WorkflowNode, query: str, system: Any
     ) -> WorkflowStepResult:
         from openjarvis.connectors.store import KnowledgeStore
+        from openjarvis.core.registry import ConnectorRegistry
         from openjarvis.core.types import ToolCall
         from openjarvis.tools._stubs import ToolExecutor
         from openjarvis.tools.knowledge_search import KnowledgeSearchTool
@@ -480,11 +481,18 @@ class WorkflowEngine:
                 output="A query and source are required.",
             )
 
+        source = source.strip()
+        if ConnectorRegistry.contains(source):
+            connector = ConnectorRegistry.get(source)
+            indexed_sources = getattr(connector, "indexed_sources", ())
+            if len(indexed_sources) == 1:
+                source = indexed_sources[0]
+
         call = ToolCall(
             id=f"wf_{node.id}",
             name="knowledge_search",
             arguments=json.dumps(
-                {"query": query, "source": source.strip(), "top_k": 5}
+                {"query": query, "source": source, "top_k": 5}
             ),
         )
         with KnowledgeStore() as store:
