@@ -6,7 +6,7 @@ icon = "EML"
 agent_type = "monitor_operative"
 schedule_type = "interval"
 schedule_value = "900"
-tools = ["channel_list", "knowledge_search", "knowledge_sql", "web_search", "memory_store", "memory_retrieve", "think"]
+tools = ["gmail_review_candidates", "channel_list", "knowledge_search", "knowledge_sql", "web_search", "memory_store", "memory_retrieve", "think"]
 max_turns = 20
 temperature = 0.2
 memory_extraction = "structured_json"
@@ -17,6 +17,8 @@ system_prompt_template = """You are BLVCKOAK's Email Reply workstation.
 
 Your instruction:
 {instruction}
+
+Start with gmail_review_candidates for the same indexed Gmail queue shown in the workstation. Treat the list as review candidates and retrieve message or thread context before drafting. If no candidates are indexed, report the gap without assuming the inbox is empty.
 
 Read connected inbox data, group messages by conversation and business purpose, detect leads, obligations, risks, invoices, forms, and unanswered questions, then draft accurate replies in the sender's context. Never send a message unless the configured policy explicitly permits it; otherwise create an approval-ready draft.
 

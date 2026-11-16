@@ -1,6 +1,10 @@
+import json
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from openjarvis.agents.manager import AgentManager
+from openjarvis.agents.tool_resolver import resolve_agent_tools
 from openjarvis.connectors.store import KnowledgeStore
 from openjarvis.server.dashboard import dashboard_router
 
@@ -49,3 +53,13 @@ def test_gmail_review_counts_threads_with_inbound_latest_message(tmp_path, monke
             "sender": "sender@example.test",
             "received_at": "2026-11-02T00:00:00+00:00",
         }]}
+
+        manager = AgentManager(str(tmp_path / "agents.db"))
+        try:
+            agent = manager.create_from_template("email_briefing", "Email Reply")
+            with resolve_agent_tools(agent, engine=object(), model="local") as tools:
+                result = tools.by_name["gmail_review_candidates"].execute()
+            assert result.success
+            assert json.loads(result.content) == candidates.json()["candidates"]
+        finally:
+            manager.close()
