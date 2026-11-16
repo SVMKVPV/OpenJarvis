@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { Check, ChevronRight, Folder, FolderPlus, Monitor, Plus, Settings2 } from 'lucide-react';
 import {
@@ -143,6 +143,7 @@ export function SoftwareEngineeringWorkspace() {
   const [definitions, setDefinitions] = useState<SavedWorkflowDefinition[]>([]);
   const [definitionId, setDefinitionId] = useState('');
   const [editingDefinitionId, setEditingDefinitionId] = useState('');
+  const workflowNameInput = useRef<HTMLInputElement>(null);
   const selectedDefinition = definitions.find((item) => item.id === definitionId);
   const [workflowInput, setWorkflowInput] = useState('');
   const [definitionMessage, setDefinitionMessage] = useState('Loading saved workflows…');
@@ -235,6 +236,14 @@ export function SoftwareEngineeringWorkspace() {
     if (draftGraph) setWorkflowGraph(JSON.stringify({ ...draftGraph, edges }, null, 2));
   };
   const draftEdges = draftGraph?.edges ?? [];
+  const removeStep = (id: string) => {
+    if (!draftGraph) return;
+    const nodes = draftGraph.nodes.filter((node) => node.id !== id);
+    const edges = draftEdges.filter((edge) => edge.source !== id && edge.target !== id);
+    setWorkflowGraph(JSON.stringify({ ...draftGraph, nodes, edges }, null, 2));
+    setEdgeSource((current) => current === id ? '' : current);
+    setEdgeTarget((current) => current === id ? '' : current);
+  };
   const newStepId = stepId.trim();
   const needsJsonFields = stepSetting === 'json_field' || stepSetting === 'json_select';
   const hasJsonFields = stepSetting === 'json_select'
@@ -295,14 +304,21 @@ export function SoftwareEngineeringWorkspace() {
     }
   };
 
-  const editSaved = () => {
-    if (!selectedDefinition || savingDefinition) return;
-    const { name, nodes, edges } = selectedDefinition.graph;
+  const loadWorkflowEditor = (
+    { name, nodes, edges }: SavedWorkflowDefinition['graph'],
+    id = '',
+  ) => {
     setWorkflowName(name);
-    setEditingDefinitionId(selectedDefinition.id);
+    setEditingDefinitionId(id);
     setWorkflowGraph(JSON.stringify({ nodes, edges }, null, 2));
     setEdgeSource('');
     setEdgeTarget('');
+    workflowNameInput.current?.focus();
+  };
+
+  const editSaved = () => {
+    if (!selectedDefinition || savingDefinition) return;
+    loadWorkflowEditor(selectedDefinition.graph, selectedDefinition.id);
     setDefinitionMessage('Saved workflow loaded into the editor.');
   };
 
@@ -332,11 +348,7 @@ export function SoftwareEngineeringWorkspace() {
       if (typeof name !== 'string' || !name.trim()) {
         throw new Error('The workflow JSON needs a name.');
       }
-      setWorkflowName(name);
-      setEditingDefinitionId('');
-      setWorkflowGraph(JSON.stringify({ nodes, edges }, null, 2));
-      setEdgeSource('');
-      setEdgeTarget('');
+      loadWorkflowEditor({ name, nodes, edges });
       setDefinitionMessage('Draft loaded. Review its steps before saving.');
     } catch (error) {
       setDefinitionMessage(error instanceof Error ? error.message : 'Could not read workflow JSON.');
@@ -485,7 +497,8 @@ export function SoftwareEngineeringWorkspace() {
           <button className="workflow-launch" onClick={launchGuardedWorkflow} disabled={workflowState === 'starting'}>{workflowState === 'starting' ? 'STARTING…' : '+ RUN GUARDED DELIVERY'}</button>
           <form className="connector-editor" onSubmit={saveDefinition}>
             <label>Workflow name
-              <input value={workflowName} onChange={(event) => setWorkflowName(event.target.value)} />
+              <input ref={workflowNameInput} value={workflowName}
+                onChange={(event) => setWorkflowName(event.target.value)} />
             </label>
             <button className="workflow-launch" disabled={!workflowName.trim() || savingDefinition}>
               {savingDefinition ? 'Saving…' : editingDefinitionId ? 'Save changes' : 'Save workflow'}
@@ -508,7 +521,15 @@ export function SoftwareEngineeringWorkspace() {
               {draftGraph && (
                 <fieldset>
                   <legend>Workflow steps</legend>
-                  <ul>{draftGraph.nodes.map((node) => <li key={node.id}>{node.id}</li>)}</ul>
+                  <ul>{draftGraph.nodes.map((node) => (
+                    <li key={node.id}>
+                      <span>{node.id}</span>{' '}
+                      <button type="button" disabled={savingDefinition}
+                        aria-label={`Remove step ${node.id}`} onClick={() => removeStep(node.id)}>
+                        Remove step
+                      </button>
+                    </li>
+                  ))}</ul>
                   <label>Step ID
                     <input value={stepId} onChange={(event) => setStepId(event.target.value)} />
                   </label>
@@ -653,6 +674,16 @@ export function SoftwareEngineeringWorkspace() {
                 <>
                   <h4>{runDetail.workflow_name}</h4>
                   <p>Run status: {runDetail.status.replace('_', ' ')}</p>
+                  {runDetail.graph?.nodes.length > 0 && (
+                    <button type="button" disabled={savingDefinition}
+                      title="Replaces the current editor draft"
+                      onClick={() => {
+                        loadWorkflowEditor(runDetail.graph);
+                        setDefinitionMessage('Run definition loaded as a new draft.');
+                      }}>
+                      Open run definition as draft
+                    </button>
+                  )}
                   {runDetail.parent_run_id && (
                     <button type="button" onClick={() => inspectRun(runDetail.parent_run_id ?? '')}>
                       Inspect original run {runDetail.parent_run_id.slice(0, 8)}
