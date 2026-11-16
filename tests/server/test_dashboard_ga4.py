@@ -1,6 +1,9 @@
 import json
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import httpx
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -76,3 +79,41 @@ def test_ga4_property_persists_without_overriding_backend_environment(
         monkeypatch.delenv("OPENJARVIS_GA4_PROPERTY_ID")
         assert client.get(path).json()["property_id"] == "123"
         assert client.put(path, json={"property_id": ""}).json()["property_id"] == ""
+
+def test_ga4_authorization_uses_readonly_scope_and_separate_tokens(
+    tmp_path, monkeypatch
+):
+    module = pytest.importorskip("google_auth_oauthlib.flow")
+    monkeypatch.setenv("OPENJARVIS_HOME", str(tmp_path))
+    client_file = tmp_path / "desktop-client.json"
+    client_file.write_text(json.dumps({"installed": {
+        "client_id": "fixture.apps.googleusercontent.com",
+        "client_secret": "fixture-admin-secret",
+        "token_uri": "https://should-not-be-used.example.test",
+    }}), encoding="utf-8")
+    local_server = MagicMock(return_value=SimpleNamespace(
+        token="fixture-access", refresh_token="fixture-refresh"
+    ))
+    flow = MagicMock(run_local_server=local_server)
+    from_config = MagicMock(return_value=flow)
+    monkeypatch.setattr(module.InstalledAppFlow, "from_client_config", from_config)
+    from click.testing import CliRunner
+
+    from openjarvis.cli.connect_cmd import connect
+
+    result = CliRunner().invoke(connect, ["--path", str(client_file), "ga4"])
+    assert result.exit_code == 0, result.output
+    local_server.assert_called_once_with(
+        host="127.0.0.1", port=0, timeout_seconds=120, prompt="consent"
+    )
+    args, options = from_config.call_args
+    assert args[0]["installed"]["token_uri"] == "https://oauth2.googleapis.com/token"
+    assert options == {
+        "scopes": ["https://www.googleapis.com/auth/analytics.readonly"],
+        "autogenerate_code_verifier": True,
+    }
+    saved = tmp_path / "connectors" / "ga4.json"
+    tokens = json.loads(saved.read_text(encoding="utf-8"))
+    assert tokens["refresh_token"] == "fixture-refresh"
+    assert not (saved.parent / "google.json").exists()
+    assert "fixture-admin-secret" not in result.output

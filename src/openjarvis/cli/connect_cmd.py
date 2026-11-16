@@ -191,7 +191,7 @@ def _connect_source(registry: object, source: str, path: str = "") -> None:
 @click.option(
     "--path",
     default="",
-    help="Path for filesystem connectors (e.g., Obsidian vault).",
+    help="Filesystem source path or Google Desktop OAuth client JSON for ga4.",
 )
 @click.pass_context
 def connect(
@@ -217,6 +217,31 @@ def connect(
 
     if disconnect_source:
         _disconnect_source(ConnectorRegistry, disconnect_source)
+        return
+
+    if source == "ga4":
+        from pathlib import Path
+
+        from openjarvis.connectors.ga4_report import authorize_ga4
+
+        if not path:
+            raise click.UsageError(
+                "Supply the Google Desktop OAuth client JSON using --path."
+            )
+        try:
+            authorize_ga4(Path(path))
+        except ImportError as exc:
+            raise click.ClickException(
+                "Install the channel-gmail extra to enable Google OAuth."
+            ) from exc
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
+        except Exception as exc:
+            raise click.ClickException(
+                "Google Analytics authorization did not complete. "
+                "Check consent and the Google OAuth client configuration."
+            ) from exc
+        click.echo("Google Analytics read-only authorization saved.")
         return
 
     if source:

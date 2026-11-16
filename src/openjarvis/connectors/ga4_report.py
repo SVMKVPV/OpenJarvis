@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from pathlib import Path
 
 import httpx
 
@@ -13,6 +14,7 @@ from openjarvis.connectors.google_auth import (
     call_with_refresh,
     current_access_token,
 )
+from openjarvis.connectors.oauth import save_tokens
 from openjarvis.core.paths import get_config_dir
 from openjarvis.security.file_utils import secure_write_json
 
@@ -60,13 +62,61 @@ def save_ga4_property(property_id: str) -> dict:
     return {"property_id": property_id, "environment_override": False}
 
 
+def ga4_credentials_path() -> str:
+    return str(get_config_dir() / "connectors" / "ga4.json")
+
+
+def authorize_ga4(client_file: Path) -> None:
+    """Authorize read-only Analytics using a Google Desktop OAuth client."""
+    try:
+        config = json.loads(client_file.read_text(encoding="utf-8"))
+        client_id = config["installed"]["client_id"]
+        client_secret = config["installed"]["client_secret"]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise ValueError("Expected a Google Desktop OAuth client JSON file") from exc
+    if (
+        not isinstance(client_id, str)
+        or not client_id.endswith(".apps.googleusercontent.com")
+        or not isinstance(client_secret, str)
+        or not client_secret
+    ):
+        raise ValueError("Expected a Google Desktop OAuth client ID and secret")
+
+    from google_auth_oauthlib.flow import InstalledAppFlow
+
+    flow = InstalledAppFlow.from_client_config(
+        {"installed": {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "auth_uri": "https://accounts.google.com/o/oauth2/v2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+        }},
+        scopes=["https://www.googleapis.com/auth/analytics.readonly"],
+        autogenerate_code_verifier=True,
+    )
+    try:
+        credentials = flow.run_local_server(
+            host="127.0.0.1", port=0, timeout_seconds=120, prompt="consent"
+        )
+    except Exception as exc:
+        raise RuntimeError("Google Analytics authorization did not complete") from exc
+    if not credentials.token or not credentials.refresh_token:
+        raise ValueError("Google did not grant an offline Analytics authorization")
+    save_tokens(ga4_credentials_path(), {
+        "access_token": credentials.token,
+        "refresh_token": credentials.refresh_token,
+        "client_id": client_id,
+        "client_secret": client_secret,
+    })
+
+
 def ga4_views() -> dict:
     property_id = ga4_settings()["property_id"]
     if not property_id:
         return {"status": "unconfigured", "views": None}
     if not re.fullmatch(r"[0-9]{1,30}", property_id):
         return {"status": "invalid_property", "views": None}
-    credentials = str(get_config_dir() / "connectors" / "ga4.json")
+    credentials = ga4_credentials_path()
     try:
         token = current_access_token(credentials)
     except (AttributeError, UnicodeError):
