@@ -12,7 +12,35 @@ from openjarvis.tools.approval_store import (
     TIER_LOW,
     ApprovalStore,
 )
-from openjarvis.tools.proactive_tools import ExecutePendingActionsTool, QueueActionTool
+from openjarvis.tools.proactive_tools import (
+    ExecutePendingActionsTool,
+    QueueActionTool,
+    RecordDecisionTool,
+    parse_approval_response,
+)
+
+
+def test_workflow_gate_stays_out_of_proactive_actions(tmp_path) -> None:
+    store = ApprovalStore(str(tmp_path / "approvals.db"))
+    try:
+        gate = store.queue_action(
+            action_type="email_archive",
+            description="Review workflow output",
+            payload={"workflow_run_id": "run", "workflow_node_id": "review"},
+            permission_key="workflow:review",
+            tier=TIER_LOW,
+        )
+        decision = RecordDecisionTool(store=store).execute(
+            action_id=gate.id, approved=True
+        )
+        assert not decision.success
+        assert parse_approval_response("all yes", store=store) == []
+        assert store.decide_pending(gate.id, STATUS_APPROVED)
+        result = ExecutePendingActionsTool(store=store).execute(action_ids=[gate.id])
+        assert result.metadata["attempted"] == 0
+        assert store.get_action(gate.id).status == STATUS_APPROVED
+    finally:
+        store.close()
 
 
 def _approved_sms_draft(store: ApprovalStore, payload: dict[str, str]):

@@ -307,7 +307,14 @@ class RecordDecisionTool(BaseTool):
             )
 
         new_status = STATUS_APPROVED if approved else STATUS_DENIED
-        store.update_status(action_id, new_status)
+        if "workflow_node_id" in action.payload or not store.decide_pending(
+            action_id, new_status
+        ):
+            return ToolResult(
+                tool_name=self.spec.name,
+                success=False,
+                content="Action cannot be decided through proactive tools.",
+            )
 
         if remember:
             decision = DECISION_ALWAYS_APPROVE if approved else DECISION_ALWAYS_DENY
@@ -379,10 +386,13 @@ class ExecutePendingActionsTool(BaseTool):
         store = self._store or get_store()
         action_ids: Optional[List[str]] = params.get("action_ids")
 
-        if action_ids:
-            actions = [a for a in store.list_approved() if a.id in set(action_ids)]
-        else:
-            actions = store.list_approved()
+        selected = set(action_ids or ())
+        actions = [
+            action
+            for action in store.list_approved()
+            if "workflow_node_id" not in action.payload
+            and (not selected or action.id in selected)
+        ]
 
         results: List[Dict[str, Any]] = []
         for action in actions:
@@ -585,7 +595,10 @@ def parse_approval_response(
             pending = s.list_pending()
             for action in pending:
                 new_status = STATUS_APPROVED if approved else STATUS_DENIED
-                s.update_status(action.id, new_status)
+                if "workflow_node_id" in action.payload or not s.decide_pending(
+                    action.id, new_status
+                ):
+                    continue
                 if always and action.tier in (TIER_LOW, TIER_MEDIUM):
                     decision = (
                         DECISION_ALWAYS_APPROVE if approved else DECISION_ALWAYS_DENY
@@ -599,7 +612,10 @@ def parse_approval_response(
             if action is None:
                 continue
             new_status = STATUS_APPROVED if approved else STATUS_DENIED
-            s.update_status(target, new_status)
+            if "workflow_node_id" in action.payload or not s.decide_pending(
+                target, new_status
+            ):
+                continue
             remember = always and action.tier in (TIER_LOW, TIER_MEDIUM)
             if remember:
                 decision = DECISION_ALWAYS_APPROVE if approved else DECISION_ALWAYS_DENY
