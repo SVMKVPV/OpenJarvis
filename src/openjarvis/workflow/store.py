@@ -59,6 +59,15 @@ class WorkflowRunStore:
                     started_at REAL,
                     finished_at REAL
                 );
+                CREATE TABLE IF NOT EXISTS workflow_recurrences (
+                    id TEXT PRIMARY KEY,
+                    definition_id TEXT NOT NULL REFERENCES workflow_definitions(id),
+                    initial_input TEXT NOT NULL,
+                    next_due_at REAL NOT NULL,
+                    interval_seconds INTEGER NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_workflow_recurrences_due
+                    ON workflow_recurrences(next_due_at);
                 CREATE INDEX IF NOT EXISTS idx_workflow_runs_created
                     ON workflow_runs(created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_workflow_runs_status
@@ -252,6 +261,78 @@ class WorkflowRunStore:
         run = self.get_run(run_id)
         assert run is not None
         return run, True
+
+    def save_recurrence(
+        self, definition_id: str, initial_input: str,
+        next_due_at: float, interval_seconds: int,
+    ) -> dict[str, Any]:
+        recurrence = {
+            "id": uuid.uuid4().hex,
+            "definition_id": definition_id,
+            "initial_input": initial_input,
+            "next_due_at": next_due_at,
+            "interval_seconds": interval_seconds,
+        }
+        with self._lock, self._conn:
+            if self.get_definition(definition_id) is None:
+                raise KeyError(definition_id)
+            self._conn.execute(
+                "INSERT INTO workflow_recurrences VALUES (:id, :definition_id, "
+                ":initial_input, :next_due_at, :interval_seconds)",
+                recurrence,
+            )
+        return recurrence
+
+    def list_recurrences(self, definition_id: str) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM workflow_recurrences WHERE definition_id = ? "
+                "ORDER BY next_due_at, id",
+                (definition_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def delete_recurrence(self, definition_id: str, recurrence_id: str) -> bool:
+        with self._lock, self._conn:
+            result = self._conn.execute(
+                "DELETE FROM workflow_recurrences WHERE definition_id = ? AND id = ?",
+                (definition_id, recurrence_id),
+            )
+        return bool(result.rowcount)
+
+    def enqueue_due_recurrences(self, now: float, limit: int = 20) -> None:
+        with self._lock, self._conn:
+            if self._conn.execute(
+                "SELECT 1 FROM workflow_recurrences WHERE next_due_at <= ? LIMIT 1",
+                (now,),
+            ).fetchone() is None:
+                return
+            self._conn.execute("BEGIN IMMEDIATE")
+            rows = self._conn.execute(
+                "SELECT recurrence.*, definition.graph_json "
+                "FROM workflow_recurrences AS recurrence JOIN workflow_definitions "
+                "AS definition ON definition.id = recurrence.definition_id "
+                "WHERE next_due_at <= ? ORDER BY next_due_at, recurrence.id LIMIT ?",
+                (now, limit),
+            ).fetchall()
+            for row in rows:
+                interval = row["interval_seconds"]
+                elapsed_intervals = int((now - row["next_due_at"]) // interval)
+                due_at = row["next_due_at"] + elapsed_intervals * interval
+                graph = json.loads(row["graph_json"])
+                self._conn.execute(
+                    "INSERT INTO workflow_runs (id, workflow_name, status, graph_json, "
+                    "initial_input, context_json, created_at, scheduled_at) "
+                    "VALUES (?, ?, 'scheduled', ?, ?, '{}', ?, ?)",
+                    (
+                        uuid.uuid4().hex, str(graph.get("name", "workflow")),
+                        row["graph_json"], row["initial_input"], now, due_at,
+                    ),
+                )
+                self._conn.execute(
+                    "UPDATE workflow_recurrences SET next_due_at = ? WHERE id = ?",
+                    (due_at + interval, row["id"]),
+                )
 
     def due_runs(self, now: float, limit: int = 20) -> list[str]:
         with self._lock:

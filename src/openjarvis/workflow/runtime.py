@@ -109,6 +109,7 @@ class WorkflowRuntime:
                     if self._stopping:
                         return
                     now = time.time()
+                    self.store.enqueue_due_recurrences(now)
                     for run_id in self.store.due_runs(now):
                         if not self.store.claim_scheduled_run(run_id, now):
                             continue

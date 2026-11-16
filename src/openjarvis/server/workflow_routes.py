@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict
 
-from fastapi import APIRouter, Header, HTTPException, Query, Request, status
+from fastapi import APIRouter, Header, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 
 from openjarvis.core.paths import get_config_dir
@@ -35,6 +35,12 @@ class WorkflowInputs(BaseModel):
 
 class ScheduledWorkflowInputs(WorkflowInputs):
     scheduled_at: float = Field(gt=0, allow_inf_nan=False)
+
+
+class RecurringWorkflowInputs(BaseModel):
+    initial_input: str = ""
+    first_due_at: float = Field(gt=0, le=253402300799, allow_inf_nan=False)
+    interval_seconds: int = Field(ge=60, le=31536000)
 
 
 class RescheduleWorkflowRun(BaseModel):
@@ -266,6 +272,39 @@ def create_workflow_runs_router() -> APIRouter:
         return launch_definition(
             definition_id, payload, request, launch_key, payload.scheduled_at
         )
+
+    @root.get("/definitions/{definition_id}/recurrences")
+    def list_recurrences(definition_id: str, request: Request) -> dict:
+        return {"recurrences": _runtime(request).store.list_recurrences(definition_id)}
+
+    @root.post("/definitions/{definition_id}/recurrences", status_code=201)
+    def create_recurrence(
+        definition_id: str, payload: RecurringWorkflowInputs, request: Request
+    ) -> dict:
+        if payload.first_due_at <= time.time():
+            raise HTTPException(status_code=400, detail="Choose a future start time")
+        runtime = _runtime(request)
+        try:
+            recurrence = runtime.store.save_recurrence(
+                definition_id, payload.initial_input,
+                payload.first_due_at, payload.interval_seconds,
+            )
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=404, detail="Workflow definition not found"
+            ) from exc
+        runtime.start_scheduling()
+        return recurrence
+
+    @root.delete(
+        "/definitions/{definition_id}/recurrences/{recurrence_id}", status_code=204
+    )
+    def delete_recurrence(
+        definition_id: str, recurrence_id: str, request: Request
+    ) -> Response:
+        if not _runtime(request).store.delete_recurrence(definition_id, recurrence_id):
+            raise HTTPException(status_code=404, detail="Recurring schedule not found")
+        return Response(status_code=204)
 
     def launch_definition(
         definition_id: str,

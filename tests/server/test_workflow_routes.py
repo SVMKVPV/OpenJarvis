@@ -11,6 +11,66 @@ from fastapi.testclient import TestClient  # noqa: E402
 from openjarvis.server.workflow_routes import create_workflow_runs_router  # noqa: E402
 
 
+def test_recurring_workflow_catches_up_once_after_restart(tmp_path, monkeypatch):
+    from openjarvis.server import approval_routes
+    from openjarvis.server.workflow_routes import start_workflow_scheduler
+    from openjarvis.tools.approval_store import ApprovalStore
+    from openjarvis.workflow.store import WorkflowRunStore
+
+    db_path = str(tmp_path / "workflow.db")
+    monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", db_path)
+    approvals = ApprovalStore(str(tmp_path / "approvals.db"))
+    monkeypatch.setattr(approval_routes, "_store", approvals)
+
+    def new_app():
+        app = FastAPI()
+        app.state.workflow_system = None
+        app.include_router(create_workflow_runs_router())
+        return app
+
+    original = new_app()
+    with TestClient(original) as client:
+        definition = client.post("/v1/workflows/definitions", json={
+            "name": "Recurring review",
+            "nodes": [{"id": "review", "type": "approval"}],
+        }).json()
+        url = f"/v1/workflows/definitions/{definition['id']}/recurrences"
+        request = {"first_due_at": time.time() + 120, "interval_seconds": 60}
+        invalid = client.post(url, json={**request, "interval_seconds": 0})
+        assert invalid.status_code == 422
+        created = client.post(url, json=request)
+        assert created.status_code == 201
+        assert client.get(url).json()["recurrences"] == [created.json()]
+        original.state.workflow_runtime.close()
+
+    offline_store = WorkflowRunStore(db_path)
+    overdue = offline_store.save_recurrence(
+        definition["id"], "Recurring evidence", time.time() - 190, 60,
+    )
+    offline_store.close()
+    restarted = new_app()
+    start_workflow_scheduler(restarted.state)
+    try:
+        with TestClient(restarted) as client:
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                runs = client.get("/v1/workflows/runs").json()["runs"]
+                if runs and runs[0]["status"] == "waiting_approval":
+                    break
+                time.sleep(0.01)
+            else:
+                pytest.fail("Recurring run did not reach its approval checkpoint")
+            assert len(runs) == 1
+            assert runs[0]["scheduled_at"] == overdue["next_due_at"] + 180
+            schedule = client.get(url).json()["recurrences"][0]
+            assert schedule["next_due_at"] == overdue["next_due_at"] + 240
+            assert client.delete(f"{url}/{overdue['id']}").status_code == 204
+            assert client.get(url).json()["recurrences"] == [created.json()]
+    finally:
+        restarted.state.workflow_runtime.close()
+        approvals.close()
+
+
 def test_parallel_approvals_survive_runtime_restart(tmp_path, monkeypatch) -> None:
     from openjarvis.server import approval_routes
     from openjarvis.tools.approval_store import ApprovalStore

@@ -1534,6 +1534,33 @@ export async function fetchWorkflowDefinition(id: string): Promise<SavedWorkflow
   return res.json();
 }
 
+export type WorkflowRecurrence = {
+  id: string;
+  next_due_at: number;
+  interval_seconds: number;
+};
+
+export async function workflowRecurrences(
+  definitionId: string,
+  action?: { first_due_at: number; interval_seconds: number; initial_input: string } | string,
+): Promise<WorkflowRecurrence[]> {
+  const path = `/v1/workflows/definitions/${encodeURIComponent(definitionId)}/recurrences`;
+  const response = typeof action === 'string'
+    ? await apiFetch(`${path}/${encodeURIComponent(action)}`, { method: 'DELETE' })
+    : await apiFetch(path, action && {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(action),
+    });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(typeof body?.detail === 'string'
+      ? body.detail : `Recurring schedule request failed (${response.status}).`);
+  }
+  if (action !== undefined) return workflowRecurrences(definitionId);
+  return (await response.json()).recurrences;
+}
+
 export async function runSavedWorkflow(
   id: string, initialInput: string, launchKey?: string, scheduledAt?: number,
 ): Promise<WorkflowRunSummary> {

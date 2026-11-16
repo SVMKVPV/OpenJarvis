@@ -31,6 +31,7 @@ import { useAppStore } from '../lib/store';
 import type { ConnectorInfo, SyncStatus } from '../types/connectors';
 import { ReviewedLeadForm } from './ReviewedLeadForm';
 import { WorkflowDraftMap } from './WorkflowDraftMap';
+import { WorkflowRecurrenceEditor } from './WorkflowRecurrenceEditor';
 import './software-workspace.css';
 
 type Connector = { id: string; code: string; provider: string; product: string; role: string; model: string; status: 'setup' | 'local'; enabled: boolean; contributions: number };
@@ -1199,6 +1200,10 @@ export function SoftwareEngineeringWorkspace({
                 Download saved workflow JSON
               </button>
             </form>
+          )}
+          {selectedDefinition && (
+            <WorkflowRecurrenceEditor key={selectedDefinition.id}
+              definitionId={selectedDefinition.id} initialInput={workflowInput} />
           )}
           {definitionMessage && <p role="status">{definitionMessage}</p>}
           {workflowApprovals.map((approval) => {
