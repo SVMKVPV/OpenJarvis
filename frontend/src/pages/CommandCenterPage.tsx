@@ -1,6 +1,6 @@
-import { FormEvent, useMemo, useRef, useState } from 'react';
+import { FormEvent, type CSSProperties, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router';
-import { Activity, ArrowUp, Mic, MicOff, Plus, Settings2, Square, Volume2 } from 'lucide-react';
+import { Activity, ArrowUp, Mic, MicOff, Plus, Square, Volume2 } from 'lucide-react';
 
 import {
   Background,
@@ -37,6 +37,8 @@ const STATION_AGENT_TEMPLATES: Record<string, string> = {
   managers: 'quality_manager',
   'system-builder': 'system_builder',
 };
+
+const DEFAULT_COMMAND_ACCENT = '#d6ad52';
 
 type Station = {
   id: string;
@@ -486,6 +488,16 @@ export function CommandCenterPage() {
     () => DEFAULT_WIDGET_IDS,
     (value) => Array.isArray(value) && value.every((id) => typeof id === 'string'),
   );
+  const [accent, setAccent] = useLocalPreference(
+    'openjarvis.command-center.accent.v1',
+    () => DEFAULT_COMMAND_ACCENT,
+    (value) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value),
+  );
+  const accentStyle = accent === DEFAULT_COMMAND_ACCENT ? undefined : {
+    '--gold': accent,
+    '--gold-bright': 'color-mix(in srgb, var(--gold), white 28%)',
+    '--gold-dim': 'color-mix(in srgb, var(--gold), black 45%)',
+  } as CSSProperties;
   const selected = stations.find((station) => station.id === selectedId) ?? stations[0];
   const apps = useMemo(() => STACKS[selected.id] ?? FALLBACK_STACK, [selected.id]);
   const stationWidgets = DASHBOARD_WIDGETS.filter((widget) => widget.stationId === selected.id);
@@ -509,7 +521,7 @@ export function CommandCenterPage() {
   };
 
   return (
-    <div className="jarvis-command">
+    <div className="jarvis-command" style={accentStyle}>
       <header className="command-header">
         <div><span className="command-eyebrow">OPENJARVIS // ORGANIZATION CONTROL</span><h1>COMMAND CENTER</h1></div>
         <nav className="command-view-nav" aria-label="Command center views">
@@ -568,7 +580,17 @@ export function CommandCenterPage() {
 
         <DotVoice station={selected} />
       </div>}
-      <footer className="command-footer"><span><Square size={7} fill="currentColor" /> BLACK OAK OPERATING SYSTEM</span><span>DOT VOICE ROUTER // OPENJARVIS RUNTIME</span><button><Settings2 size={12} /> CONTROL POLICY: RISK-BASED</button></footer>
+      <footer className="command-footer">
+        <span><Square size={7} fill="currentColor" /> BLACK OAK OPERATING SYSTEM</span>
+        <span>DOT VOICE ROUTER // OPENJARVIS RUNTIME</span>
+        <label className="command-accent-control">
+          Accent color
+          <input type="color" value={accent} onChange={(event) => setAccent(event.target.value)} />
+        </label>
+        <button type="button" onClick={() => setAccent(DEFAULT_COMMAND_ACCENT)} disabled={accent === DEFAULT_COMMAND_ACCENT}>
+          Reset gold
+        </button>
+      </footer>
     </div>
   );
 }
