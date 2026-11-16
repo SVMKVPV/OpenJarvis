@@ -6,6 +6,7 @@ import {
   fetchPendingApprovals,
   fetchRuntimePlugins,
   fetchWorkflowDefinitions,
+  fetchWorkflowRun,
   fetchWorkflowRuns,
   runSavedWorkflow,
   saveWorkflowDefinition,
@@ -14,6 +15,7 @@ import {
   type RuntimePlugin,
   type SavedWorkflowDefinition,
   type WorkflowRunSummary,
+  type WorkflowRunDetail,
 } from '../lib/api';
 import { listConnectors } from '../lib/connectors-api';
 import type { ConnectorInfo } from '../types/connectors';
@@ -102,6 +104,10 @@ export function SoftwareEngineeringWorkspace() {
   const [liveConnectors, setLiveConnectors] = useState<ConnectorInfo[] | null>(null);
   const [pluginCatalogState, setPluginCatalogState] = useState<'loading' | 'online' | 'offline'>('loading');
   const [workflowRuns, setWorkflowRuns] = useState<WorkflowRunSummary[]>([]);
+  const [inspectedRunId, setInspectedRunId] = useState('');
+  const [runDetail, setRunDetail] = useState<WorkflowRunDetail | null>(null);
+  const [runDetailError, setRunDetailError] = useState('');
+  const inspectedRunStatus = workflowRuns.find((run) => run.id === inspectedRunId)?.status;
   const [definitions, setDefinitions] = useState<SavedWorkflowDefinition[]>([]);
   const [definitionId, setDefinitionId] = useState('');
   const selectedDefinition = definitions.find((item) => item.id === definitionId);
@@ -124,6 +130,19 @@ export function SoftwareEngineeringWorkspace() {
   ]);
   const visibleItems = useMemo(() => ITEMS.filter((item) => item.folder === selectedFolder), [selectedFolder]);
   const selectedItem = ITEMS.find((item) => item.id === selectedItemId) ?? visibleItems[0] ?? ITEMS[0];
+
+  useEffect(() => {
+    if (!inspectedRunId) return;
+    const controller = new AbortController();
+    fetchWorkflowRun(inspectedRunId, controller.signal).then((detail) => {
+      if (controller.signal.aborted) return;
+      setRunDetail(detail);
+      setRunDetailError('');
+    }).catch((error) => {
+      if (!controller.signal.aborted) setRunDetailError(error instanceof Error ? error.message : 'Could not load run details.');
+    });
+    return () => controller.abort();
+  }, [inspectedRunId, inspectedRunStatus]);
 
   useEffect(() => {
     let cancelled = false;
@@ -463,7 +482,38 @@ export function SoftwareEngineeringWorkspace() {
           )}
           {definitionMessage && <p role="status">{definitionMessage}</p>}
           {workflowApprovals.slice(0, 2).map((approval) => <article className="workflow-approval" key={approval.id}><div><b>CEO APPROVAL REQUIRED</b><span>{approval.description}</span></div><button onClick={() => void approveWorkflow(approval)}>APPROVE</button></article>)}
-          <div className="workflow-runs">{workflowRuns.slice(0, 5).map((run) => <article key={run.id}><div><strong>{run.workflow_name}</strong><small>{run.id.slice(0, 8)} · {new Date(run.created_at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small></div><em data-status={run.status}>{run.status.replace('_', ' ').toUpperCase()}</em></article>)}</div>
+          <div className="workflow-runs">
+            {workflowRuns.slice(0, 5).map((run) => (
+              <article key={run.id}>
+                <div><strong>{run.workflow_name}</strong><small>{run.id.slice(0, 8)} · {new Date(run.created_at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small></div>
+                <em data-status={run.status}>{run.status.replace('_', ' ').toUpperCase()}</em>
+                <button type="button" aria-pressed={inspectedRunId === run.id} onClick={() => {
+                  setRunDetail(null);
+                  setRunDetailError('');
+                  setInspectedRunId(inspectedRunId === run.id ? '' : run.id);
+                }}>{inspectedRunId === run.id ? 'Close run details' : 'Inspect run'}</button>
+              </article>
+            ))}
+          </div>
+          {inspectedRunId && (
+            <section className="workflow-run-detail" aria-label="Workflow run details">
+              {runDetailError && <p role="status">{runDetailError}</p>}
+              {runDetail?.id === inspectedRunId ? (
+                <>
+                  <h4>{runDetail.workflow_name}</h4>
+                  {runDetail.error && <p>{runDetail.error}</p>}
+                  {runDetail.steps.length ? <ol>{runDetail.steps.map((step) => (
+                    <li key={`${step.node_id}-${step.attempt}`}>
+                      <strong>{step.node_id} · Attempt {step.attempt}</strong>
+                      <p>{step.metadata.workflow_status === 'waiting_approval' ? 'Waiting for approval' : step.success ? 'Succeeded' : 'Failed'}</p>
+                      {step.output && <pre>{step.output}</pre>}
+                    </li>
+                  ))}</ol> : <p>No steps recorded yet.</p>}
+                  {runDetail.final_output && <><h5>Final output</h5><pre>{runDetail.final_output}</pre></>}
+                </>
+              ) : !runDetailError && <p role="status">Loading run details…</p>}
+            </section>
+          )}
           {!workflowRuns.length && <p>NO WORKFLOW RUNS RECORDED. START A GUARDED DELIVERY TO TEST THE LIVE APPROVAL PATH.</p>}
         </section>
         <section className="environment-preview"><header><div><span>ENVIRONMENT</span><strong>VIEW SURFACE</strong></div><Monitor size={13}/></header><div className="environment-tabs"><button className={environment === 'desktop' ? 'active' : ''} onClick={() => setEnvironment('desktop')}>DESKTOP</button><button className={environment === 'chrome' ? 'active' : ''} onClick={() => setEnvironment('chrome')}>CHROME</button></div>{environment === 'desktop' ? <div className="desktop-frame"><div className="desktop-top">SOFTWARE ENGINEERING DESKTOP</div><div className="desktop-windows"><span>CODE</span><span>TERMINAL</span><span>PREVIEW</span></div><p>DESKTOP CONTROL NOT CONNECTED</p></div> : <div className="chrome-frame"><div><i/><i/><i/><span>localhost / command-center</span></div><strong>OPENJARVIS PREVIEW</strong><p>BROWSER CONTROL NOT CONNECTED</p></div>}</section>

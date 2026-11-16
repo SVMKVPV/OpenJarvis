@@ -1231,6 +1231,22 @@ export async function fetchWorkflowRuns(): Promise<WorkflowRunSummary[]> {
   return data.runs || [];
 }
 
+export interface WorkflowRunDetail extends WorkflowRunSummary {
+  steps: Array<{
+    node_id: string;
+    attempt: number;
+    success: boolean;
+    output: string;
+    metadata: Record<string, unknown>;
+  }>;
+}
+
+export async function fetchWorkflowRun(id: string, signal?: AbortSignal): Promise<WorkflowRunDetail> {
+  const res = await apiFetch(`/v1/workflows/runs/${encodeURIComponent(id)}`, { signal });
+  if (!res.ok) throw new Error(`Failed to load run details (${res.status}).`);
+  return res.json();
+}
+
 export interface SavedWorkflowDefinition {
   id: string;
   graph: Pick<WorkflowRunInput, 'name' | 'nodes' | 'edges'>;

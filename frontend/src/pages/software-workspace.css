@@ -14,3 +14,10 @@
   resize: vertical;
   font-family: var(--font-mono);
 }
+.workflow-run-detail {
+  padding: 0.75rem;
+  overflow-wrap: anywhere;
+}
+.workflow-run-detail pre {
+  white-space: pre-wrap;
+}
