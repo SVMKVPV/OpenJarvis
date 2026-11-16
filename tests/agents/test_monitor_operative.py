@@ -99,6 +99,28 @@ class TestMonitorOperativeAgent:
         unconfigured = MonitorOperativeAgent(_make_engine(call), "test-model")
         assert unconfigured.run("Show a JSON example.").content == call
 
+    def test_recovers_configured_n8n_node_search_from_json(self) -> None:
+        call = '{"name":"search_nodes","arguments":{"query":"schedule trigger"}}'
+        allowed = {"knowledge_search", "search_nodes"}
+        assert MonitorOperativeAgent._extract_json_search(call, allowed) == (
+            "search_nodes",
+            '{"query": "schedule trigger"}',
+        )
+        assert (
+            MonitorOperativeAgent._extract_json_search(call, {"knowledge_search"})
+            is None
+        )
+        fenced = f"```json\n{call}\n```"
+        assert MonitorOperativeAgent._extract_json_search(fenced, allowed) == (
+            "search_nodes",
+            '{"query": "schedule trigger"}',
+        )
+        assert MonitorOperativeAgent._extract_json_search(
+            f"Example:\n{fenced}", allowed
+        ) is None
+        mutation = call.replace("search_nodes", "n8n_create_workflow")
+        assert MonitorOperativeAgent._extract_json_search(mutation, allowed) is None
+
     def test_repeated_json_search_is_not_saved_as_the_answer(self) -> None:
         call = '{"name":"knowledge_search","arguments":{"query":"Acacia"}}'
         tool = KnowledgeSearchTool()
