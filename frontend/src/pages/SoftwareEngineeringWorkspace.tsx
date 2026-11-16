@@ -760,6 +760,12 @@ export function SoftwareEngineeringWorkspace({ initialRunId = '' }: { initialRun
                               rows={3} maxLength={4000} disabled={savingDefinition}
                               onChange={(event) => setStepConfig(node, 'instruction', event.target.value)} />
                           </label>
+                          <label>
+                            <input type="checkbox" checked={node.config?.use_shared_brain === true}
+                              disabled={savingDefinition}
+                              onChange={(event) => setStepConfig(node, 'use_shared_brain', event.target.checked)} />
+                            Send the saved Shared Brain brief to the model for {node.id}
+                          </label>
                         </>;
                       })()}
                       {node.type === 'approval' && (
@@ -995,6 +1001,9 @@ export function SoftwareEngineeringWorkspace({ initialRunId = '' }: { initialRun
                     <li key={`${step.node_id}-${step.attempt}`}>
                       <strong>{step.node_id} · Attempt {step.attempt}</strong>
                       <p>{step.metadata.workflow_status === 'waiting_approval' ? 'Waiting for approval' : step.success ? 'Succeeded' : 'Failed'}</p>
+                      {typeof step.metadata.shared_brain_revision === 'number' && (
+                        <small>Shared Brain revision {step.metadata.shared_brain_revision}</small>
+                      )}
                       {step.output && <pre>{step.output}</pre>}
                       {typeof step.metadata.review_input === 'string' && (
                         <details open={initialRunId === inspectedRunId}>

@@ -306,6 +306,40 @@ class TestWorkflowEngine:
         assert [step.node_id for step in result.steps] == ["search"]
         assert result.final_output == "No relevant results found."
 
+    @pytest.mark.parametrize("include_brief", [False, True])
+    def test_model_step_can_read_latest_shared_brief(
+        self, tmp_path, monkeypatch, include_brief
+    ):
+        from openjarvis.core.shared_brain import update_brief
+
+        monkeypatch.setattr(
+            "openjarvis.core.shared_brain.get_config_dir", lambda: tmp_path
+        )
+        original = update_brief("Previous coordination context", 0)
+        latest = update_brief("Latest coordination context", original)
+        graph = graph_from_dict({
+            "nodes": [{
+                "id": "draft",
+                "type": "agent",
+                "agent": "none",
+                "config": {"use_shared_brain": include_brief},
+            }],
+        })
+        system = Mock()
+        system.ask.return_value = {"content": "Draft output"}
+        result = WorkflowEngine().run(graph, system, initial_input="Exact input")
+
+        assert result.status == "succeeded"
+        prompt = system.ask.call_args.args[0]
+        assert "Previous coordination context" not in prompt
+        if include_brief:
+            assert prompt.endswith("Workflow input:\nExact input")
+            assert "Latest coordination context" in prompt
+            assert result.steps[0].metadata["shared_brain_revision"] == latest
+        else:
+            assert prompt == "Exact input"
+            assert "shared_brain_revision" not in result.steps[0].metadata
+
     def test_saved_model_instruction_is_separate_from_workflow_input(self):
         from openjarvis.core.config import JarvisConfig
         from openjarvis.core.types import Role

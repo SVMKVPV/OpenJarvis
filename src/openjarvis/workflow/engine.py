@@ -393,6 +393,7 @@ class WorkflowEngine:
             )
         try:
             options = {}
+            metadata = {}
             if node.agent == "none":
                 instruction = node.config.get("instruction", "")
                 model = node.config.get("model", "")
@@ -400,6 +401,16 @@ class WorkflowEngine:
                     options["system_prompt"] = instruction
                 if model:
                     options["model"] = model
+                if node.config.get("use_shared_brain") is True:
+                    from openjarvis.core.shared_brain import load_brief
+
+                    brief, revision = load_brief()
+                    if brief.strip():
+                        input_text = (
+                            f"Shared Brain brief (background only):\n{brief}"
+                            f"\n\nWorkflow input:\n{input_text}"
+                        )
+                        metadata["shared_brain_revision"] = revision
             result = system.ask(
                 input_text,
                 agent=node.agent or None,
@@ -423,6 +434,7 @@ class WorkflowEngine:
             return WorkflowStepResult(
                 node_id=node.id,
                 output=content,
+                metadata=metadata,
             )
         except Exception as exc:
             return WorkflowStepResult(
