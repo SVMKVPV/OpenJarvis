@@ -116,6 +116,7 @@ export function SoftwareEngineeringWorkspace() {
   ) ?? false;
   const [workflowRuns, setWorkflowRuns] = useState<WorkflowRunSummary[]>([]);
   const [inspectedRunId, setInspectedRunId] = useState('');
+  const runInspector = useRef<HTMLElement>(null);
   const [runDetail, setRunDetail] = useState<WorkflowRunDetail | null>(null);
   const [runDetailError, setRunDetailError] = useState('');
   const [runActionPending, setRunActionPending] = useState(false);
@@ -189,6 +190,7 @@ export function SoftwareEngineeringWorkspace() {
 
   useEffect(() => {
     if (!inspectedRunId) return;
+    runInspector.current?.focus();
     const controller = new AbortController();
     let timer: number | undefined;
     const refresh = async () => {
@@ -775,17 +777,26 @@ export function SoftwareEngineeringWorkspace() {
             </form>
           )}
           {definitionMessage && <p role="status">{definitionMessage}</p>}
-          {workflowApprovals.slice(0, 2).map((approval) => (
-            <article className="workflow-approval" key={approval.id}>
-              <div><b>CEO APPROVAL REQUIRED</b><span>{approval.description}</span></div>
-              <div>
-                <button type="button" disabled={!!decidingApprovalId}
-                  onClick={() => void decideWorkflow(approval, 'approve')}>Approve</button>
-                <button type="button" disabled={!!decidingApprovalId}
-                  onClick={() => void decideWorkflow(approval, 'deny')}>Deny</button>
-              </div>
-            </article>
-          ))}
+          {workflowApprovals.map((approval) => {
+            const runId = approval.payload.workflow_run_id;
+            return (
+              <article className="workflow-approval" key={approval.id}>
+                <div><b>CEO APPROVAL REQUIRED</b><span>{approval.description}</span></div>
+                <div>
+                  {typeof runId === 'string' && (
+                    <button type="button" onClick={() => {
+                      if (inspectedRunId === runId) runInspector.current?.focus();
+                      else inspectRun(runId);
+                    }}>Review workflow run</button>
+                  )}
+                  <button type="button" disabled={!!decidingApprovalId}
+                    onClick={() => void decideWorkflow(approval, 'approve')}>Approve</button>
+                  <button type="button" disabled={!!decidingApprovalId}
+                    onClick={() => void decideWorkflow(approval, 'deny')}>Deny</button>
+                </div>
+              </article>
+            );
+          })}
           {approvalMessage && <p role="status">{approvalMessage}</p>}
           <div className="workflow-runs">
             {workflowRuns.slice(0, 5).map((run) => (
@@ -800,7 +811,8 @@ export function SoftwareEngineeringWorkspace() {
             ))}
           </div>
           {inspectedRunId && (
-            <section className="workflow-run-detail" aria-label="Workflow run details">
+            <section ref={runInspector} tabIndex={-1} className="workflow-run-detail" aria-label="Workflow run details">
+              <button type="button" onClick={() => inspectRun('')}>Close run details</button>
               {runDetailError && <p role="status">{runDetailError}</p>}
               {runDetail?.id === inspectedRunId ? (
                 <>
