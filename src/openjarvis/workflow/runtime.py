@@ -52,6 +52,7 @@ class WorkflowRuntime:
         initial_input: str = "",
         context: Mapping[str, Any] | None = None,
         parent_run_id: str | None = None,
+        launch: tuple[str, str] | None = None,
     ) -> dict[str, Any]:
         context = {
             key: value for key, value in (context or {}).items()
@@ -60,13 +61,16 @@ class WorkflowRuntime:
         with self._lock:
             if self._stopping:
                 raise WorkflowRuntimeStopping("Workflow runtime is stopping")
-            run = self.store.create_run(
+            run, created = self.store.create_run_once(
                 workflow_name=graph.name,
                 graph=graph_to_dict(graph),
                 initial_input=initial_input,
                 context=context,
                 parent_run_id=parent_run_id,
+                launch=launch,
             )
+            if not created:
+                return run
             run_id = run["id"]
             worker = threading.Thread(
                 target=self._execute,
@@ -146,6 +150,7 @@ class WorkflowRuntime:
         *,
         initial_input: str = "",
         context: Mapping[str, Any] | None = None,
+        launch_key: str | None = None,
     ) -> dict[str, Any]:
         with self._lock:
             if self._stopping:
@@ -157,6 +162,7 @@ class WorkflowRuntime:
                 graph_from_dict(definition["graph"]),
                 initial_input=initial_input,
                 context=context,
+                launch=(definition_id, launch_key) if launch_key is not None else None,
             )
 
     def retry(self, run_id: str) -> dict[str, Any]:

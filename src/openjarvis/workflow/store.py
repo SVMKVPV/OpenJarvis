@@ -21,6 +21,10 @@ class WorkflowDefinitionConflict(ValueError):
     """The saved definition changed after an editor loaded it."""
 
 
+class WorkflowLaunchConflict(ValueError):
+    """The same launch key was used for different workflow inputs."""
+
+
 class WorkflowRunStore:
     def __init__(self, db_path: str = "") -> None:
         path = Path(db_path) if db_path else get_config_dir() / "workflow_runs.db"
@@ -59,6 +63,14 @@ class WorkflowRunStore:
                     ON workflow_runs(created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_workflow_runs_status
                     ON workflow_runs(status);
+
+                CREATE TABLE IF NOT EXISTS workflow_launch_keys (
+                    definition_id TEXT NOT NULL,
+                    launch_key TEXT NOT NULL,
+                    input_hash TEXT NOT NULL,
+                    run_id TEXT NOT NULL REFERENCES workflow_runs(id),
+                    PRIMARY KEY (definition_id, launch_key)
+                );
 
                 CREATE TABLE IF NOT EXISTS workflow_steps (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -160,9 +172,46 @@ class WorkflowRunStore:
         context: Mapping[str, Any],
         parent_run_id: str | None = None,
     ) -> dict[str, Any]:
+        run, _ = self.create_run_once(
+            workflow_name=workflow_name,
+            graph=graph,
+            initial_input=initial_input,
+            context=context,
+            parent_run_id=parent_run_id,
+        )
+        return run
+
+    def create_run_once(
+        self,
+        *,
+        workflow_name: str,
+        graph: Mapping[str, Any],
+        initial_input: str,
+        context: Mapping[str, Any],
+        parent_run_id: str | None = None,
+        launch: tuple[str, str] | None = None,
+    ) -> tuple[dict[str, Any], bool]:
         run_id = uuid.uuid4().hex
         now = time.time()
-        with self._lock:
+        with self._lock, self._conn:
+            if launch is not None:
+                input_data = json.dumps([initial_input, dict(context)], sort_keys=True)
+                input_hash = hashlib.sha256(input_data.encode()).hexdigest()
+                self._conn.execute("BEGIN IMMEDIATE")
+                existing = self._conn.execute(
+                    "SELECT input_hash, run_id FROM workflow_launch_keys "
+                    "WHERE definition_id = ? AND launch_key = ?",
+                    launch,
+                ).fetchone()
+                if existing is not None:
+                    if existing["input_hash"] != input_hash:
+                        raise WorkflowLaunchConflict(
+                            "This launch key was already used with different inputs."
+                        )
+                    run = self.get_run(existing["run_id"])
+                    assert run is not None
+                    return run, False
+
             self._conn.execute(
                 "INSERT INTO workflow_runs "
                 "(id, workflow_name, status, graph_json, initial_input, "
@@ -178,8 +227,14 @@ class WorkflowRunStore:
                     now,
                 ),
             )
-            self._conn.commit()
-        return self.get_run(run_id)  # type: ignore[return-value]
+            if launch is not None:
+                self._conn.execute(
+                    "INSERT INTO workflow_launch_keys VALUES (?, ?, ?, ?)",
+                    (*launch, input_hash, run_id),
+                )
+        run = self.get_run(run_id)
+        assert run is not None
+        return run, True
 
     def mark_running(self, run_id: str) -> None:
         self._update(

@@ -205,6 +205,50 @@ def test_saved_definition_survives_runtime_restart(tmp_path, monkeypatch) -> Non
         app.state.workflow_runtime.close()
 
 
+def test_saved_workflow_launch_key_reuses_run_after_restart(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+
+    monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(tmp_path / "workflow.db"))
+    app = FastAPI()
+    app.state.workflow_system = None
+    app.include_router(create_workflow_runs_router())
+
+    with TestClient(app) as client:
+        saved = client.post("/v1/workflows/definitions", json={
+            "name": "Retryable launch",
+            "nodes": [{"id": "format", "type": "transform"}],
+        }).json()
+        path = f"/v1/workflows/definitions/{saved['id']}/runs"
+        payload = {"initial_input": "one request", "context": {"count": 1}}
+        headers = {"Idempotency-Key": "event-1"}
+
+        def launch():
+            return client.post(path, json=payload, headers=headers)
+
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            pending = [workers.submit(launch), workers.submit(launch)]
+            first, second = (future.result() for future in pending)
+        assert first.status_code == second.status_code == 202
+        assert first.json()["id"] == second.json()["id"]
+        assert client.get("/v1/workflows/runs").json()["count"] == 1
+
+        app.state.workflow_runtime.close()
+        app.state.workflow_runtime = None
+        replay = launch()
+        assert replay.status_code == 202
+        assert replay.json()["id"] == first.json()["id"]
+        conflict = client.post(
+            path, json={"initial_input": "different"}, headers=headers
+        )
+        assert conflict.status_code == 409
+        assert client.get("/v1/workflows/runs").json()["count"] == 1
+
+        no_key = client.post(path, json=payload)
+        assert no_key.status_code == 202
+        assert no_key.json()["id"] != first.json()["id"]
+        app.state.workflow_runtime.close()
+
+
 def test_workflow_run_routes_persist_execution(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(tmp_path / "workflow.db"))
     app = FastAPI()

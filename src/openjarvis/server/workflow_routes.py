@@ -6,13 +6,17 @@ import os
 import threading
 from typing import Any, Dict
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
 from openjarvis.server.approval_routes import get_approval_store
 from openjarvis.workflow.runtime import WorkflowRuntime, WorkflowRuntimeStopping
 from openjarvis.workflow.serialization import graph_from_dict, graph_to_dict
-from openjarvis.workflow.store import WorkflowDefinitionConflict, WorkflowRunStore
+from openjarvis.workflow.store import (
+    WorkflowDefinitionConflict,
+    WorkflowLaunchConflict,
+    WorkflowRunStore,
+)
 
 
 class WorkflowDefinition(BaseModel):
@@ -174,14 +178,22 @@ def create_workflow_runs_router() -> APIRouter:
 
     @root.post("/definitions/{definition_id}/runs", status_code=202)
     def run_definition(
-        definition_id: str, payload: WorkflowInputs, request: Request
+        definition_id: str,
+        payload: WorkflowInputs,
+        request: Request,
+        launch_key: str | None = Header(
+            None, alias="Idempotency-Key", min_length=1, max_length=128
+        ),
     ) -> dict:
         try:
             return _runtime(request).submit_saved(
                 definition_id,
                 initial_input=payload.initial_input,
                 context=payload.context,
+                launch_key=launch_key,
             )
+        except WorkflowLaunchConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except KeyError as exc:
             raise HTTPException(
                 status_code=404, detail="Workflow definition not found"
