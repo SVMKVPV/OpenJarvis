@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  createManagedAgent, fetchManagedAgents, fetchTemplates, runManagedAgent, type ManagedAgent,
+  createManagedAgent, fetchManagedAgents, fetchTemplates, recoverManagedAgent, runManagedAgent, type ManagedAgent,
 } from '../lib/api';
 import { WorkstationAgentInbox } from './WorkstationAgentInbox';
 
@@ -23,6 +23,7 @@ export function WorkstationAgentActivity({
   const [unavailable, setUnavailable] = useState(false);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [starting, setStarting] = useState(false);
+  const [recovering, setRecovering] = useState(false);
   const [creating, setCreating] = useState(false);
   const [creationError, setCreationError] = useState('');
   const [runMessage, setRunMessage] = useState<{ id: string; text: string } | null>(null);
@@ -51,6 +52,7 @@ export function WorkstationAgentActivity({
   }, [refreshVersion]);
 
   const selected = agents?.find((agent) => agent.id === agentId);
+  const canRecover = selected && ['error', 'stalled', 'needs_attention'].includes(selected.status);
   const createRoleAgent = async () => {
     if (!templateId || agentId || creating || unavailable || agents === null) return;
     setCreating(true);
@@ -79,7 +81,7 @@ export function WorkstationAgentActivity({
   };
 
   const startRun = async () => {
-    if (!selected || unavailable || starting || selected.status !== 'idle') return;
+    if (!selected || unavailable || starting || recovering || selected.status !== 'idle') return;
     setStarting(true);
     setRunMessage(null);
     try {
@@ -95,6 +97,20 @@ export function WorkstationAgentActivity({
       });
     } finally {
       setStarting(false);
+      setRefreshVersion((version) => version + 1);
+    }
+  };
+  const recover = async () => {
+    if (!selected || !canRecover || unavailable || starting || recovering) return;
+    setRecovering(true);
+    setRunMessage(null);
+    try {
+      await recoverManagedAgent(selected.id);
+      setRunMessage({ id: selected.id, text: 'Agent reset. Select Run linked agent to start a new run.' });
+    } catch (error) {
+      setRunMessage({ id: selected.id, text: error instanceof Error ? error.message : 'Could not recover the agent.' });
+    } finally {
+      setRecovering(false);
       setRefreshVersion((version) => version + 1);
     }
   };
@@ -124,10 +140,15 @@ export function WorkstationAgentActivity({
         <div>
           <p>Status: {selected.status.replace(/_/g, ' ')}</p>
           <p>{selected.current_activity || 'No active task reported.'}</p>
-          <button type="button" disabled={starting || selected.status !== 'idle'}
+          <button type="button" disabled={starting || recovering || selected.status !== 'idle'}
             onClick={() => void startRun()}>
             {starting ? 'Starting…' : 'Run linked agent'}
           </button>
+          {canRecover && (
+            <button type="button" disabled={starting || recovering} onClick={() => void recover()}>
+              {recovering ? 'Recovering…' : 'Recover linked agent'}
+            </button>
+          )}
           {runMessage?.id === selected.id && <p role="status">{runMessage.text}</p>}
           <WorkstationAgentInbox key={selected.id} agentId={selected.id}
             brainContext={brainContext} onShare={onShare} />

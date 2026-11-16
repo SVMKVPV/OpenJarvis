@@ -262,6 +262,13 @@ class TestAgentManagerRoutes:
         refreshed = manager.get_agent(agent["id"])
         assert refreshed["status"] == "idle"
 
+    def test_recovery_cannot_reset_a_running_agent(self, manager, client):
+        agent = manager.create_agent(name="Busy agent")
+        manager.start_tick(agent["id"])
+        response = client.post(f"/v1/managed-agents/{agent['id']}/recover")
+        assert response.status_code == 409
+        assert manager.get_agent(agent["id"])["status"] == "running"
+
     def test_list_error_agents(self, manager, client):
         manager.create_agent(name="ok", agent_type="simple")
         err = manager.create_agent(name="broken", agent_type="simple")

@@ -435,10 +435,15 @@ class AgentManager:
 
     @_db_locked
     def recover_agent(self, agent_id: str) -> Optional[Dict[str, Any]]:
-        checkpoint = self.get_latest_checkpoint(agent_id)
-        # Always reset to idle — clearing the error state is the primary purpose
-        self.update_agent(agent_id, status="idle")
-        return checkpoint
+        with self._conn:
+            updated = self._conn.execute(
+                "UPDATE managed_agents SET status = 'idle', updated_at = ? "
+                "WHERE id = ? AND status != 'running'",
+                (time.time(), agent_id),
+            )
+            if not updated.rowcount and self.get_agent(agent_id) is not None:
+                raise ValueError("Agent is already running")
+            return self.get_latest_checkpoint(agent_id)
 
     @staticmethod
     def _row_to_checkpoint(row: sqlite3.Row) -> Dict[str, Any]:
