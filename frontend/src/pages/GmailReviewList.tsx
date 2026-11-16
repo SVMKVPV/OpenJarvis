@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { fetchGmailReviewCandidates, type GmailReviewCandidate } from '../lib/api';
 
-export function GmailReviewList() {
+export function GmailReviewList({ onOpenWorkflow }: { onOpenWorkflow: (reference: string) => void }) {
   const [candidates, setCandidates] = useState<GmailReviewCandidate[] | null>(null);
   const [message, setMessage] = useState('Checking the Gmail index…');
   const [revision, setRevision] = useState(0);
@@ -39,7 +39,7 @@ export function GmailReviewList() {
               ) : <strong>{subject}</strong>}
               <div>{sender || 'Unknown sender'} · <time dateTime={received_at}>{new Date(received_at).toLocaleString()}</time></div>
               {message_id && id === 'gmail:' + message_id && (
-                <div>Workflow reference <code>{id}</code></div>
+                <button type="button" onClick={() => onOpenWorkflow(id)}>Open reply workflow</button>
               )}
             </li>
           ))}

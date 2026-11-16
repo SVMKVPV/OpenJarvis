@@ -145,7 +145,9 @@ const ITEMS: WorkItem[] = [
   { id: 'tests', folder: '06-tests', name: 'command-center.spec.ts', type: 'QUALITY', state: 'COMPLETE', owner: 'Local AI', detail: 'Keyboard, mobile, disconnected-state, and no-network verification.' },
 ];
 
-export function SoftwareEngineeringWorkspace({ initialRunId = '' }: { initialRunId?: string } = {}) {
+export function SoftwareEngineeringWorkspace({
+  initialRunId = '', initialGmailReference = '',
+}: { initialRunId?: string; initialGmailReference?: string } = {}) {
   const [folders, setFolders] = useState(INITIAL_FOLDERS);
   const [selectedFolder, setSelectedFolder] = useState('04-frontend');
   const [selectedItemId, setSelectedItemId] = useState('shell');
@@ -273,7 +275,7 @@ export function SoftwareEngineeringWorkspace({ initialRunId = '' }: { initialRun
   const editingDefinitionId = editingDefinition?.id;
   const workflowNameInput = useRef<HTMLInputElement>(null);
   const selectedDefinition = definitions.find((item) => item.id === definitionId);
-  const [workflowInput, setWorkflowInput] = useState('');
+  const [workflowInput, setWorkflowInput] = useState(initialGmailReference);
   const [workflowStart, setWorkflowStart] = useState('');
   const [definitionMessage, setDefinitionMessage] = useState('Loading saved workflows…');
   const [launchingSaved, setLaunchingSaved] = useState(false);
@@ -281,8 +283,15 @@ export function SoftwareEngineeringWorkspace({ initialRunId = '' }: { initialRun
     definitionId: string; input: string; key: string; scheduledAt?: number;
   } | null>(null);
   const [savingDefinition, setSavingDefinition] = useState(false);
-  const [workflowName, setWorkflowName] = useState(GUARDED_DELIVERY.name);
-  const [workflowGraph, setWorkflowGraph] = useState(GUARDED_GRAPH_JSON);
+  const [workflowName, setWorkflowName] = useState(
+    initialGmailReference ? EMAIL_REPLY_REVIEW.name : GUARDED_DELIVERY.name,
+  );
+  const [workflowGraph, setWorkflowGraph] = useState(() => initialGmailReference
+    ? JSON.stringify({ nodes: EMAIL_REPLY_REVIEW.nodes, edges: EMAIL_REPLY_REVIEW.edges }, null, 2)
+    : GUARDED_GRAPH_JSON);
+  useEffect(() => {
+    if (initialGmailReference) workflowNameInput.current?.focus();
+  }, [initialGmailReference]);
   const draftGraph = useMemo(() => readDraftGraph(workflowGraph), [workflowGraph]);
   const [graphEditorOpen, setGraphEditorOpen] = useState(false);
   const stepElements = useRef(new Map<string, HTMLLIElement>());
@@ -815,6 +824,7 @@ export function SoftwareEngineeringWorkspace({ initialRunId = '' }: { initialRun
               loadWorkflowEditor(EMAIL_REPLY_REVIEW);
               setDefinitionMessage('Gmail reply workflow loaded. Save it, then run it with a distinctive subject or the indexed Gmail reference (gmail:…).');
             }}>Load Gmail reply review starter</button>
+            {initialGmailReference && <small>Gmail reference for this workflow run <code>{initialGmailReference}</code></small>}
             <label>Workflow name
               <input ref={workflowNameInput} value={workflowName}
                 onChange={(event) => setWorkflowName(event.target.value)} />
