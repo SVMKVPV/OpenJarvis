@@ -42,6 +42,10 @@ class RescheduleWorkflowRun(BaseModel):
     expected_scheduled_at: float = Field(gt=0, allow_inf_nan=False)
 
 
+class RetryWorkflowInput(BaseModel):
+    initial_input: str | None = None
+
+
 class WorkflowDefinitionUpdate(WorkflowDefinition):
     expected_revision: str | None = None
 
@@ -149,9 +153,14 @@ def create_workflow_runs_router() -> APIRouter:
         return {"id": run_id, "cancel_requested": True}
 
     @router.post("/{run_id}/retry", status_code=status.HTTP_202_ACCEPTED)
-    async def retry_run(run_id: str, request: Request) -> dict:
+    @router.post("/{run_id}/retry-with-input", status_code=status.HTTP_202_ACCEPTED)
+    async def retry_run(
+        run_id: str, request: Request, payload: RetryWorkflowInput | None = None
+    ) -> dict:
         try:
-            return _runtime(request).retry(run_id)
+            return _runtime(request).retry(
+                run_id, initial_input=payload.initial_input if payload else None
+            )
         except KeyError as exc:
             raise HTTPException(
                 status_code=404, detail="Workflow run not found"

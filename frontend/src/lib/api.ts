@@ -1367,9 +1367,16 @@ export type WorkflowRunAction = 'cancel' | 'retry' | 'resume';
 export async function requestWorkflowRunAction(
   id: string,
   action: WorkflowRunAction,
+  retryInput?: string,
 ): Promise<WorkflowRunSummary | undefined> {
-  const res = await apiFetch(`/v1/workflows/runs/${encodeURIComponent(id)}/${action}`, {
+  const editedRetry = action === 'retry' && retryInput !== undefined;
+  const endpoint = editedRetry ? 'retry-with-input' : action;
+  const res = await apiFetch(`/v1/workflows/runs/${encodeURIComponent(id)}/${endpoint}`, {
     method: 'POST',
+    ...(editedRetry && {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ initial_input: retryInput }),
+    }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null);

@@ -454,3 +454,58 @@ def test_workflow_run_route_rejects_empty_graph(tmp_path, monkeypatch) -> None:
         )
 
     assert response.status_code == 422
+
+def test_retry_with_input_preserves_original_run_and_graph(tmp_path, monkeypatch):
+    from openjarvis.connectors.store import KnowledgeStore
+    from openjarvis.server import approval_routes
+    from openjarvis.tools.approval_store import ApprovalStore
+
+    monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(tmp_path / "workflow.db"))
+    monkeypatch.setattr("openjarvis.core.config.DEFAULT_CONFIG_DIR", tmp_path)
+    approvals = ApprovalStore(str(tmp_path / "approvals.db"))
+    monkeypatch.setattr(approval_routes, "_store", approvals)
+    with KnowledgeStore() as store:
+        store.store(
+            "Corrected query matches Kestrel", source="upload", doc_type="document"
+        )
+    app = FastAPI()
+    app.state.workflow_system = None
+    app.include_router(create_workflow_runs_router())
+    base = "/v1/workflows/runs"
+    try:
+        with TestClient(app) as client:
+            def wait(run_id, state):
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    run = client.get(f"{base}/{run_id}").json()
+                    if run["status"] == state:
+                        return run
+                    time.sleep(0.02)
+                pytest.fail(f"Run did not reach {state}")
+
+            started = client.post(base, json={
+                "initial_input": "NonexistentReference",
+                "nodes": [{"id": "search", "type": "tool", "config": {
+                    "tool_name": "knowledge_search", "query_from_input": True,
+                    "source": "upload", "require_match": True,
+                }}],
+            })
+            original_id = started.json()["id"]
+            original = wait(original_id, "failed")
+            retried = client.post(
+                f"{base}/{original_id}/retry-with-input",
+                json={"initial_input": "Kestrel"},
+            )
+            assert retried.status_code == 202
+            updated = wait(retried.json()["id"], "succeeded")
+            assert updated["parent_run_id"] == original_id
+            assert updated["initial_input"] == "Kestrel"
+            assert updated["graph"] == original["graph"]
+            assert client.get(f"{base}/{original_id}").json() == original
+            legacy = client.post(f"{base}/{original_id}/retry")
+            assert legacy.status_code == 202
+            legacy_run = wait(legacy.json()["id"], "failed")
+            assert legacy_run["initial_input"] == original["initial_input"]
+    finally:
+        app.state.workflow_runtime.close()
+        approvals.close()

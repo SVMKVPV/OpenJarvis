@@ -211,7 +211,7 @@ class WorkflowRuntime:
                 scheduled_at=scheduled_at,
             )
 
-    def retry(self, run_id: str) -> dict[str, Any]:
+    def retry(self, run_id: str, *, initial_input: str | None = None) -> dict[str, Any]:
         with self._lock:
             if self._stopping:
                 raise WorkflowRuntimeStopping("Workflow runtime is stopping")
@@ -224,7 +224,9 @@ class WorkflowRuntime:
             )
         return self.submit(
             graph_from_dict(previous["graph"]),
-            initial_input=previous["initial_input"],
+            initial_input=(
+                previous["initial_input"] if initial_input is None else initial_input
+            ),
             context=previous["context"],
             parent_run_id=run_id,
         )

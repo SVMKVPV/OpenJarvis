@@ -286,12 +286,12 @@ export function SoftwareEngineeringWorkspace({
     setInspectedRunId(id);
   };
 
-  const actOnRun = async (id: string, action: WorkflowRunAction) => {
+  const actOnRun = async (id: string, action: WorkflowRunAction, retryInput?: string) => {
     if (runActionPending) return;
     setRunActionPending(true);
     setRunActionMessage(null);
     try {
-      const retry = await requestWorkflowRunAction(id, action);
+      const retry = await requestWorkflowRunAction(id, action, retryInput);
       if (action === 'cancel') {
         setRunDetail((current) => current?.id === id
           ? { ...current, cancel_requested: true }
@@ -1195,6 +1195,21 @@ export function SoftwareEngineeringWorkspace({
                         onClick={() => void actOnRun(runDetail.id, 'resume')}>Request resume</button>
                     )}
                   </div>
+                  {['failed', 'cancelled', 'interrupted'].includes(runDetail.status) && (
+                    <details key={runDetail.id}>
+                      <summary>Retry with edited input</summary>
+                      <form onSubmit={(event) => {
+                        event.preventDefault();
+                        const input = new FormData(event.currentTarget).get('retryInput');
+                        if (typeof input === 'string') void actOnRun(runDetail.id, 'retry', input);
+                      }}>
+                        <label>Retry input
+                          <textarea name="retryInput" rows={3} defaultValue={runDetail.initial_input} />
+                        </label>
+                        <button type="submit" disabled={runActionPending}>Run with edited input</button>
+                      </form>
+                    </details>
+                  )}
                   {runActionMessage?.id === runDetail.id && <p role="status">{runActionMessage.text}</p>}
                   {runGraph && runGraph.nodes.length > 0 && (
                     <WorkflowDraftMap label="Workflow run diagram" steps={runGraph.nodes}
