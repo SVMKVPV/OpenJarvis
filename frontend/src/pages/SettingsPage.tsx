@@ -559,6 +559,11 @@ export function SettingsPage() {
                 </span>
               </div>
             </SettingRow>
+            {serverInfo && (
+              <SettingRow label="Backend build" description="Version reported by the connected backend">
+                <code className="text-xs break-all">{serverInfo.backend_version ?? 'Unavailable'}</code>
+              </SettingRow>
+            )}
             <SettingRow label="API URL" description="Set if backend runs on a different port or host">
               <input
                 type="text"

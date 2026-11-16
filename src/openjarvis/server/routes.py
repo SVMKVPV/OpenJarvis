@@ -13,6 +13,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
+from openjarvis import __version__
 from openjarvis.core.paths import get_config_dir
 from openjarvis.core.types import Message, Role, ToolCall
 from openjarvis.server.model_capabilities import is_embed_only_model
@@ -1439,13 +1440,14 @@ async def reset_telemetry():
 
 @router.get("/v1/info")
 async def server_info(request: Request):
-    """Return server configuration: model, agent, engine."""
+    """Return the backend version and active inference configuration."""
     agent = getattr(request.app.state, "agent", None)
     agent_id = getattr(agent, "agent_id", None) if agent else None
     # Fall back to configured agent name if agent didn't instantiate
     if agent_id is None:
         agent_id = getattr(request.app.state, "agent_name", None)
     return {
+        "backend_version": __version__,
         "model": getattr(request.app.state, "model", ""),
         "agent": agent_id,
         "engine": getattr(request.app.state, "engine_name", ""),

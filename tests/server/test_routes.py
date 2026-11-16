@@ -1754,6 +1754,14 @@ class TestModelsEndpoint:
 # ---------------------------------------------------------------------------
 
 
+def test_server_info_reports_backend_version(client):
+    from openjarvis import __version__
+
+    response = client.get("/v1/info")
+    assert response.status_code == 200
+    assert response.json()["backend_version"] == __version__
+
+
 class TestHealthEndpoint:
     def test_healthy(self, client):
         resp = client.get("/health")

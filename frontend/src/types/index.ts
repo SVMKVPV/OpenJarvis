@@ -186,6 +186,7 @@ export interface SavingsData {
 }
 
 export interface ServerInfo {
+  backend_version?: string;
   model: string;
   agent: string | null;
   engine: string;

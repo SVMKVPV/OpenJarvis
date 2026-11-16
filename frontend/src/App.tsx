@@ -101,8 +101,23 @@ export default function App() {
   // Fetch server info
   useEffect(() => {
     if (!setupDone) return;
-    fetchServerInfo().then(setServerInfo).catch(() => {});
-  }, [setupDone, setServerInfo]);
+    let cancelled = false;
+    let timer: number | undefined;
+    setServerInfo(null);
+    const refresh = async () => {
+      try {
+        const info = await fetchServerInfo();
+        if (!cancelled) setServerInfo(info);
+      } catch {
+        if (!cancelled) timer = window.setTimeout(() => void refresh(), 5000);
+      }
+    };
+    void refresh();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [setupDone, settings.apiUrl, settings.apiKey, setServerInfo]);
 
   // Poll savings and optionally share to Supabase
   useEffect(() => {
