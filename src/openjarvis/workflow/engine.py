@@ -69,7 +69,7 @@ class WorkflowEngine:
             )
 
         # State: outputs keyed by node_id
-        outputs: Dict[str, str] = {"_input": initial_input, **(resume_outputs or {})}
+        outputs: Dict[str, str] = {**(resume_outputs or {}), "_input": initial_input}
         # Keep the caller's mutable context so durable runtimes can persist
         # approval IDs and other checkpoint state created during execution.
         ctx = context if context is not None else {}

@@ -260,6 +260,67 @@ def test_workflow_launch_routes_return_503_after_runtime_closes(tmp_path) -> Non
             assert response.json()["detail"] == "Workflow runtime is stopping"
 
 
+def test_legacy_workflow_can_be_opened_and_repaired(tmp_path, monkeypatch) -> None:
+    from openjarvis.server import approval_routes
+    from openjarvis.tools.approval_store import ApprovalStore
+
+    monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(tmp_path / "workflow.db"))
+    approvals = ApprovalStore(str(tmp_path / "approvals.db"))
+    monkeypatch.setattr(approval_routes, "_store", approvals)
+    app = FastAPI()
+    app.state.workflow_system = None
+    app.include_router(create_workflow_runs_router())
+    try:
+        with TestClient(app) as client:
+            client.get("/v1/workflows/definitions").raise_for_status()
+            store = app.state.workflow_runtime.store
+            format_node = {
+                "id": "_input", "type": "transform", "transform_expr": "first_line"
+            }
+            result_node = {
+                "id": "result", "type": "transform", "transform_expr": "concatenate"
+            }
+            legacy = store.save_definition({
+                "name": "Legacy",
+                "nodes": [format_node, result_node],
+                "edges": [{"source": "_input", "target": "result"}],
+            })
+            path = f"/v1/workflows/definitions/{legacy['id']}"
+            assert client.get(path).json() == legacy
+            launch = client.post(f"{path}/runs", json={})
+            assert launch.status_code == 400
+            assert "reserved for the workflow input" in launch.json()["detail"]
+            assert store.list_runs() == []
+            repair = client.put(path, json={
+                "name": "Legacy",
+                "nodes": [{**format_node, "id": "format"}, result_node],
+                "edges": [{"source": "format", "target": "result"}],
+                "expected_revision": legacy["revision"],
+            })
+            assert repair.status_code == 200
+            started = client.post(
+                f"{path}/runs", json={"initial_input": "first\nsecond"}
+            )
+            assert started.status_code == 202
+            run_id = started.json()["id"]
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                run = client.get(f"/v1/workflows/runs/{run_id}").json()
+                if run["status"] == "succeeded":
+                    assert run["final_output"] == "first"
+                    assert [step["node_id"] for step in run["steps"]] == [
+                        "format", "result",
+                    ]
+                    break
+                assert run["status"] in {"queued", "running"}, run
+                time.sleep(0.01)
+            else:
+                pytest.fail("Repaired workflow did not finish")
+    finally:
+        app.state.workflow_runtime.close()
+        approvals.close()
+
+
 def test_workflow_run_route_rejects_empty_graph(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(tmp_path / "workflow.db"))
     app = FastAPI()

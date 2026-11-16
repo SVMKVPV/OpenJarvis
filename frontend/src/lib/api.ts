@@ -1321,7 +1321,11 @@ export async function runSavedWorkflow(id: string, initialInput: string): Promis
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ initial_input: initialInput }),
   });
-  if (!res.ok) throw new Error(`Failed to start saved workflow (${res.status}).`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(typeof body?.detail === 'string'
+      ? body.detail : `Failed to start saved workflow (${res.status}).`);
+  }
   return res.json();
 }
 

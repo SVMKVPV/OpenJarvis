@@ -23,6 +23,8 @@ class WorkflowGraph:
         self._reverse: Dict[str, List[str]] = defaultdict(list)
 
     def add_node(self, node: WorkflowNode) -> None:
+        if node.id == "_input":
+            raise ValueError("Node id '_input' is reserved for the workflow input")
         if node.id in self._nodes:
             raise ValueError(f"Duplicate node id: {node.id}")
         self._nodes[node.id] = node

@@ -16,6 +16,10 @@ from openjarvis.workflow.types import NodeType, WorkflowEdge, WorkflowNode
 
 
 class TestWorkflowGraph:
+    def test_import_rejects_reserved_input_node(self):
+        with pytest.raises(ValueError, match="reserved for the workflow input"):
+            graph_from_dict({"nodes": [{"id": "_input", "type": "transform"}]})
+
     @pytest.mark.parametrize("count", [0, -1, 1.5, True, None])
     def test_rejects_invalid_loop_count_in_serialized_graph(self, count):
         with pytest.raises(ValueError, match="positive integer max_iterations"):
@@ -153,6 +157,13 @@ class TestWorkflowEngine:
         result = engine.run(wf, initial_input="hello")
         assert result.success
         assert result.final_output == "hello"
+
+    def test_resume_output_cannot_replace_original_workflow_input(self):
+        graph = WorkflowBuilder("input").add_transform("result").build()
+        result = WorkflowEngine().run(
+            graph, initial_input="original", resume_outputs={"_input": "replaced"}
+        )
+        assert result.final_output == "original"
 
     def test_transform_only_reads_connected_predecessor(self):
         graph = (

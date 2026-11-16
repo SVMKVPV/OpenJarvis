@@ -186,6 +186,11 @@ def create_workflow_runs_router() -> APIRouter:
             raise HTTPException(
                 status_code=404, detail="Workflow definition not found"
             ) from exc
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Saved workflow needs repair. {exc}",
+            ) from exc
         except WorkflowRuntimeStopping as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 

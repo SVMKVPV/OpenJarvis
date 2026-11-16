@@ -170,6 +170,7 @@ export function SoftwareEngineeringWorkspace() {
   const [edgeSource, setEdgeSource] = useState('');
   const [edgeTarget, setEdgeTarget] = useState('');
   const [stepId, setStepId] = useState('');
+  const [stepRename, setStepRename] = useState<{ id: string; name: string } | null>(null);
   const [stepType, setStepType] = useState<NewStepType>('transform');
   const [stepSetting, setStepSetting] = useState('');
   const [jsonField, setJsonField] = useState('');
@@ -255,6 +256,26 @@ export function SoftwareEngineeringWorkspace() {
     if (draftGraph) setWorkflowGraph(JSON.stringify({ ...draftGraph, edges }, null, 2));
   };
   const draftEdges = draftGraph?.edges ?? [];
+  const renamedStepId = stepRename?.name.trim();
+  const canRenameStep = Boolean(renamedStepId && renamedStepId !== '_input' &&
+    draftGraph?.nodes.some((node) => node.id === stepRename?.id) &&
+    !draftGraph.nodes.some((node) => node.id === renamedStepId));
+  const renameStep = () => {
+    if (!draftGraph || !stepRename || !renamedStepId || !canRenameStep) return;
+    const oldId = stepRename.id;
+    const nodes = draftGraph.nodes.map((node) => node.id === oldId
+      ? { ...node, id: renamedStepId } : node);
+    const edges = draftEdges.map((edge) => ({
+      ...edge,
+      source: edge.source === oldId ? renamedStepId : edge.source,
+      target: edge.target === oldId ? renamedStepId : edge.target,
+    }));
+    setWorkflowGraph(JSON.stringify({ ...draftGraph, nodes, edges }, null, 2));
+    setEdgeSource((current) => current === oldId ? renamedStepId : current);
+    setEdgeTarget((current) => current === oldId ? renamedStepId : current);
+    setStepRename(null);
+    setDefinitionMessage('Step renamed. Review condition expressions that reference the old ID.');
+  };
   const removeStep = (id: string) => {
     if (!draftGraph) return;
     const nodes = draftGraph.nodes.filter((node) => node.id !== id);
@@ -262,6 +283,7 @@ export function SoftwareEngineeringWorkspace() {
     setWorkflowGraph(JSON.stringify({ ...draftGraph, nodes, edges }, null, 2));
     setEdgeSource((current) => current === id ? '' : current);
     setEdgeTarget((current) => current === id ? '' : current);
+    setStepRename((current) => current?.id === id ? null : current);
   };
   const newStepId = stepId.trim();
   const needsJsonFields = stepSetting === 'json_field' || stepSetting === 'json_select';
@@ -332,6 +354,7 @@ export function SoftwareEngineeringWorkspace() {
     setWorkflowGraph(JSON.stringify({ nodes, edges }, null, 2));
     setEdgeSource('');
     setEdgeTarget('');
+    setStepRename(null);
     workflowNameInput.current?.focus();
   };
 
@@ -598,9 +621,30 @@ export function SoftwareEngineeringWorkspace() {
                     <li key={node.id}>
                       <span>{node.id}</span>{' '}
                       <button type="button" disabled={savingDefinition}
+                        aria-label={`Rename step ${node.id}`}
+                        onClick={() => setStepRename({ id: node.id, name: node.id })}>
+                        Rename
+                      </button>{' '}
+                      <button type="button" disabled={savingDefinition}
                         aria-label={`Remove step ${node.id}`} onClick={() => removeStep(node.id)}>
                         Remove step
                       </button>
+                      {stepRename?.id === node.id && (
+                        <div>
+                          <label>New step ID
+                            <input value={stepRename.name}
+                              onChange={(event) => setStepRename({ id: node.id, name: event.target.value })}
+                              onKeyDown={(event) => {
+                                if (event.key !== 'Enter') return;
+                                event.preventDefault();
+                                if (!savingDefinition) renameStep();
+                              }} />
+                          </label>
+                          <button type="button" disabled={savingDefinition || !canRenameStep}
+                            onClick={renameStep}>Apply rename</button>
+                          <button type="button" onClick={() => setStepRename(null)}>Cancel rename</button>
+                        </div>
+                      )}
                     </li>
                   ))}</ul>
                   <label>Step ID
