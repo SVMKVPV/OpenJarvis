@@ -1730,6 +1730,11 @@ export async function checkLocalOmniRoute(apiKey: string): Promise<number> {
   return invoke<number>('check_local_omniroute', { apiKey });
 }
 
+export async function testLocalOmniRouteModel(apiKey: string, model: string): Promise<void> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<void>('test_local_omniroute_model', { apiKey, model });
+}
+
 export async function setInferenceSource(
   src: InferenceSource & { apiKey?: string },
   options: { pending?: boolean } = {},

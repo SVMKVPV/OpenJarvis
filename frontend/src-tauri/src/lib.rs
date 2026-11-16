@@ -582,20 +582,83 @@ async fn endpoint_reachable(host: &str, timeout: Duration) -> bool {
     false
 }
 
+const OMNIROUTE_LOOPBACK: &str = "http://127.0.0.1:20128/v1";
+
+fn local_omniroute_client(timeout: Duration) -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(timeout)
+        .build()
+        .map_err(|_| "Could not initialize the gateway connection.".into())
+}
+
+#[tauri::command]
+async fn test_local_omniroute_model(api_key: String, model: String) -> Result<(), String> {
+    let api_key = api_key.trim();
+    let model = model.trim();
+    if api_key.is_empty() {
+        return Err("Enter your OmniRoute gateway key.".into());
+    }
+    if model.is_empty() || model.eq_ignore_ascii_case("auto") {
+        return Err("Enter a specific OmniRoute model ID.".into());
+    }
+    let response = local_omniroute_client(Duration::from_secs(60))?
+        .post(format!("{OMNIROUTE_LOOPBACK}/chat/completions"))
+        .bearer_auth(api_key)
+        .json(&serde_json::json!({
+            "model": model,
+            "messages": [{"role": "user", "content": "Reply with OK."}],
+            "max_tokens": 32,
+            "stream": false,
+        }))
+        .send()
+        .await
+        .map_err(|error| {
+            if error.is_timeout() {
+                "OmniRoute did not finish the test within 60 seconds."
+            } else {
+                "Could not reach the local OmniRoute gateway."
+            }
+        })?;
+    match response.status().as_u16() {
+        401 | 403 => {
+            let error = response.json::<serde_json::Value>().await.ok();
+            if error.as_ref().and_then(|body| body.pointer("/error/code"))
+                .and_then(serde_json::Value::as_str) == Some("provider_not_configured")
+            {
+                return Err("The selected model's provider is not configured in OmniRoute.".into());
+            }
+            return Err("OmniRoute denied this inference request. Check the gateway key and its permissions.".into());
+        }
+        400 | 404 => {
+            return Err("OmniRoute rejected the request. Use a model ID from its catalog, including the provider prefix, or a configured combo name.".into());
+        }
+        200 => {}
+        status => return Err(format!("OmniRoute inference returned HTTP {status}.")),
+    }
+    let body = response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|_| "OmniRoute did not return a valid chat response.")?;
+    let content = body
+        .pointer("/choices/0/message/content")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    if content.trim().is_empty() {
+        return Err("OmniRoute returned no reply text for this model.".into());
+    }
+    Ok(())
+}
+
 #[tauri::command]
 async fn check_local_omniroute(api_key: String) -> Result<usize, String> {
     let api_key = api_key.trim();
     if api_key.is_empty() {
         return Err("Enter your OmniRoute gateway key.".into());
     }
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(Duration::from_secs(5))
-        .build()
-        .map_err(|_| "Could not initialize the gateway connection.")?;
-    let response = client
-        .get("http://127.0.0.1:20128/v1/models")
+    let response = local_omniroute_client(Duration::from_secs(5))?
+        .get(format!("{OMNIROUTE_LOOPBACK}/models"))
         .bearer_auth(api_key)
         .send()
         .await
@@ -3554,6 +3617,7 @@ pub fn run() {
             get_cloud_key_status,
             get_inference_source,
             check_local_omniroute,
+            test_local_omniroute_model,
             set_inference_source,
             toggle_overlay,
             hide_overlay,

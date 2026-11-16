@@ -23,6 +23,7 @@ import { deviceTimeZone, listTimeZones, resolveTimeZone, utcOffsetLabel } from '
 import {
   checkHealth,
   checkLocalOmniRoute,
+  testLocalOmniRouteModel,
   fetchSpeechHealth,
   fetchTtsHealth,
   getMemoryStats,
@@ -346,14 +347,19 @@ export function SettingsPage() {
   const [srcMsg, setSrcMsg] = useState('');
   const [checkingGateway, setCheckingGateway] = useState(false);
 
-  const checkGateway = async () => {
+  const checkGateway = async (testModel: boolean) => {
     setCheckingGateway(true);
-    setSrcMsg('Checking OmniRoute…');
+    setSrcMsg(testModel ? 'Testing model…' : 'Checking OmniRoute…');
     try {
-      const count = await checkLocalOmniRoute(customKey);
-      setSrcMsg(count === 0
-        ? 'OmniRoute accepted the key. No models are listed.'
-        : `OmniRoute accepted the key and listed ${count} ${count === 1 ? 'model' : 'models'}.`);
+      if (testModel) {
+        await testLocalOmniRouteModel(customKey, customModel);
+        setSrcMsg(`OmniRoute returned a reply for ${customModel.trim()}.`);
+      } else {
+        const count = await checkLocalOmniRoute(customKey);
+        setSrcMsg(count === 0
+          ? 'OmniRoute accepted the key. No models are listed.'
+          : `OmniRoute accepted the key and listed ${count} ${count === 1 ? 'model' : 'models'}.`);
+      }
     } catch (error) {
       setSrcMsg(typeof error === 'string' ? error : 'Could not check OmniRoute.');
     } finally {
@@ -630,6 +636,7 @@ export function SettingsPage() {
                 <SettingRow label="OmniRoute" description="Use the local gateway and its API key from Dashboard → Endpoints.">
                   <button
                     type="button"
+                    disabled={checkingGateway}
                     className="text-sm px-3 py-1.5 cursor-pointer"
                     onClick={() => {
                       setCustomHost(OMNIROUTE_LOCAL_URL);
@@ -643,12 +650,12 @@ export function SettingsPage() {
                   </button>
                 </SettingRow>
                 <SettingRow label="Server URL" description="e.g. LM Studio: http://localhost:1234/v1">
-                  <input type="text" value={customHost} onChange={(e) => { setCustomHost(e.target.value); setSrcMsg(''); }} placeholder="http://localhost:1234/v1"
+                  <input type="text" value={customHost} disabled={checkingGateway} onChange={(e) => { setCustomHost(e.target.value); setSrcMsg(''); }} placeholder="http://localhost:1234/v1"
                     className="text-sm px-3 py-1.5 rounded-lg outline-none w-56"
                     style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }} />
                 </SettingRow>
                 <SettingRow label="Model" description="Model id served by your endpoint">
-                  <input type="text" value={customModel} onChange={(e) => { setCustomModel(e.target.value); setSrcMsg(''); }} placeholder="qwen2.5-7b-instruct"
+                  <input type="text" value={customModel} disabled={checkingGateway} onChange={(e) => { setCustomModel(e.target.value); setSrcMsg(''); }} placeholder="qwen2.5-7b-instruct"
                     className="text-sm px-3 py-1.5 rounded-lg outline-none w-56"
                     style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }} />
                 </SettingRow>
@@ -670,9 +677,17 @@ export function SettingsPage() {
                 </SettingRow>
                 {isTauri() && customHost.trim() === OMNIROUTE_LOCAL_URL && (
                   <SettingRow label="Connection check" description="Check the gateway key and model catalog before saving.">
-                    <button type="button" disabled={checkingGateway || !customKey.trim()} onClick={checkGateway}>
-                      {checkingGateway ? 'Checking…' : 'Check OmniRoute'}
-                    </button>
+                    <div className="flex flex-wrap gap-3">
+                      <button type="button" disabled={checkingGateway || !customKey.trim()} onClick={() => void checkGateway(false)}>
+                        Check OmniRoute
+                      </button>
+                      <button type="button"
+                        title="Send one short chat request to the selected model"
+                        disabled={checkingGateway || !customKey.trim() || !customModel.trim() || customModel.trim().toLowerCase() === 'auto'}
+                        onClick={() => void checkGateway(true)}>
+                        Test selected model
+                      </button>
+                    </div>
                   </SettingRow>
                 )}
               </>
