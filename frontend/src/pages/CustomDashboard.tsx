@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, Grip, Plus, Settings2, X } from 'lucide-react';
+import { useLocalPreference } from '../hooks/useLocalPreference';
 import './custom-dashboard.css';
 
 export type DashboardWidget = { id: string; stationId: string; station: string; name: string; value: string; detail: string; kind: 'metric' | 'calendar' | 'queue' | 'trend' | 'content' };
@@ -21,7 +22,12 @@ export const DEFAULT_WIDGET_IDS = ['dot-briefing','brain-health','leads-found','
 
 export function CustomDashboard({ widgetIds, setWidgetIds, onOpenStation }: { widgetIds: string[]; setWidgetIds: (ids: string[]) => void; onOpenStation: (id: string) => void }) {
   const [editing, setEditing] = useState(false);
-  const [sizes, setSizes] = useState<Record<string, 'small' | 'medium' | 'large'>>({ calendar: 'large', 'analytics-views': 'medium', 'social-pipeline': 'large' });
+  const [sizes, setSizes] = useLocalPreference<Record<string, 'small' | 'medium' | 'large'>>(
+    'openjarvis.command-center.widget-sizes.v1',
+    () => ({ calendar: 'large', 'analytics-views': 'medium', 'social-pipeline': 'large' }),
+    (value) => !!value && typeof value === 'object' && !Array.isArray(value) &&
+      Object.values(value).every((size) => ['small', 'medium', 'large'].includes(size)),
+  );
   const widgets = useMemo(() => widgetIds.map((id) => DASHBOARD_WIDGETS.find((widget) => widget.id === id)).filter(Boolean) as DashboardWidget[], [widgetIds]);
   const available = DASHBOARD_WIDGETS.filter((widget) => !widgetIds.includes(widget.id));
   const move = (index: number, delta: number) => { const next = [...widgetIds]; const target = index + delta; if (target < 0 || target >= next.length) return; [next[index], next[target]] = [next[target], next[index]]; setWidgetIds(next); };

@@ -19,6 +19,7 @@ import WorkflowBlueprint, {
 import { OrbLoader } from '../components/ui/orb-loader';
 import { useSpeech } from '../hooks/useSpeech';
 import { useTts } from '../hooks/useTts';
+import { useLocalPreference } from '../hooks/useLocalPreference';
 import { streamChat } from '../lib/sse';
 import { useAppStore } from '../lib/store';
 import { SoftwareEngineeringWorkspace } from './SoftwareEngineeringWorkspace';
@@ -464,12 +465,27 @@ function BasicDashboard({ stations, onOpen }: { stations: Station[]; onOpen: (id
 
 export function CommandCenterPage() {
   const [view, setView] = useState<'overview' | 'workstations' | 'workspace' | 'dashboard'>('overview');
-  const [stations, setStations] = useState(INITIAL_STATIONS);
+  const [stations, setStations] = useLocalPreference(
+    'openjarvis.command-center.stations.v1',
+    () => INITIAL_STATIONS,
+    (value) => Array.isArray(value) && value.length > 0 &&
+      value.every((station) => station && ['id', 'code', 'name', 'purpose', 'current', 'reportsTo', 'status']
+        .every((field) => typeof station[field] === 'string')),
+  );
   const [selectedId, setSelectedId] = useState('brain');
-  const [graphs, setGraphs] = useState<Record<string, WorkflowGraph>>(() => Object.fromEntries(INITIAL_STATIONS.map((station) => [station.id, makeGraph(station)])));
+  const [graphs, setGraphs] = useLocalPreference<Record<string, WorkflowGraph>>(
+    'openjarvis.command-center.graphs.v1',
+    () => Object.fromEntries(INITIAL_STATIONS.map((station) => [station.id, makeGraph(station)])),
+    (value) => !!value && typeof value === 'object' && !Array.isArray(value) &&
+      Object.values(value).every((graph) => graph && Array.isArray(graph.nodes) && Array.isArray(graph.edges)),
+  );
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
-  const [dashboardWidgetIds, setDashboardWidgetIds] = useState(DEFAULT_WIDGET_IDS);
+  const [dashboardWidgetIds, setDashboardWidgetIds] = useLocalPreference(
+    'openjarvis.command-center.widget-order.v1',
+    () => DEFAULT_WIDGET_IDS,
+    (value) => Array.isArray(value) && value.every((id) => typeof id === 'string'),
+  );
   const selected = stations.find((station) => station.id === selectedId) ?? stations[0];
   const apps = useMemo(() => STACKS[selected.id] ?? FALLBACK_STACK, [selected.id]);
   const stationWidgets = DASHBOARD_WIDGETS.filter((widget) => widget.stationId === selected.id);
