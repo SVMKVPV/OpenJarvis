@@ -171,6 +171,7 @@ export function SoftwareEngineeringWorkspace() {
         <section className="workflow-runtime">
           <header><div><span>WORKFLOW RUNTIME</span><strong>DURABLE EXECUTION LEDGER</strong></div><em data-state={workflowState}>{workflowState.toUpperCase()}</em></header>
           <button className="workflow-launch" onClick={launchGuardedWorkflow} disabled={workflowState === 'starting'}>{workflowState === 'starting' ? 'STARTING…' : '+ RUN GUARDED DELIVERY'}</button>
+          <p><a href="https://zie619.github.io/n8n-workflows/" target="_blank" rel="noopener noreferrer">Browse optional n8n templates ↗</a><br />Download JSON for manual import into n8n.</p>
           {workflowApprovals.slice(0, 2).map((approval) => <article className="workflow-approval" key={approval.id}><div><b>CEO APPROVAL REQUIRED</b><span>{approval.description}</span></div><button onClick={() => void approveWorkflow(approval)}>APPROVE</button></article>)}
           <div className="workflow-runs">{workflowRuns.slice(0, 5).map((run) => <article key={run.id}><div><strong>{run.workflow_name}</strong><small>{run.id.slice(0, 8)} · {new Date(run.created_at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small></div><em data-status={run.status}>{run.status.replace('_', ' ').toUpperCase()}</em></article>)}</div>
           {!workflowRuns.length && <p>NO WORKFLOW RUNS RECORDED. START A GUARDED DELIVERY TO TEST THE LIVE APPROVAL PATH.</p>}
