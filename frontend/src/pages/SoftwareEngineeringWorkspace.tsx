@@ -34,6 +34,10 @@ type Connector = { id: string; code: string; provider: string; product: string; 
 type WorkItem = { id: string; folder: string; name: string; type: string; state: 'ACTIVE' | 'REVIEW' | 'BLOCKED' | 'COMPLETE'; owner: string; detail: string };
 type Proposal = { id: string; connector: string; text: string; approved: boolean };
 
+const ACTIVE_WORKFLOW_STATES = new Set<WorkflowRunDetail['status']>([
+  'scheduled', 'queued', 'running', 'waiting_approval',
+]);
+
 const GUARDED_DELIVERY = {
   name: 'CEO guarded delivery',
   nodes: [
@@ -174,7 +178,7 @@ export function SoftwareEngineeringWorkspace({ initialRunId = '' }: { initialRun
   const [runDetailError, setRunDetailError] = useState('');
   const [runActionPending, setRunActionPending] = useState(false);
   const [runActionMessage, setRunActionMessage] = useState<{ id: string; text: string } | null>(null);
-  const runIsActive = runDetail !== null && ['queued', 'running', 'waiting_approval'].includes(runDetail.status);
+  const runIsActive = runDetail !== null && ACTIVE_WORKFLOW_STATES.has(runDetail.status);
   const cancellationPending = runIsActive && runDetail.cancel_requested;
   const inspectRun = (id: string) => {
     setRunDetail(null);
@@ -216,9 +220,12 @@ export function SoftwareEngineeringWorkspace({ initialRunId = '' }: { initialRun
   const workflowNameInput = useRef<HTMLInputElement>(null);
   const selectedDefinition = definitions.find((item) => item.id === definitionId);
   const [workflowInput, setWorkflowInput] = useState('');
+  const [workflowStart, setWorkflowStart] = useState('');
   const [definitionMessage, setDefinitionMessage] = useState('Loading saved workflows…');
   const [launchingSaved, setLaunchingSaved] = useState(false);
-  const savedLaunch = useRef<{ definitionId: string; input: string; key: string } | null>(null);
+  const savedLaunch = useRef<{
+    definitionId: string; input: string; key: string; scheduledAt?: number;
+  } | null>(null);
   const [savingDefinition, setSavingDefinition] = useState(false);
   const [workflowName, setWorkflowName] = useState(GUARDED_DELIVERY.name);
   const [workflowGraph, setWorkflowGraph] = useState(GUARDED_GRAPH_JSON);
@@ -268,7 +275,7 @@ export function SoftwareEngineeringWorkspace({ initialRunId = '' }: { initialRun
           ? { ...detail, cancel_requested: true }
           : detail);
         setRunDetailError('');
-        if (!['queued', 'running', 'waiting_approval'].includes(detail.status)) return;
+        if (!ACTIVE_WORKFLOW_STATES.has(detail.status)) return;
       } catch (error) {
         if (controller.signal.aborted) return;
         setRunDetailError(error instanceof Error ? error.message : 'Could not load run details.');
@@ -427,17 +434,26 @@ export function SoftwareEngineeringWorkspace({ initialRunId = '' }: { initialRun
   const launchSaved = async (event: FormEvent) => {
     event.preventDefault();
     if (!definitionId || launchingSaved) return;
+    const scheduledAt = workflowStart ? Date.parse(workflowStart) / 1000 : undefined;
     const previous = savedLaunch.current;
-    const repeated = previous?.definitionId === definitionId && previous.input === workflowInput;
-    const attempt = repeated ? previous : { definitionId, input: workflowInput, key: crypto.randomUUID() };
+    const repeated = previous?.definitionId === definitionId &&
+      previous.input === workflowInput && previous.scheduledAt === scheduledAt;
+    if (!repeated && scheduledAt !== undefined &&
+      (!Number.isFinite(scheduledAt) || scheduledAt <= Date.now() / 1000)) {
+      setDefinitionMessage('Choose a future start time.');
+      return;
+    }
+    const attempt = repeated ? previous : {
+      definitionId, input: workflowInput, key: crypto.randomUUID(), scheduledAt,
+    };
     savedLaunch.current = attempt;
     setLaunchingSaved(true);
     setDefinitionMessage('');
     try {
-      const run = await runSavedWorkflow(attempt.definitionId, attempt.input, attempt.key);
+      const run = await runSavedWorkflow(attempt.definitionId, attempt.input, attempt.key, attempt.scheduledAt);
       savedLaunch.current = null;
       setWorkflowRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
-      setDefinitionMessage(repeated ? 'Workflow run confirmed.' : 'Workflow queued.');
+      setDefinitionMessage(repeated ? 'Workflow run confirmed.' : run.status === 'scheduled' ? 'Workflow scheduled.' : 'Workflow queued.');
     } catch (error) {
       setDefinitionMessage(error instanceof Error ? error.message : 'Could not start workflow.');
     } finally {
@@ -960,8 +976,13 @@ export function SoftwareEngineeringWorkspace({ initialRunId = '' }: { initialRun
               <label>Run input
                 <input value={workflowInput} onChange={(event) => setWorkflowInput(event.target.value)} />
               </label>
+              <label>Start time (optional, local time)
+                <input type="datetime-local" value={workflowStart}
+                  onChange={(event) => setWorkflowStart(event.target.value)} />
+                <small>Scheduled runs start when due and the backend is online.</small>
+              </label>
               <button className="workflow-launch" disabled={!definitionId || launchingSaved}>
-                {launchingSaved ? 'Starting…' : 'Run saved workflow'}
+                {launchingSaved ? 'Submitting…' : workflowStart ? 'Schedule saved workflow' : 'Run saved workflow'}
               </button>
               <button type="button" disabled={!selectedDefinition || savingDefinition}
                 onClick={editSaved} title="Replaces the current editor draft">
@@ -1011,6 +1032,9 @@ export function SoftwareEngineeringWorkspace({ initialRunId = '' }: { initialRun
                 <>
                   <h4>{runDetail.workflow_name}</h4>
                   <p>Run status: {cancellationPending ? 'cancelling' : runDetail.status.replace('_', ' ')}</p>
+                  {runDetail.scheduled_at && (
+                    <p>Scheduled time {new Date(runDetail.scheduled_at * 1000).toLocaleString()}</p>
+                  )}
                   {runDetail.initial_input && (
                     <details>
                       <summary>Original run input</summary>

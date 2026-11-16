@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import os
 import threading
+from pathlib import Path
 from typing import Any, Dict
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
+from openjarvis.core.paths import get_config_dir
 from openjarvis.server.approval_routes import get_approval_store
 from openjarvis.workflow.runtime import WorkflowRuntime, WorkflowRuntimeStopping
 from openjarvis.workflow.serialization import graph_from_dict, graph_to_dict
@@ -30,6 +32,10 @@ class WorkflowInputs(BaseModel):
     context: Dict[str, Any] = Field(default_factory=dict)
 
 
+class ScheduledWorkflowInputs(WorkflowInputs):
+    scheduled_at: float = Field(gt=0, allow_inf_nan=False)
+
+
 class WorkflowDefinitionUpdate(WorkflowDefinition):
     expected_revision: str | None = None
 
@@ -41,19 +47,31 @@ class WorkflowRunRequest(WorkflowDefinition, WorkflowInputs):
 _runtime_creation_lock = threading.Lock()
 
 
+def start_workflow_scheduler(state: Any) -> None:
+    path = Path(os.environ.get("OPENJARVIS_WORKFLOW_DB") or (
+        get_config_dir() / "workflow_runs.db"
+    ))
+    if path.is_file():
+        _workflow_runtime_for_state(state).start_scheduling()
+
+
 def get_workflow_runtime(request: Request) -> WorkflowRuntime:
+    return _workflow_runtime_for_state(request.app.state)
+
+
+def _workflow_runtime_for_state(state: Any) -> WorkflowRuntime:
     with _runtime_creation_lock:
-        runtime = getattr(request.app.state, "workflow_runtime", None)
+        runtime = getattr(state, "workflow_runtime", None)
         if runtime is None:
             db_path = os.environ.get("OPENJARVIS_WORKFLOW_DB", "")
             store = WorkflowRunStore(db_path=db_path)
             runtime = WorkflowRuntime(
-                system=request.app.state.workflow_system,
+                system=state.workflow_system,
                 store=store,
                 approval_store=get_approval_store(),
-                bus=getattr(request.app.state, "bus", None),
+                bus=getattr(state, "bus", None),
             )
-            request.app.state.workflow_runtime = runtime
+            state.workflow_runtime = runtime
         return runtime
 
 
@@ -185,12 +203,35 @@ def create_workflow_runs_router() -> APIRouter:
             None, alias="Idempotency-Key", min_length=1, max_length=128
         ),
     ) -> dict:
+        return launch_definition(definition_id, payload, request, launch_key)
+
+    @root.post("/definitions/{definition_id}/schedule", status_code=202)
+    def schedule_definition(
+        definition_id: str,
+        payload: ScheduledWorkflowInputs,
+        request: Request,
+        launch_key: str | None = Header(
+            None, alias="Idempotency-Key", min_length=1, max_length=128
+        ),
+    ) -> dict:
+        return launch_definition(
+            definition_id, payload, request, launch_key, payload.scheduled_at
+        )
+
+    def launch_definition(
+        definition_id: str,
+        payload: WorkflowInputs,
+        request: Request,
+        launch_key: str | None,
+        scheduled_at: float | None = None,
+    ) -> dict:
         try:
             return _runtime(request).submit_saved(
                 definition_id,
                 initial_input=payload.initial_input,
                 context=payload.context,
                 launch_key=launch_key,
+                scheduled_at=scheduled_at,
             )
         except WorkflowLaunchConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc

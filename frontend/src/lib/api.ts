@@ -1259,7 +1259,7 @@ export async function denyAction(actionId: string): Promise<void> {
 // Durable workflows
 // ---------------------------------------------------------------------------
 
-export type WorkflowRunStatus = 'queued' | 'running' | 'waiting_approval' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
+export type WorkflowRunStatus = 'scheduled' | 'queued' | 'running' | 'waiting_approval' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
 
 export interface WorkflowRunSummary {
   id: string;
@@ -1270,6 +1270,7 @@ export interface WorkflowRunSummary {
   parent_run_id: string | null;
   cancel_requested: boolean;
   created_at: number;
+  scheduled_at?: number | null;
   started_at: number | null;
   finished_at: number | null;
 }
@@ -1366,15 +1367,16 @@ export async function fetchWorkflowDefinition(id: string): Promise<SavedWorkflow
 }
 
 export async function runSavedWorkflow(
-  id: string, initialInput: string, launchKey?: string,
+  id: string, initialInput: string, launchKey?: string, scheduledAt?: number,
 ): Promise<WorkflowRunSummary> {
-  const res = await apiFetch(`/v1/workflows/definitions/${encodeURIComponent(id)}/runs`, {
+  const action = scheduledAt === undefined ? 'runs' : 'schedule';
+  const res = await apiFetch(`/v1/workflows/definitions/${encodeURIComponent(id)}/${action}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...(launchKey ? { 'Idempotency-Key': launchKey } : {}),
     },
-    body: JSON.stringify({ initial_input: initialInput }),
+    body: JSON.stringify({ initial_input: initialInput, scheduled_at: scheduledAt }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null);

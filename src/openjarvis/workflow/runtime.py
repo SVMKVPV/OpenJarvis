@@ -44,6 +44,8 @@ class WorkflowRuntime:
         self._lock = threading.RLock()
         self._stopping = False
         self._stores_closed = False
+        self._schedule_stop = threading.Event()
+        self._scheduler: threading.Thread | None = None
 
     def submit(
         self,
@@ -53,6 +55,7 @@ class WorkflowRuntime:
         context: Mapping[str, Any] | None = None,
         parent_run_id: str | None = None,
         launch: tuple[str, str] | None = None,
+        scheduled_at: float | None = None,
     ) -> dict[str, Any]:
         context = {
             key: value for key, value in (context or {}).items()
@@ -68,19 +71,60 @@ class WorkflowRuntime:
                 context=context,
                 parent_run_id=parent_run_id,
                 launch=launch,
+                scheduled_at=scheduled_at,
             )
             if not created:
                 return run
-            run_id = run["id"]
-            worker = threading.Thread(
-                target=self._execute,
-                args=(run_id, graph, initial_input, context),
-                name=f"workflow-{run_id[:8]}",
-                daemon=True,
-            )
-            self._threads[run_id] = worker
-            worker.start()
+            if scheduled_at is None:
+                self._start_worker(run["id"], graph, initial_input, context)
+            else:
+                self.start_scheduling()
         return run
+
+    def _start_worker(
+        self, run_id: str, graph: WorkflowGraph, initial_input: str, context: dict
+    ) -> None:
+        worker = threading.Thread(
+            target=self._execute,
+            args=(run_id, graph, initial_input, context),
+            name=f"workflow-{run_id[:8]}",
+            daemon=True,
+        )
+        self._threads[run_id] = worker
+        worker.start()
+
+    def start_scheduling(self) -> None:
+        with self._lock:
+            if self._stopping or self._scheduler is not None:
+                return
+            self._scheduler = threading.Thread(
+                target=self._launch_due_runs, name="workflow-scheduler", daemon=True
+            )
+            self._scheduler.start()
+
+    def _launch_due_runs(self) -> None:
+        while not self._schedule_stop.is_set():
+            try:
+                with self._lock:
+                    if self._stopping:
+                        return
+                    now = time.time()
+                    for run_id in self.store.due_runs(now):
+                        if not self.store.claim_scheduled_run(run_id, now):
+                            continue
+                        run = self.store.get_run(run_id, include_graph=True)
+                        assert run is not None
+                        try:
+                            self._start_worker(
+                                run_id, graph_from_dict(run["graph"]),
+                                run["initial_input"], run["context"],
+                            )
+                        except Exception as exc:
+                            self._threads.pop(run_id, None)
+                            self.store.finish(run_id, status="failed", error=str(exc))
+            except Exception:
+                logger.exception("Could not launch scheduled workflow runs")
+            self._schedule_stop.wait(1)
 
     def _execute(
         self,
@@ -151,6 +195,7 @@ class WorkflowRuntime:
         initial_input: str = "",
         context: Mapping[str, Any] | None = None,
         launch_key: str | None = None,
+        scheduled_at: float | None = None,
     ) -> dict[str, Any]:
         with self._lock:
             if self._stopping:
@@ -163,6 +208,7 @@ class WorkflowRuntime:
                 initial_input=initial_input,
                 context=context,
                 launch=(definition_id, launch_key) if launch_key is not None else None,
+                scheduled_at=scheduled_at,
             )
 
     def retry(self, run_id: str) -> dict[str, Any]:
@@ -257,7 +303,10 @@ class WorkflowRuntime:
     def close(self, *, timeout: float = 5.0) -> None:
         with self._lock:
             self._stopping = True
+            self._schedule_stop.set()
             workers = list(self._threads.values())
+            if self._scheduler is not None:
+                workers.append(self._scheduler)
             for run_id in self._threads:
                 self.store.request_cancel(run_id)
         deadline = time.monotonic() + timeout

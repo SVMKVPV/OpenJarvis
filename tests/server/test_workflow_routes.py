@@ -249,6 +249,52 @@ def test_saved_workflow_launch_key_reuses_run_after_restart(tmp_path, monkeypatc
         app.state.workflow_runtime.close()
 
 
+def test_scheduled_workflow_launch_survives_app_restart(tmp_path, monkeypatch):
+    from unittest.mock import MagicMock
+
+    from openjarvis.server.app import create_app
+
+    monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(tmp_path / "workflow.db"))
+    engine = MagicMock()
+    with TestClient(create_app(engine, "test")) as client:
+        saved = client.post("/v1/workflows/definitions", json={
+            "name": "Scheduled launch",
+            "nodes": [{"id": "format", "type": "transform"}],
+        }).json()
+        path = f"/v1/workflows/definitions/{saved['id']}/schedule"
+        payload = {"initial_input": "Scheduled result", "scheduled_at": time.time() + 2}
+        headers = {"Idempotency-Key": "calendar-job"}
+        started = client.post(path, json=payload, headers=headers)
+        assert started.status_code == 202
+        run = started.json()
+        assert run["status"] == "scheduled"
+        assert run["scheduled_at"] == payload["scheduled_at"]
+        other = client.post(path, json={**payload, "scheduled_at": time.time() + 60})
+        cancelled_id = other.json()["id"]
+        cancelled_path = f"/v1/workflows/runs/{cancelled_id}"
+        assert client.post(cancelled_path + "/cancel").status_code == 202
+        assert client.get(cancelled_path).json()["status"] == "cancelled"
+
+    restarted = create_app(engine, "test")
+    with TestClient(restarted) as client:
+        assert restarted.state.workflow_runtime is not None
+        due_path = f"/v1/workflows/runs/{run['id']}"
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            result = client.get(due_path).json()
+            if result["status"] == "succeeded":
+                break
+            time.sleep(.05)
+        else:
+            pytest.fail(f"Scheduled run failed to complete: {result}")
+        assert result["final_output"] == "Scheduled result"
+        assert len(result["steps"]) == 1
+        duplicate = client.post(path, json=payload, headers=headers)
+        assert duplicate.status_code == 202
+        assert duplicate.json()["id"] == run["id"]
+        assert client.get(cancelled_path).json()["steps"] == []
+
+
 def test_workflow_run_routes_persist_execution(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(tmp_path / "workflow.db"))
     app = FastAPI()

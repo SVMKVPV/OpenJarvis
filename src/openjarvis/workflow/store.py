@@ -88,6 +88,17 @@ class WorkflowRunStore:
                     ON workflow_steps(run_id, id);
                 """
             )
+            columns = {row["name"] for row in self._conn.execute(
+                "PRAGMA table_info(workflow_runs)"
+            )}
+            if "scheduled_at" not in columns:
+                self._conn.execute(
+                    "ALTER TABLE workflow_runs ADD COLUMN scheduled_at REAL"
+                )
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_workflow_runs_due "
+                "ON workflow_runs(status, scheduled_at)"
+            )
             # A process that disappeared cannot still own a running thread.
             self._conn.execute(
                 "UPDATE workflow_runs SET status = 'interrupted', "
@@ -190,12 +201,16 @@ class WorkflowRunStore:
         context: Mapping[str, Any],
         parent_run_id: str | None = None,
         launch: tuple[str, str] | None = None,
+        scheduled_at: float | None = None,
     ) -> tuple[dict[str, Any], bool]:
         run_id = uuid.uuid4().hex
         now = time.time()
         with self._lock, self._conn:
             if launch is not None:
-                input_data = json.dumps([initial_input, dict(context)], sort_keys=True)
+                launch_inputs = [initial_input, dict(context)]
+                if scheduled_at is not None:
+                    launch_inputs.append(scheduled_at)
+                input_data = json.dumps(launch_inputs, sort_keys=True)
                 input_hash = hashlib.sha256(input_data.encode()).hexdigest()
                 self._conn.execute("BEGIN IMMEDIATE")
                 existing = self._conn.execute(
@@ -215,16 +230,18 @@ class WorkflowRunStore:
             self._conn.execute(
                 "INSERT INTO workflow_runs "
                 "(id, workflow_name, status, graph_json, initial_input, "
-                "context_json, parent_run_id, created_at) "
-                "VALUES (?, ?, 'queued', ?, ?, ?, ?, ?)",
+                "context_json, parent_run_id, created_at, scheduled_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     run_id,
                     workflow_name,
+                    "scheduled" if scheduled_at is not None else "queued",
                     json.dumps(graph),
                     initial_input,
                     json.dumps(dict(context)),
                     parent_run_id,
                     now,
+                    scheduled_at,
                 ),
             )
             if launch is not None:
@@ -235,6 +252,25 @@ class WorkflowRunStore:
         run = self.get_run(run_id)
         assert run is not None
         return run, True
+
+    def due_runs(self, now: float, limit: int = 20) -> list[str]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id FROM workflow_runs "
+                "WHERE status = 'scheduled' AND scheduled_at <= ? "
+                "ORDER BY scheduled_at, created_at LIMIT ?",
+                (now, limit),
+            ).fetchall()
+        return [row["id"] for row in rows]
+
+    def claim_scheduled_run(self, run_id: str, now: float) -> bool:
+        with self._lock, self._conn:
+            result = self._conn.execute(
+                "UPDATE workflow_runs SET status = 'queued' "
+                "WHERE id = ? AND status = 'scheduled' AND scheduled_at <= ?",
+                (run_id, now),
+            )
+        return bool(result.rowcount)
 
     def mark_running(self, run_id: str) -> None:
         self._update(
@@ -301,9 +337,14 @@ class WorkflowRunStore:
     def request_cancel(self, run_id: str) -> bool:
         with self._lock:
             cursor = self._conn.execute(
-                "UPDATE workflow_runs SET cancel_requested = 1 "
-                "WHERE id = ? AND status IN ('queued', 'running', 'waiting_approval')",
-                (run_id,),
+                "UPDATE workflow_runs SET cancel_requested = 1, "
+                "finished_at = CASE WHEN status = 'scheduled' THEN ? "
+                "ELSE finished_at END, "
+                "status = CASE WHEN status = 'scheduled' THEN 'cancelled' "
+                "ELSE status END "
+                "WHERE id = ? AND status IN "
+                "('scheduled', 'queued', 'running', 'waiting_approval')",
+                (time.time(), run_id),
             )
             self._conn.commit()
             return cursor.rowcount > 0
@@ -371,6 +412,7 @@ class WorkflowRunStore:
             "parent_run_id": row["parent_run_id"],
             "cancel_requested": bool(row["cancel_requested"]),
             "created_at": row["created_at"],
+            "scheduled_at": row["scheduled_at"],
             "started_at": row["started_at"],
             "finished_at": row["finished_at"],
             "steps": [

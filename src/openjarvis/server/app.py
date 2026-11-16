@@ -30,7 +30,10 @@ from openjarvis.server.routes import router
 from openjarvis.server.shared_brain_routes import router as shared_brain_router
 from openjarvis.server.system_audit_routes import router as system_audit_router
 from openjarvis.server.upload_router import router as upload_router
-from openjarvis.server.workflow_routes import create_workflow_runs_router
+from openjarvis.server.workflow_routes import (
+    create_workflow_runs_router,
+    start_workflow_scheduler,
+)
 
 logger = logging.getLogger(__name__)
 _MANAGED_SHUTDOWN_GRACE_SECONDS = 0.25
@@ -344,6 +347,13 @@ def create_app(
         )
     except Exception:
         app.state.workflow_system = None
+
+    @app.on_event("startup")
+    async def _start_workflow_schedules() -> None:
+        try:
+            start_workflow_scheduler(app.state)
+        except Exception:
+            logger.exception("Workflow scheduler startup failed")
 
     @app.on_event("shutdown")
     async def _shutdown_managed_runtime() -> None:
