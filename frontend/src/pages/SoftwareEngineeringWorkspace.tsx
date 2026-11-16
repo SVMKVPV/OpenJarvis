@@ -1,5 +1,6 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Check, ChevronRight, Folder, FolderPlus, Monitor, Plus, Settings2 } from 'lucide-react';
+import { fetchRuntimePlugins, type RuntimePlugin } from '../lib/api';
 import './software-workspace.css';
 
 type Connector = { id: string; code: string; provider: string; product: string; role: string; model: string; status: 'setup' | 'local'; enabled: boolean; contributions: number };
@@ -35,11 +36,32 @@ export function SoftwareEngineeringWorkspace() {
   const [folderName, setFolderName] = useState('');
   const [showAddFolder, setShowAddFolder] = useState(false);
   const [warning, setWarning] = useState('');
+  const [runtimePlugins, setRuntimePlugins] = useState<RuntimePlugin[]>([]);
+  const [pluginCatalogState, setPluginCatalogState] = useState<'loading' | 'online' | 'offline'>('loading');
   const [proposals, setProposals] = useState<Proposal[]>([
     { id: 'p-1', connector: 'OpenAI / ChatGPT', text: 'Prepared the command-center component boundary and preserved existing voice routing.', approved: false },
   ]);
   const visibleItems = useMemo(() => ITEMS.filter((item) => item.folder === selectedFolder), [selectedFolder]);
   const selectedItem = ITEMS.find((item) => item.id === selectedItemId) ?? visibleItems[0] ?? ITEMS[0];
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchRuntimePlugins()
+      .then((items) => {
+        if (cancelled) return;
+        setRuntimePlugins(items);
+        setPluginCatalogState('online');
+      })
+      .catch(() => {
+        if (!cancelled) setPluginCatalogState('offline');
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const pluginCounts = useMemo(() => runtimePlugins.reduce<Record<string, number>>((counts, plugin) => {
+    counts[plugin.kind] = (counts[plugin.kind] ?? 0) + 1;
+    return counts;
+  }, {}), [runtimePlugins]);
 
   const addFolder = (event: FormEvent) => {
     event.preventDefault();
@@ -82,6 +104,13 @@ export function SoftwareEngineeringWorkspace() {
       <aside className="connector-column">
         <header><div><span>AI CONNECTORS</span><strong>CONTRIBUTOR ROSTER</strong></div><em>{connectors.filter((item) => item.enabled).length} ENABLED</em></header>
         <div className="connector-list">{connectors.map((connector) => <article key={connector.id} className={connector.enabled ? 'enabled' : ''}><button className="connector-toggle" aria-label={`${connector.enabled ? 'Disable' : 'Enable'} ${connector.product}`} onClick={() => setConnectors((current) => current.map((item) => item.id === connector.id ? {...item, enabled: !item.enabled} : item))}><i/></button><div className="connector-code">{connector.code}</div><div><strong>{connector.product}</strong><small>{connector.provider} · {connector.model}</small><p>{connector.role}</p></div><button className="connector-config" onClick={() => setConfiguring(configuring === connector.id ? null : connector.id)} aria-label={`Configure ${connector.product}`}><Settings2 size={12}/></button>{configuring === connector.id && <div className="connector-editor"><label>ROLE<input value={connector.role} onChange={(event) => setConnectors((current) => current.map((item) => item.id === connector.id ? {...item, role: event.target.value} : item))}/></label><label>MODEL<input value={connector.model} onChange={(event) => setConnectors((current) => current.map((item) => item.id === connector.id ? {...item, model: event.target.value} : item))}/></label>{connector.id === 'local' && <label>LOCAL ENDPOINT<input value="http://localhost:11434" readOnly/></label>}<small>{connector.status === 'local' ? 'LOCAL CONFIGURATION · NOT PROBED' : 'NEEDS SETUP · NO CREDENTIALS STORED'}</small></div>}</article>)}</div>
+        <section className="runtime-plugins">
+          <header><div><span>BUSINESS PLUGINS</span><strong>OPENJARVIS RUNTIME</strong></div><em data-state={pluginCatalogState}>{pluginCatalogState.toUpperCase()}</em></header>
+          {pluginCatalogState === 'online' ? <>
+            <div className="plugin-counts">{(['connector', 'channel', 'tool', 'agent', 'engine'] as const).map((kind) => <div key={kind}><strong>{pluginCounts[kind] ?? 0}</strong><span>{kind.toUpperCase()}S</span></div>)}</div>
+            <div className="plugin-sample">{runtimePlugins.filter((plugin) => plugin.kind === 'connector').slice(0, 8).map((plugin) => <span key={plugin.id}>{plugin.name}<i>{plugin.enabled ? 'READY' : 'REVIEW'}</i></span>)}</div>
+          </> : <p>{pluginCatalogState === 'loading' ? 'READING LOCAL PLUGIN CATALOG…' : 'START LOCAL AI OR CONNECT A BACKEND TO LOAD OPERATIONAL PLUGINS.'}</p>}
+        </section>
         <section className="environment-preview"><header><div><span>ENVIRONMENT</span><strong>VIEW SURFACE</strong></div><Monitor size={13}/></header><div className="environment-tabs"><button className={environment === 'desktop' ? 'active' : ''} onClick={() => setEnvironment('desktop')}>DESKTOP</button><button className={environment === 'chrome' ? 'active' : ''} onClick={() => setEnvironment('chrome')}>CHROME</button></div>{environment === 'desktop' ? <div className="desktop-frame"><div className="desktop-top">SOFTWARE ENGINEERING DESKTOP</div><div className="desktop-windows"><span>CODE</span><span>TERMINAL</span><span>PREVIEW</span></div><p>DESKTOP CONTROL NOT CONNECTED</p></div> : <div className="chrome-frame"><div><i/><i/><i/><span>localhost / command-center</span></div><strong>OPENJARVIS PREVIEW</strong><p>BROWSER CONTROL NOT CONNECTED</p></div>}</section>
       </aside>
     </div>

@@ -121,6 +121,28 @@ export const apiFetch = (
   return fetch(`${getBase()}${path}`, { ...init, headers });
 };
 
+export type RuntimePlugin = {
+  id: string;
+  name: string;
+  kind: 'connector' | 'channel' | 'tool' | 'agent' | 'engine';
+  source: 'built-in' | 'extension';
+  installed: boolean;
+  enabled: boolean;
+  auth_type: string;
+  description: string;
+  package: string;
+  version: string;
+};
+
+export async function fetchRuntimePlugins(): Promise<RuntimePlugin[]> {
+  const response = await apiFetch('/v1/plugins');
+  if (!response.ok) {
+    throw new Error(`Plugin catalog request failed (${response.status})`);
+  }
+  const payload = await response.json();
+  return Array.isArray(payload.plugins) ? payload.plugins : [];
+}
+
 async function tauriInvoke<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
   const { invoke } = await import('@tauri-apps/api/core');
   const apiUrl = getBase();
