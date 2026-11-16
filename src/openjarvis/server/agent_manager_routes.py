@@ -1676,8 +1676,9 @@ def create_agent_manager_router(
         return agent
 
     @agents_router.patch("/{agent_id}")
-    async def update_agent(agent_id: str, req: UpdateAgentRequest):
-        if not manager.get_agent(agent_id):
+    async def update_agent(agent_id: str, req: UpdateAgentRequest, request: Request):
+        existing = manager.get_agent(agent_id)
+        if not existing:
             raise HTTPException(status_code=404, detail="Agent not found")
         kwargs: Dict[str, Any] = {}
         if req.name is not None:
@@ -1686,7 +1687,19 @@ def create_agent_manager_router(
             kwargs["agent_type"] = req.agent_type
         if req.config is not None:
             kwargs["config"] = req.config
-        return manager.update_agent(agent_id, **kwargs)
+        updated = manager.update_agent(agent_id, **kwargs)
+        scheduler = getattr(request.app.state, "agent_scheduler", None)
+        previous_config = existing.get("config") or {}
+        config = updated.get("config") or {}
+        if scheduler and any(
+            previous_config.get(key) != config.get(key)
+            for key in ("schedule_type", "schedule_value", "timezone")
+        ):
+            if config.get("schedule_type") in ("cron", "interval"):
+                scheduler.register_agent(agent_id)
+            else:
+                scheduler.deregister_agent(agent_id)
+        return updated
 
     @agents_router.delete("/{agent_id}")
     async def delete_agent(agent_id: str):

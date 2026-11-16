@@ -194,6 +194,9 @@ class AgentScheduler:
         for agent_id, info in due:
             if self._stop_event.is_set():
                 break
+            with self._lock:
+                if self._agents.get(agent_id) is not info:
+                    continue
             agent = self._manager.get_agent(agent_id)
             if agent is None or agent["status"] in (
                 "paused",
@@ -212,7 +215,7 @@ class AgentScheduler:
 
             # Update next fire time
             with self._lock:
-                if agent_id in self._agents:
+                if self._agents.get(agent_id) is info:
                     if info["schedule_type"] == "cron":
                         self._agents[agent_id]["next_fire"] = _next_cron_fire(
                             str(info["schedule_value"]),

@@ -50,6 +50,25 @@ class TestAgentManagerRoutes:
         assert resp.status_code == 200
         assert resp.json()["agents"] == []
 
+    def test_schedule_edits_update_scheduler(self, client, manager):
+        from openjarvis.agents.scheduler import AgentScheduler
+
+        scheduler = AgentScheduler(manager, MagicMock())
+        client.app.state.agent_scheduler = scheduler
+        agent = manager.create_agent("Schedule editor", "monitor_operative")
+        agent_id = agent["id"]
+        url = f"/v1/managed-agents/{agent_id}"
+
+        result = client.patch(
+            url, json={"config": {"schedule_type": "interval", "schedule_value": "60"}}
+        )
+        assert result.status_code == 200
+        assert agent_id in scheduler.registered_agents
+
+        result = client.patch(url, json={"config": {"schedule_type": "manual"}})
+        assert result.status_code == 200
+        assert agent_id not in scheduler.registered_agents
+
     def test_sendblue_verify_uses_async_http_client(self, client):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
