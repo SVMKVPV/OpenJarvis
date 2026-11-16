@@ -324,12 +324,13 @@ const ITEMS: WorkItem[] = [
 
 export type WorkspaceEntry = {
   initialRunId?: string;
+  initialDefinitionId?: string;
   initialGmailReference?: string;
   initialStarter?: 'finance' | 'leads' | 'competitor-ads' | 'delivery-quality' | 'builder-research';
 };
 
 export function SoftwareEngineeringWorkspace({
-  initialRunId = '', initialGmailReference = '', initialStarter,
+  initialRunId = '', initialDefinitionId = '', initialGmailReference = '', initialStarter,
 }: WorkspaceEntry = {}) {
   const [folders, setFolders] = useState(INITIAL_FOLDERS);
   const [selectedFolder, setSelectedFolder] = useState('04-frontend');
@@ -468,7 +469,7 @@ export function SoftwareEngineeringWorkspace({
     }
   };
   const [definitions, setDefinitions] = useState<SavedWorkflowDefinition[]>([]);
-  const [definitionId, setDefinitionId] = useState('');
+  const [definitionId, setDefinitionId] = useState(initialDefinitionId);
   const [editingDefinition, setEditingDefinition] = useState<SavedWorkflowDefinition>();
   const editingDefinitionId = editingDefinition?.id;
   const workflowNameInput = useRef<HTMLInputElement>(null);
@@ -567,6 +568,19 @@ export function SoftwareEngineeringWorkspace({
     });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (!initialDefinitionId) return;
+    let active = true;
+    fetchWorkflowDefinition(initialDefinitionId).then((definition) => {
+      if (!active) return;
+      setDefinitions((current) => current.some((item) => item.id === definition.id)
+        ? current : [definition, ...current]);
+    }).catch(() => {
+      if (active) setDefinitionMessage('Could not load the scheduled workflow.');
+    });
+    return () => { active = false; };
+  }, [initialDefinitionId]);
 
   const saveDefinition = async (event: FormEvent) => {
     event.preventDefault();
@@ -1318,7 +1332,8 @@ export function SoftwareEngineeringWorkspace({
           )}
           {selectedDefinition && (
             <WorkflowRecurrenceEditor key={selectedDefinition.id}
-              definitionId={selectedDefinition.id} initialInput={workflowInput} />
+              definitionId={selectedDefinition.id} initialInput={workflowInput}
+              initiallyOpen={selectedDefinition.id === initialDefinitionId} />
           )}
           {definitionMessage && <p role="status">{definitionMessage}</p>}
           {workflowApprovals.map((approval) => {

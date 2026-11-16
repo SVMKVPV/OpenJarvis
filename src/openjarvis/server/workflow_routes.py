@@ -306,6 +306,12 @@ def create_workflow_runs_router() -> APIRouter:
             definition_id, payload, request, launch_key, payload.scheduled_at
         )
 
+    @root.get("/recurrences/upcoming")
+    def upcoming_recurrences(
+        request: Request, limit: int = Query(default=10, ge=1, le=50)
+    ) -> dict:
+        return {"recurrences": _runtime(request).store.upcoming_recurrences(limit)}
+
     @root.get("/definitions/{definition_id}/recurrences")
     def list_recurrences(definition_id: str, request: Request) -> dict:
         return {"recurrences": _runtime(request).store.list_recurrences(definition_id)}

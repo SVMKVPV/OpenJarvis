@@ -1562,6 +1562,19 @@ type WorkflowRecurrenceChange = string
   | { first_due_at: number; interval_seconds: number; initial_input: string }
   | { id: string; paused: boolean };
 
+export type UpcomingWorkflowRecurrence = Pick<
+  WorkflowRecurrence, 'id' | 'next_due_at' | 'interval_seconds'
+> & { definition_id: string; workflow_name: string };
+
+export async function fetchUpcomingWorkflowRecurrences(): Promise<UpcomingWorkflowRecurrence[]> {
+  const response = await apiFetch('/v1/workflows/recurrences/upcoming');
+  const result = await response.json().catch(() => null);
+  if (!response.ok || !Array.isArray(result?.recurrences)) {
+    throw new Error('Recurring schedule calendar unavailable.');
+  }
+  return result.recurrences;
+}
+
 export async function workflowRecurrences(
   definitionId: string,
   action?: WorkflowRecurrenceChange,

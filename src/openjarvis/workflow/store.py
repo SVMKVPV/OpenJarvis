@@ -320,6 +320,24 @@ class WorkflowRunStore:
             ).fetchall()
         return [dict(row) | {"paused": bool(row["paused"])} for row in rows]
 
+    def upcoming_recurrences(self, limit: int) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT recurrence.id, recurrence.definition_id, "
+                "recurrence.next_due_at, "
+                "recurrence.interval_seconds, "
+                "COALESCE(json_extract(definition.graph_json, '$.name'), 'workflow') "
+                "AS workflow_name "
+                "FROM workflow_recurrences AS recurrence "
+                "JOIN workflow_definitions AS definition "
+                "ON definition.id = recurrence.definition_id "
+                "WHERE recurrence.paused = 0 "
+                "ORDER BY recurrence.next_due_at, recurrence.id "
+                "LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def set_recurrence_paused(
         self, definition_id: str, recurrence_id: str, *, paused: bool, now: float
     ) -> dict[str, Any] | None:

@@ -3,7 +3,9 @@ import { CalendarDays, ChevronLeft, ChevronRight, Grip, Plus, Settings2, X } fro
 import { useLocalPreference } from '../hooks/useLocalPreference';
 import {
   fetchGa4Views, fetchGmailReviewCount, fetchIndexedCalendarEvents, fetchLeadCount, fetchPendingApprovals, fetchWorkflowRuns,
+  fetchUpcomingWorkflowRecurrences,
   type Ga4Views, type IndexedCalendarEvent, type PendingApproval, type WorkflowRunSummary,
+  type UpcomingWorkflowRecurrence,
 } from '../lib/api';
 import {
   fetchSocialContentSummary, SOCIAL_CHANNELS, type SocialContentSummary,
@@ -29,11 +31,14 @@ export const DEFAULT_WIDGET_IDS = ['dot-briefing','brain-health','leads-found','
 
 type ScheduledRun = WorkflowRunSummary & { scheduled_at: number };
 
-export function CustomDashboard({ widgetIds, setWidgetIds, onOpenStation, onOpenWorkflow }: {
+export function CustomDashboard({
+  widgetIds, setWidgetIds, onOpenStation, onOpenWorkflow, onOpenRecurringWorkflow,
+}: {
   widgetIds: string[];
   setWidgetIds: (ids: string[]) => void;
   onOpenStation: (id: string) => void;
   onOpenWorkflow: (id: string) => void;
+  onOpenRecurringWorkflow: (definitionId: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[] | null>(null);
@@ -71,6 +76,8 @@ export function CustomDashboard({ widgetIds, setWidgetIds, onOpenStation, onOpen
   }, [showApprovals]);
   const [scheduledRuns, setScheduledRuns] = useState<ScheduledRun[] | null>(null);
   const [calendarMessage, setCalendarMessage] = useState('Checking scheduled workflows…');
+  const [recurringSchedules, setRecurringSchedules] = useState<UpcomingWorkflowRecurrence[]>([]);
+  const [recurrenceMessage, setRecurrenceMessage] = useState('Checking recurring schedules…');
   const [calendarEvents, setCalendarEvents] = useState<IndexedCalendarEvent[] | null>(null);
   const [eventMessage, setEventMessage] = useState('Checking indexed events…');
   const showCalendar = widgetIds.includes('calendar');
@@ -82,8 +89,9 @@ export function CustomDashboard({ widgetIds, setWidgetIds, onOpenStation, onOpen
     const refresh = async () => {
       const now = new Date();
       const localDay = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-      const [runs, events] = await Promise.allSettled([
+      const [runs, events, recurrences] = await Promise.allSettled([
         fetchWorkflowRuns('scheduled'), fetchIndexedCalendarEvents(localDay),
+        fetchUpcomingWorkflowRecurrences(),
       ]);
       if (!active) return;
       if (runs.status === 'fulfilled') {
@@ -95,6 +103,15 @@ export function CustomDashboard({ widgetIds, setWidgetIds, onOpenStation, onOpen
       } else {
         setScheduledRuns(null);
         setCalendarMessage('Workflow calendar unavailable.');
+      }
+      if (recurrences.status === 'fulfilled') {
+        const schedules = recurrences.value.filter((entry) =>
+          Number.isFinite(new Date(entry.next_due_at * 1000).getTime()));
+        setRecurringSchedules(schedules);
+        setRecurrenceMessage(schedules.length ? '' : 'No active recurring schedules.');
+      } else {
+        setRecurringSchedules([]);
+        setRecurrenceMessage('Recurring schedule calendar unavailable.');
       }
       if (events.status === 'fulfilled') {
         setCalendarEvents(events.value);
@@ -264,6 +281,25 @@ export function CustomDashboard({ widgetIds, setWidgetIds, onOpenStation, onOpen
                 </button>
               </li>
             ))}
+          </ul>
+        )}
+        <small>Next recurring starts</small>
+        {recurrenceMessage && <p role="status">{recurrenceMessage}</p>}
+        {recurringSchedules.length > 0 && (
+          <ul className="dashboard-workflow-calendar" aria-label="Next recurring starts">
+            {recurringSchedules.map((schedule) => {
+              const start = new Date(schedule.next_due_at * 1000);
+              return (
+                <li key={schedule.id}>
+                  <button type="button" onClick={() => onOpenRecurringWorkflow(schedule.definition_id)}>
+                    <time dateTime={start.toISOString()}>{start.toLocaleString([], {
+                      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+                    })}</time>
+                    <span>{schedule.workflow_name}</span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
         <small>Indexed Google Calendar events</small>

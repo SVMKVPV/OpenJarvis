@@ -1,15 +1,21 @@
-import { type FormEvent, useEffect, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { type WorkflowRecurrence, workflowRecurrences } from '../lib/api';
 
-export function WorkflowRecurrenceEditor({ definitionId, initialInput }: {
+export function WorkflowRecurrenceEditor({ definitionId, initialInput, initiallyOpen }: {
   definitionId: string;
   initialInput: string;
+  initiallyOpen?: boolean;
 }) {
   const [schedules, setSchedules] = useState<WorkflowRecurrence[]>([]);
   const [firstRun, setFirstRun] = useState('');
   const [interval, setInterval] = useState('60');
   const [pending, setPending] = useState(true);
   const [message, setMessage] = useState('');
+  const scheduleHeading = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (initiallyOpen) scheduleHeading.current?.focus();
+  }, [initiallyOpen]);
 
   useEffect(() => {
     let active = true;
@@ -45,8 +51,8 @@ export function WorkflowRecurrenceEditor({ definitionId, initialInput }: {
   };
 
   return (
-    <details>
-      <summary>Recurring schedules</summary>
+    <details open={initiallyOpen}>
+      <summary ref={scheduleHeading}>Recurring schedules</summary>
       <form className="connector-editor" onSubmit={createSchedule}>
         <label>First run (local time)
           <input type="datetime-local" required value={firstRun}
