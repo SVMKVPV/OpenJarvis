@@ -74,11 +74,17 @@ export default function App() {
           return;
         }
         const models = await fetchModels();
-        if (!cancelled && models.length) setModels(models);
+        if (cancelled) return;
+        if (models.length) {
+          setModels(models);
+        } else if (desktop) {
+          timer = window.setTimeout(check, 10000);
+        }
       } catch {
         // Preserve models already loaded by setup if this refresh fails.
+        if (desktop && !cancelled) timer = window.setTimeout(check, 10000);
       } finally {
-        if (!cancelled && timer === undefined) setModelsLoading(false);
+        if (!cancelled) setModelsLoading(false);
       }
     };
     const check = () => {
