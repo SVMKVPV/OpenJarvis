@@ -143,6 +143,37 @@ def test_saved_definition_survives_runtime_restart(tmp_path, monkeypatch) -> Non
             time.sleep(0.01)
         else:
             pytest.fail("Saved workflow did not finish")
+        replacement = {
+            "name": "Reusable revised",
+            "nodes": [{"id": "next", "type": "transform"}],
+        }
+        response = client.put(
+            f"/v1/workflows/definitions/{saved['id']}", json=replacement
+        )
+        assert response.status_code == 200
+        revised = response.json()
+        assert revised["id"] == saved["id"]
+        assert revised["created_at"] == saved["created_at"]
+        assert revised["graph"]["name"] == replacement["name"]
+        definition_path = f"/v1/workflows/definitions/{saved['id']}"
+        invalid = client.put(
+            definition_path,
+            json={"nodes": [{"id": "bad", "type": "missing_type"}]},
+        )
+        assert invalid.status_code == 400
+        definitions = client.get("/v1/workflows/definitions").json()["definitions"]
+        assert definitions == [revised]
+        launched = client.post(
+            f"{definition_path}/runs", json={"initial_input": "Revised input"}
+        )
+        assert launched.status_code == 202
+        new_run_id = launched.json()["id"]
+        new_run = client.get(f"/v1/workflows/runs/{new_run_id}").json()
+        assert new_run["graph"] == revised["graph"]
+        history = client.get(f"/v1/workflows/runs/{run_id}").json()
+        assert history["graph"] == saved["graph"]
+        missing = client.put("/v1/workflows/definitions/missing", json=replacement)
+        assert missing.status_code == 404
         app.state.workflow_runtime.close()
 
 

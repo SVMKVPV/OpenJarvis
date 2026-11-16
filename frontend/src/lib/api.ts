@@ -1276,9 +1276,11 @@ export interface SavedWorkflowDefinition {
 
 export async function saveWorkflowDefinition(
   definition: Pick<WorkflowRunInput, 'name' | 'nodes' | 'edges'>,
+  definitionId?: string,
 ): Promise<SavedWorkflowDefinition> {
-  const res = await apiFetch('/v1/workflows/definitions', {
-    method: 'POST',
+  const path = '/v1/workflows/definitions';
+  const res = await apiFetch(definitionId ? `${path}/${encodeURIComponent(definitionId)}` : path, {
+    method: definitionId ? 'PUT' : 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(definition),
   });

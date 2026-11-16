@@ -125,6 +125,21 @@ def create_workflow_runs_router() -> APIRouter:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return _runtime(request).store.save_definition(graph_to_dict(graph))
 
+    @root.put("/definitions/{definition_id}")
+    def update_definition(
+        definition_id: str, payload: WorkflowDefinition, request: Request
+    ) -> dict:
+        try:
+            graph = graph_from_dict(payload.model_dump())
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        saved = _runtime(request).store.update_definition(
+            definition_id, graph_to_dict(graph)
+        )
+        if saved is None:
+            raise HTTPException(status_code=404, detail="Workflow definition not found")
+        return saved
+
     @root.get("/definitions")
     def list_definitions(
         request: Request, limit: int = Query(50, ge=1, le=200)

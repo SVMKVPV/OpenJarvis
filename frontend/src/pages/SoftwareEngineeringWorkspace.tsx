@@ -142,6 +142,7 @@ export function SoftwareEngineeringWorkspace() {
   };
   const [definitions, setDefinitions] = useState<SavedWorkflowDefinition[]>([]);
   const [definitionId, setDefinitionId] = useState('');
+  const [editingDefinitionId, setEditingDefinitionId] = useState('');
   const selectedDefinition = definitions.find((item) => item.id === definitionId);
   const [workflowInput, setWorkflowInput] = useState('');
   const [definitionMessage, setDefinitionMessage] = useState('Loading saved workflows…');
@@ -216,10 +217,13 @@ export function SoftwareEngineeringWorkspace() {
           (graph.edges !== undefined && !Array.isArray(graph.edges))) {
         throw new Error('Provide a nonempty nodes array and an optional edges array.');
       }
-      const saved = await saveWorkflowDefinition({ name, nodes: graph.nodes, edges: graph.edges });
+      const saveAsCopy = (event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'copy';
+      const targetId = saveAsCopy ? undefined : editingDefinitionId;
+      const saved = await saveWorkflowDefinition({ name, nodes: graph.nodes, edges: graph.edges }, targetId);
       setDefinitions((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
       setDefinitionId(saved.id);
-      setDefinitionMessage('Workflow saved.');
+      setEditingDefinitionId(saved.id);
+      setDefinitionMessage(targetId ? 'Saved changes to the workflow.' : 'Workflow saved.');
     } catch (error) {
       setDefinitionMessage(error instanceof Error ? error.message : 'Could not save workflow.');
     } finally {
@@ -292,13 +296,14 @@ export function SoftwareEngineeringWorkspace() {
   };
 
   const editSaved = () => {
-    if (!selectedDefinition) return;
+    if (!selectedDefinition || savingDefinition) return;
     const { name, nodes, edges } = selectedDefinition.graph;
     setWorkflowName(name);
+    setEditingDefinitionId(selectedDefinition.id);
     setWorkflowGraph(JSON.stringify({ nodes, edges }, null, 2));
     setEdgeSource('');
     setEdgeTarget('');
-    setDefinitionMessage('Saved workflow loaded into the editor. Save workflow creates a new copy.');
+    setDefinitionMessage('Saved workflow loaded into the editor.');
   };
 
   const exportSaved = () => {
@@ -328,6 +333,7 @@ export function SoftwareEngineeringWorkspace() {
         throw new Error('The workflow JSON needs a name.');
       }
       setWorkflowName(name);
+      setEditingDefinitionId('');
       setWorkflowGraph(JSON.stringify({ nodes, edges }, null, 2));
       setEdgeSource('');
       setEdgeTarget('');
@@ -482,8 +488,13 @@ export function SoftwareEngineeringWorkspace() {
               <input value={workflowName} onChange={(event) => setWorkflowName(event.target.value)} />
             </label>
             <button className="workflow-launch" disabled={!workflowName.trim() || savingDefinition}>
-              {savingDefinition ? 'Saving…' : 'Save workflow'}
+              {savingDefinition ? 'Saving…' : editingDefinitionId ? 'Save changes' : 'Save workflow'}
             </button>
+            {editingDefinitionId && (
+              <button type="submit" value="copy" disabled={!workflowName.trim() || savingDefinition}>
+                Save as copy
+              </button>
+            )}
             <details className="workflow-graph-editor">
               <summary>Edit workflow definition</summary>
               <label>Replace draft from OpenJarvis JSON

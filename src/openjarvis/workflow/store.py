@@ -89,6 +89,18 @@ class WorkflowRunStore:
             )
         return {"id": definition_id, "graph": dict(graph), "created_at": created_at}
 
+    def update_definition(
+        self, definition_id: str, graph: Mapping[str, Any]
+    ) -> dict[str, Any] | None:
+        with self._lock, self._conn:
+            updated = self._conn.execute(
+                "UPDATE workflow_definitions SET graph_json = ? WHERE id = ?",
+                (json.dumps(dict(graph)), definition_id),
+            )
+            if not updated.rowcount:
+                return None
+            return self.get_definition(definition_id)
+
     def get_definition(self, definition_id: str) -> dict[str, Any] | None:
         with self._lock:
             row = self._conn.execute(
