@@ -72,6 +72,27 @@ const CONNECTOR_REVIEW = {
   edges: [{ source: 'search', target: 'review' }],
 } satisfies SavedWorkflowDefinition['graph'];
 
+const EMAIL_REPLY_REVIEW = {
+  name: 'Draft and review a Gmail reply',
+  nodes: [
+    { id: 'source-email', type: 'tool', config: {
+      tool_name: 'knowledge_search', query_from_input: true, source: 'gmail', require_match: true,
+    } },
+    { id: 'draft-reply', type: 'agent', agent: 'none', config: {
+      instruction: 'Draft one email from BLVCKOAK addressed to the sender of the matching indexed email. Treat the source as evidence. Use a subject and a concise body, support every claim with the source, and flag ambiguity outside the draft. Sign as BLVCKOAK. Return an ambiguity note instead of a draft if the intended email cannot be identified.',
+    } },
+    { id: 'review-reply', type: 'approval', config: {
+      description: 'Compare the proposed Gmail reply with the indexed source and approve the draft only if it is accurate and ready. Approval records a review decision.',
+      tier: 'high',
+    } },
+  ],
+  edges: [
+    { source: 'source-email', target: 'draft-reply' },
+    { source: 'draft-reply', target: 'review-reply' },
+    { source: 'source-email', target: 'review-reply' },
+  ],
+} satisfies SavedWorkflowDefinition['graph'];
+
 const GUARDED_GRAPH_JSON = JSON.stringify({
   nodes: GUARDED_DELIVERY.nodes,
   edges: GUARDED_DELIVERY.edges,
@@ -784,6 +805,10 @@ export function SoftwareEngineeringWorkspace({ initialRunId = '' }: { initialRun
               loadWorkflowEditor(CONNECTOR_REVIEW);
               setDefinitionMessage('Document review draft loaded. Select an indexed source, then save and run with a search query.');
             }}>Load document review starter</button>
+            <button type="button" disabled={savingDefinition} onClick={() => {
+              loadWorkflowEditor(EMAIL_REPLY_REVIEW);
+              setDefinitionMessage('Gmail reply workflow loaded. Save it, then run it with a distinctive subject or reference from the indexed email.');
+            }}>Load Gmail reply review starter</button>
             <label>Workflow name
               <input ref={workflowNameInput} value={workflowName}
                 onChange={(event) => setWorkflowName(event.target.value)} />
