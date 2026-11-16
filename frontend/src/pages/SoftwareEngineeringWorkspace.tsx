@@ -194,6 +194,34 @@ const DELIVERY_QUALITY_REVIEW = {
   ],
 } satisfies SavedWorkflowDefinition['graph'];
 
+const BUILDER_RESEARCH_REVIEW = {
+  name: 'Review a System Builder improvement proposal',
+  nodes: [
+    { id: 'research-feeds', type: 'tool', config: {
+      tool_name: 'knowledge_search', query_from_input: true,
+      source: 'news_rss', require_match: true,
+    } },
+    { id: 'improvement-proposal', type: 'agent', agent: 'none', config: {
+      use_shared_brain: true,
+      instruction: [
+        'Draft one possible Command Center improvement. Start with an Ownership check section. Quote the relevant existing work and owner from the Shared Brain brief, or say ownership is unknown.',
+        'In an Evidence section, quote the exact headline and URL from the indexed feed. Distinguish supported capabilities from open questions. Treat details absent from the excerpt as unverified.',
+        'Propose a small prototype, a test with a measurable result and the main integration dependency. If the evidence is too thin, ask for a better source instead of proposing an implementation.',
+        'Return a proposal for human review. Do not claim a change has been implemented, tested, merged or deployed.',
+      ].join('\n'),
+    } },
+    { id: 'proposal-review', type: 'approval', config: {
+      description: 'Review the proposal, source excerpts, and overlap with current work before assigning a prototype.',
+      tier: 'high',
+    } },
+  ],
+  edges: [
+    { source: 'research-feeds', target: 'improvement-proposal' },
+    { source: 'research-feeds', target: 'proposal-review' },
+    { source: 'improvement-proposal', target: 'proposal-review' },
+  ],
+} satisfies SavedWorkflowDefinition['graph'];
+
 const EMAIL_REPLY_REVIEW = {
   name: 'Draft and review a Gmail reply',
   nodes: [
@@ -297,7 +325,7 @@ const ITEMS: WorkItem[] = [
 export type WorkspaceEntry = {
   initialRunId?: string;
   initialGmailReference?: string;
-  initialStarter?: 'finance' | 'leads' | 'competitor-ads' | 'delivery-quality';
+  initialStarter?: 'finance' | 'leads' | 'competitor-ads' | 'delivery-quality' | 'builder-research';
 };
 
 export function SoftwareEngineeringWorkspace({
@@ -457,7 +485,8 @@ export function SoftwareEngineeringWorkspace({
     : initialStarter === 'leads' ? LEAD_DISCOVERY
       : initialStarter === 'competitor-ads' ? COMPETITOR_AD_REVIEW
         : initialStarter === 'delivery-quality' ? DELIVERY_QUALITY_REVIEW
-          : initialGmailReference ? EMAIL_REPLY_REVIEW : GUARDED_DELIVERY;
+          : initialStarter === 'builder-research' ? BUILDER_RESEARCH_REVIEW
+            : initialGmailReference ? EMAIL_REPLY_REVIEW : GUARDED_DELIVERY;
   const [workflowName, setWorkflowName] = useState(initialGraph.name);
   const [workflowGraph, setWorkflowGraph] = useState(() =>
     JSON.stringify({ nodes: initialGraph.nodes, edges: initialGraph.edges }, null, 2));
@@ -1038,6 +1067,10 @@ export function SoftwareEngineeringWorkspace({
             {workflowName === DELIVERY_QUALITY_REVIEW.name && (
               <small>Index the deliverable or transcript and its approved brief under a shared
                 delivery reference. Enter that reference when you run the workflow.</small>
+            )}
+            {initialStarter === 'builder-research' && (
+              <small>Sync public release or news feeds from Data Sources. Save this workflow,
+                then enter a topic as the run input to search the indexed feeds.</small>
             )}
             {initialGmailReference && <small>Gmail reference for this workflow run <code>{initialGmailReference}</code></small>}
             <label>Workflow name

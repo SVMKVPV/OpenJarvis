@@ -157,6 +157,35 @@ def test_sync_atom_feed(tmp_path):
     assert "distributed systems" in docs[0].content
 
 
+def test_atom_release_notes_and_video_descriptions_are_indexable():
+    from openjarvis.connectors.news_rss import _parse_rss_items
+
+    release, video = _parse_rss_items(
+        """<feed xmlns="http://www.w3.org/2005/Atom"
+          xmlns:media="http://search.yahoo.com/mrss/">
+          <entry>
+            <title>Release 4.2</title>
+            <link rel="self" href="https://github.com/example/project/releases.atom"/>
+            <link rel="alternate" href="https://github.com/example/project/releases/tag/v4.2"/>
+            <content type="html">&lt;p&gt;Added a review screen.&lt;/p&gt;</content>
+          </entry>
+          <entry>
+            <title>Workflow demonstration</title>
+            <link rel="alternate" href="https://www.youtube.com/watch?v=example"/>
+            <media:group>
+              <media:description>Shows an approval queue.</media:description>
+            </media:group>
+            <published>2026-10-01T10:00:00Z</published>
+            <updated>2026-10-02T10:00:00Z</updated>
+          </entry>
+        </feed>"""
+    )
+    assert release["description"] == "Added a review screen."
+    assert release["link"].endswith("/releases/tag/v4.2")
+    assert video["description"] == "Shows an approval queue."
+    assert video["pubDate"] == "2026-10-01T10:00:00Z"
+
+
 def test_sync_filters_by_since(connector):
     """Items older than `since` are excluded when date is parseable."""
     with patch(

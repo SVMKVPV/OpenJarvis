@@ -10,11 +10,13 @@ from __future__ import annotations
 import http.client
 import ipaddress
 import json
+import re
 import socket
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime
 from email.utils import parsedate_to_datetime
+from html import unescape
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
 from urllib.parse import urljoin, urlparse
@@ -250,22 +252,39 @@ def _parse_rss_items(xml_text: str, max_items: int = 5) -> List[Dict[str, str]]:
 
     # Atom: <feed><entry>
     if not items:
-        ns = {"atom": "http://www.w3.org/2005/Atom"}
+        ns = {
+            "atom": "http://www.w3.org/2005/Atom",
+            "media": "http://search.yahoo.com/mrss/",
+        }
         for entry_el in root.iter("{http://www.w3.org/2005/Atom}entry"):
             if len(items) >= max_items:
                 break
-            link_el = entry_el.find("atom:link", ns)
+            link_el = next(
+                (link for link in entry_el.findall("atom:link", ns)
+                 if link.get("rel", "alternate") == "alternate"),
+                None,
+            )
             link_href = link_el.get("href", "") if link_el is not None else ""
-            summary = entry_el.findtext("{http://www.w3.org/2005/Atom}summary") or ""
-            updated = entry_el.findtext("{http://www.w3.org/2005/Atom}updated") or ""
+            title = (entry_el.findtext("atom:title", namespaces=ns) or "").strip()
+            summary = (
+                entry_el.findtext("atom:summary", namespaces=ns)
+                or entry_el.findtext("media:group/media:description", namespaces=ns)
+                or entry_el.findtext("atom:content", namespaces=ns)
+                or ""
+            )
+            plain_text = unescape(re.sub(r"<[^<>]+>", " ", summary[:4096]))
+            description = " ".join(plain_text.split()) or title
+            published = (
+                entry_el.findtext("atom:published", namespaces=ns)
+                or entry_el.findtext("atom:updated", namespaces=ns)
+                or ""
+            )
             items.append(
                 {
-                    "title": (
-                        entry_el.findtext("{http://www.w3.org/2005/Atom}title") or ""
-                    ).strip(),
-                    "description": summary.strip()[:200],
+                    "title": title,
+                    "description": description[:200],
                     "link": link_href.strip(),
-                    "pubDate": updated.strip(),
+                    "pubDate": published.strip(),
                 }
             )
 
