@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, Grip, Plus, Settings2, X } from 'lucide-react';
 import { useLocalPreference } from '../hooks/useLocalPreference';
 import {
-  fetchGmailReviewCount, fetchIndexedCalendarEvents, fetchPendingApprovals, fetchWorkflowRuns,
-  type IndexedCalendarEvent, type PendingApproval, type WorkflowRunSummary,
+  fetchGa4Views, fetchGmailReviewCount, fetchIndexedCalendarEvents, fetchPendingApprovals, fetchWorkflowRuns,
+  type Ga4Views, type IndexedCalendarEvent, type PendingApproval, type WorkflowRunSummary,
 } from '../lib/api';
 import {
   fetchSocialContentSummary, SOCIAL_CHANNELS, type SocialContentSummary,
@@ -17,7 +17,7 @@ export const DASHBOARD_WIDGETS: DashboardWidget[] = [
   { id: 'leads-found', stationId: 'growth', station: 'LEADS + GROWTH', name: 'Leads found', value: '148', detail: '+23 THIS WEEK', kind: 'metric' },
   { id: 'content-approval', stationId: 'marketing', station: 'MARKETING', name: 'Content to approve', value: '', detail: 'Waiting for review', kind: 'queue' },
   { id: 'social-pipeline', stationId: 'marketing', station: 'MARKETING', name: 'Social content pipeline', value: '', detail: 'Recent drafts and planned content', kind: 'content' },
-  { id: 'analytics-views', stationId: 'marketing', station: 'MARKETING', name: 'Google Analytics views', value: '24.8K', detail: '+18.6% VS PRIOR PERIOD', kind: 'trend' },
+  { id: 'analytics-views', stationId: 'marketing', station: 'MARKETING', name: 'Google Analytics views', value: '', detail: 'Last 28 completed days', kind: 'metric' },
   { id: 'email-replies', stationId: 'email', station: 'EMAIL REPLY', name: 'Gmail threads to review', value: '', detail: 'Latest indexed message is inbound', kind: 'queue' },
   { id: 'comment-replies', stationId: 'email', station: 'EMAIL REPLY', name: 'Comment replies due', value: '31', detail: 'SOCIAL + COMMUNITY', kind: 'queue' },
   { id: 'revenue', stationId: 'finance', station: 'FINANCE', name: 'Revenue MTD', value: '$184K', detail: '72% OF MONTHLY TARGET', kind: 'trend' },
@@ -171,7 +171,31 @@ export function CustomDashboard({ widgetIds, setWidgetIds, onOpenStation, onOpen
     };
   }, [showGmail]);
 
+  const showAnalytics = widgetIds.includes('analytics-views');
+  const [analytics, setAnalytics] = useState<Ga4Views | null>(null);
+  useEffect(() => {
+    if (!showAnalytics) return;
+    const controller = new AbortController();
+    fetchGa4Views(controller.signal).then((report) => {
+      if (!controller.signal.aborted) setAnalytics(report);
+    }).catch(() => {
+      if (!controller.signal.aborted) setAnalytics({ status: 'unavailable', views: null });
+    });
+    return () => controller.abort();
+  }, [showAnalytics]);
+  const analyticsDetails: Record<Ga4Views['status'], string> = {
+    unconfigured: 'Set a GA4 property in the backend',
+    invalid_property: 'GA4 property ID must be numeric',
+    authorization_required: 'GA4 authorization required',
+    unavailable: 'Google Analytics unavailable',
+    live: 'Last 28 completed days',
+  };
+
   const queueMetrics: Record<string, { value: string | number; detail: string }> = {
+    'analytics-views': {
+      value: analytics?.views?.toLocaleString() ?? '—',
+      detail: analytics ? analyticsDetails[analytics.status] : 'Checking Google Analytics…',
+    },
     'email-replies': { value: gmail.count ?? '—', detail: gmail.detail },
     approvals: { value: approvalCount ?? '—', detail: approvalDetail },
     'content-approval': {
@@ -191,7 +215,7 @@ export function CustomDashboard({ widgetIds, setWidgetIds, onOpenStation, onOpen
   const move = (index: number, delta: number) => { const next = [...widgetIds]; const target = index + delta; if (target < 0 || target >= next.length) return; [next[index], next[target]] = [next[target], next[index]]; setWidgetIds(next); };
   return <main className="custom-dashboard"><div className="dashboard-title"><div><span>CUSTOM DASHBOARD</span><h2>CEO operating picture</h2><p>Station-owned widgets. Add what matters, remove what does not.</p></div><button className={editing ? 'active' : ''} onClick={() => setEditing(!editing)}><Settings2 size={13}/>{editing ? 'DONE EDITING' : 'EDIT DASHBOARD'}</button></div>
     {editing && <section className="widget-catalog"><header><div><span>ADD WIDGET</span><strong>AVAILABLE FROM WORKSTATIONS</strong></div><em>{available.length} AVAILABLE</em></header><div>{available.length ? available.map((widget) => <button key={widget.id} onClick={() => setWidgetIds([...widgetIds, widget.id])}><Plus size={11}/><span><b>{widget.name}</b><small>{widget.station}</small></span></button>) : <p>All available widgets are already on the dashboard.</p>}</div></section>}
-    {widgets.length ? <section className="widget-grid">{widgets.map((widget,index) => <article key={widget.id} className={`dashboard-widget ${sizes[widget.id] ?? (widget.kind === 'calendar' ? 'large' : 'small')}`}><header><button onClick={() => onOpenStation(widget.stationId)}>{widget.station}</button><span>{widget.id === 'approvals' ? (approvalCount !== null ? 'LIVE DATA' : 'BACKEND') : widget.kind === 'calendar' ? (scheduledRuns !== null ? 'LIVE WORKFLOWS' : 'BACKEND') : widget.id === 'content-approval' || widget.id === 'social-pipeline' ? (socialQueue ? 'LIVE QUEUE' : 'BACKEND') : widget.id === 'email-replies' ? 'GMAIL INDEX' : 'DEMO DATA'}</span></header><div className="widget-content"><span>{widget.name}</span>{widget.kind !== 'content' && widget.kind !== 'calendar' && <><strong>{queueMetrics[widget.id]?.value ?? widget.value}</strong><small>{queueMetrics[widget.id]?.detail ?? widget.detail}</small></>}{widget.id === 'approvals' && workflowApprovals.length > 0 && (
+    {widgets.length ? <section className="widget-grid">{widgets.map((widget,index) => <article key={widget.id} className={`dashboard-widget ${sizes[widget.id] ?? (widget.kind === 'calendar' ? 'large' : 'small')}`}><header><button onClick={() => onOpenStation(widget.stationId)}>{widget.station}</button><span>{widget.id === 'approvals' ? (approvalCount !== null ? 'LIVE DATA' : 'BACKEND') : widget.kind === 'calendar' ? (scheduledRuns !== null ? 'LIVE WORKFLOWS' : 'BACKEND') : widget.id === 'content-approval' || widget.id === 'social-pipeline' ? (socialQueue ? 'LIVE QUEUE' : 'BACKEND') : widget.id === 'email-replies' ? 'GMAIL INDEX' : widget.id === 'analytics-views' ? (analytics?.status === 'live' ? 'LIVE GA4' : 'GA4') : 'DEMO DATA'}</span></header><div className="widget-content"><span>{widget.name}</span>{widget.kind !== 'content' && widget.kind !== 'calendar' && <><strong>{queueMetrics[widget.id]?.value ?? widget.value}</strong><small>{queueMetrics[widget.id]?.detail ?? widget.detail}</small></>}{widget.id === 'approvals' && workflowApprovals.length > 0 && (
       <ul className="dashboard-workflow-approvals" aria-label="Workflow approvals">
         {workflowApprovals.slice(0, 3).map(({ approval, runId }) => (
           <li key={approval.id}>

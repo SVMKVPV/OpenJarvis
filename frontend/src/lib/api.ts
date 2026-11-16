@@ -1307,6 +1307,19 @@ export async function fetchGmailReviewCandidates(signal?: AbortSignal): Promise<
   return candidates;
 }
 
+export type Ga4Views = {
+  status: 'unconfigured' | 'invalid_property' | 'authorization_required' | 'unavailable' | 'live';
+  views: number | null;
+};
+
+export async function fetchGa4Views(signal?: AbortSignal): Promise<Ga4Views> {
+  const response = await apiFetch('/v1/dashboard/ga4-views', { signal });
+  if (!response.ok) throw new Error('Google Analytics unavailable.');
+  const result = await response.json();
+  if (!result || typeof result.status !== 'string') throw new Error('Google Analytics unavailable.');
+  return result;
+}
+
 export type IndexedCalendarEvent = {
   id: string;
   title: string;

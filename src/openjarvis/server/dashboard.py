@@ -446,6 +446,14 @@ def gmail_review_candidates(response: Response) -> dict:
         return {"candidates": store.gmail_review_candidates()}
 
 
+@dashboard_router.get("/v1/dashboard/ga4-views")
+def google_analytics_views(response: Response) -> dict:
+    from openjarvis.connectors.ga4_report import ga4_views
+
+    response.headers["Cache-Control"] = "no-store"
+    return ga4_views()
+
+
 @dashboard_router.get("/v1/dashboard/calendar")
 def upcoming_calendar_events(response: Response, local_day: date | None = None) -> dict:
     from openjarvis.connectors.store import KnowledgeStore
