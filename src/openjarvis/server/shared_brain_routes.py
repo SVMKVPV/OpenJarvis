@@ -5,13 +5,18 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
 
-from openjarvis.core.shared_brain import SharedBriefConflict, load_brief, update_brief
+from openjarvis.core.shared_brain import (
+    MAX_BRIEF_LENGTH,
+    SharedBriefConflict,
+    load_brief,
+    update_brief,
+)
 
 router = APIRouter(prefix="/v1/shared-brain", tags=["shared-brain"])
 
 
 class SharedBrief(BaseModel):
-    context: str = Field(max_length=4000)
+    context: str = Field(max_length=MAX_BRIEF_LENGTH)
     revision: int = Field(ge=0)
 
 

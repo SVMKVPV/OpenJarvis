@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock
 
@@ -9,6 +10,56 @@ pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
 
 from openjarvis.server.app import create_app  # noqa: E402
+
+
+def test_share_completed_approved_run_without_copying_evidence(tmp_path, monkeypatch):
+    from openjarvis.server import approval_routes
+    from openjarvis.tools.approval_store import ApprovalStore
+
+    monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(tmp_path / "runs.db"))
+    monkeypatch.setattr("openjarvis.core.shared_brain.get_config_dir", lambda: tmp_path)
+    approvals = ApprovalStore(str(tmp_path / "approvals.db"))
+    monkeypatch.setattr(approval_routes, "_store", approvals)
+    app = create_app(MagicMock(), "test")
+    brief_path = "/v1/shared-brain/brief"
+    with TestClient(app) as client:
+        assert client.put(
+            brief_path, json={"context": "Existing draft", "revision": 0}
+        ).status_code == 200
+        started = client.post("/v1/workflows/runs", json={
+            "initial_input": "Private evidence should stay in the workflow",
+            "nodes": [{"id": "review", "type": "approval"}],
+        })
+        assert started.status_code == 202
+        run_id = started.json()["id"]
+        run_path = f"/v1/workflows/runs/{run_id}"
+        share_path = f"{run_path}/share-to-brain"
+        summary = {"summary": "Delivery wording confirmed."}
+        assert client.post(share_path, json=summary).status_code == 409
+
+        def wait_for(expected):
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                run = client.get(run_path).json()
+                if run["status"] == expected:
+                    return run
+                time.sleep(0.01)
+            pytest.fail(f"Workflow did not reach {expected}")
+
+        paused = wait_for("waiting_approval")
+        approval_id = paused["context"]["_workflow_approvals"]["review"]
+        assert client.post(f"/v1/approvals/{approval_id}/approve").status_code == 200
+        wait_for("succeeded")
+        assert client.post(share_path, json=summary).json() == {"added": True}
+        assert client.post(share_path, json=summary).json() == {"added": False}
+        assert client.get(brief_path).json() == {
+            "context": (
+                f"Existing draft\n\n[Approved workflow {run_id}]\n"
+                "Delivery wording confirmed."
+            ),
+            "revision": 2,
+        }
+    approvals.close()
 
 
 def test_shared_brief_is_authenticated_persistent_and_revisioned(

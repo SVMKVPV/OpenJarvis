@@ -3,8 +3,9 @@ import { AlertTriangle, Network, Radio, Users } from 'lucide-react';
 import { fetchSharedBrainBrief, saveSharedBrainBrief, SharedBrainConflict, type SharedBrainBrief } from '../lib/api';
 import './shared-brain.css';
 
-export function SharedBrainPanel({ context, onContextChange, onShare, onOpenDot }: {
+export function SharedBrainPanel({ context, onContextChange, onShare, onOpenDot, onOpenWorkflow }: {
   onOpenDot: () => void;
+  onOpenWorkflow: (id: string) => void;
   context: string;
   onContextChange: (value: string) => void;
   onShare: (source: string, text: string) => string;
@@ -16,6 +17,10 @@ export function SharedBrainPanel({ context, onContextChange, onShare, onOpenDot 
   const [backendBrief, setBackendBrief] = useState<SharedBrainBrief | null>(null);
   const [checkingBackend, setCheckingBackend] = useState(true);
   const [backendMessage, setBackendMessage] = useState('Checking backend brief…');
+  const workflowHandoffs = Array.from(new Set(
+    [...(backendBrief?.context ?? '').matchAll(/^\[Approved workflow ([a-f0-9]{32})\]$/gm)]
+      .map((match) => match[1]),
+  ));
 
   useEffect(() => {
     const controller = new AbortController();
@@ -96,6 +101,11 @@ export function SharedBrainPanel({ context, onContextChange, onShare, onOpenDot 
             <details>
               <summary>Compare backend brief</summary>
               <pre>{backendBrief.context || 'The backend brief is empty.'}</pre>
+              {workflowHandoffs.map((id) => (
+                <button key={id} type="button" onClick={() => onOpenWorkflow(id)}>
+                  Open workflow run {id.slice(0, 8)}
+                </button>
+              ))}
             </details>
             {backendBrief.revision > 0 && (
               <button type="button" disabled={checkingBackend} onClick={() => {

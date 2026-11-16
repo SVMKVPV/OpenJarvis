@@ -8,6 +8,8 @@ from contextlib import closing
 from openjarvis.core.paths import get_config_dir
 from openjarvis.security.file_utils import secure_create
 
+MAX_BRIEF_LENGTH = 4000
+
 
 class SharedBriefConflict(ValueError):
     """A different client has updated the brief since the caller read it."""
@@ -52,3 +54,17 @@ def update_brief(context: str, revision: int) -> int:
         if not result.rowcount:
             raise SharedBriefConflict("The Shared Brain brief has changed.")
     return revision + 1
+
+
+def append_workflow_handoff(run_id: str, summary: str) -> bool:
+    """Append one published summary per run while preserving the current brief."""
+    context, revision = load_brief()
+    heading = f"[Approved workflow {run_id}]"
+    if heading in context.splitlines():
+        return False
+    entry = f"{heading}\n{summary}"
+    next_context = "\n\n".join(filter(None, (context, entry)))
+    if len(next_context) > MAX_BRIEF_LENGTH:
+        raise ValueError("The Shared Brain brief is full. Shorten it before sharing.")
+    update_brief(next_context, revision)
+    return True

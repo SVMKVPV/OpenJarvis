@@ -663,7 +663,7 @@ export function CommandCenterPage() {
           <div className="rail-foot"><Activity size={13} /><span>LIVE WORK FEED</span><b>284</b></div>
         </aside>
 
-        {selected.id === 'brain' ? <section className="workflow-stage brain-stage"><SharedBrainPanel context={brainContext} onContextChange={setBrainContext} onShare={addBrainUpdate} onOpenDot={() => openStation('dot')} /></section> : <main className="workflow-stage">
+        {selected.id === 'brain' ? <section className="workflow-stage brain-stage"><SharedBrainPanel context={brainContext} onContextChange={setBrainContext} onShare={addBrainUpdate} onOpenDot={() => openStation('dot')} onOpenWorkflow={openWorkflowReview} /></section> : <main className="workflow-stage">
           <div className="station-header">
             <div><span>{selected.code} // SELECTED STATION</span><h2>{selected.name}</h2><p>{selected.purpose}</p></div>
             <div className="station-now"><span>CURRENT WORK</span><strong>{selected.current}</strong><small>Reports to {selected.reportsTo}</small></div>

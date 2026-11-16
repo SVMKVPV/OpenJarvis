@@ -12,6 +12,7 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request, Response, 
 from pydantic import BaseModel, Field, StrictBool
 
 from openjarvis.core.paths import get_config_dir
+from openjarvis.core.shared_brain import SharedBriefConflict, append_workflow_handoff
 from openjarvis.server.approval_routes import get_approval_store
 from openjarvis.workflow.runtime import WorkflowRuntime, WorkflowRuntimeStopping
 from openjarvis.workflow.serialization import graph_from_dict, graph_to_dict
@@ -54,6 +55,10 @@ class RescheduleWorkflowRun(BaseModel):
 
 class RetryWorkflowInput(BaseModel):
     initial_input: str | None = None
+
+
+class WorkflowHandoff(BaseModel):
+    summary: str = Field(min_length=1, max_length=750)
 
 
 class WorkflowDefinitionUpdate(WorkflowDefinition):
@@ -139,6 +144,30 @@ def create_workflow_runs_router() -> APIRouter:
         if run is None:
             raise HTTPException(status_code=404, detail="Workflow run not found")
         return run
+
+    @router.post("/{run_id}/share-to-brain")
+    def share_to_brain(run_id: str, payload: WorkflowHandoff, request: Request) -> dict:
+        run = _runtime(request).store.get_run(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Workflow run not found")
+        if run["status"] != "succeeded" or not any(
+            step["metadata"].get("approval_status") == "approved"
+            for step in run["steps"]
+        ):
+            raise HTTPException(
+                status_code=409, detail="Only successful, approved runs can be shared."
+            )
+        summary = payload.summary.strip()
+        if not summary:
+            raise HTTPException(status_code=422, detail="Enter a handoff summary.")
+        try:
+            return {"added": append_workflow_handoff(run_id, summary)}
+        except SharedBriefConflict as exc:
+            raise HTTPException(
+                status_code=409, detail="The brief changed. Try sharing again."
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @router.patch("/{run_id}/schedule")
     def reschedule_run(

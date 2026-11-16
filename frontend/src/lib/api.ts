@@ -150,6 +150,20 @@ export async function saveSharedBrainBrief(brief: SharedBrainBrief): Promise<Sha
   }));
 }
 
+export async function shareWorkflowWithBrain(runId: string, summary: string): Promise<boolean> {
+  const response = await apiFetch(`/v1/workflows/runs/${encodeURIComponent(runId)}/share-to-brain`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ summary }),
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok || typeof result?.added !== 'boolean') {
+    throw new Error(typeof result?.detail === 'string'
+      ? result.detail : 'The Shared Brain handoff could not be confirmed.');
+  }
+  return result.added;
+}
+
 export type RuntimePlugin = {
   id: string;
   name: string;
