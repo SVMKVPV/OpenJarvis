@@ -1573,11 +1573,20 @@ export type WorkflowRecurrence = {
   interval_seconds: number;
   skipped_while_active?: number;
   paused?: boolean;
+  initial_input?: string;
+  revision?: number;
+};
+
+type WorkflowRecurrenceInputs = {
+  first_due_at: number;
+  interval_seconds: number;
+  initial_input: string;
 };
 
 type WorkflowRecurrenceChange = string
-  | { first_due_at: number; interval_seconds: number; initial_input: string }
-  | { id: string; paused: boolean };
+  | WorkflowRecurrenceInputs
+  | { id: string; paused: boolean }
+  | (WorkflowRecurrenceInputs & { id: string; expected_revision: number });
 
 export type UpcomingWorkflowRecurrence = Pick<
   WorkflowRecurrence, 'id' | 'next_due_at' | 'interval_seconds'
@@ -1605,6 +1614,13 @@ export async function workflowRecurrences(
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ paused: action.paused }),
+    });
+  } else if (action && 'id' in action) {
+    const { id, ...settings } = action;
+    response = await apiFetch(`${path}/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
     });
   } else {
     response = await apiFetch(path, action && {

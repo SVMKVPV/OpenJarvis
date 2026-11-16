@@ -113,6 +113,21 @@ def test_recurring_workflow_catches_up_once_after_restart(tmp_path, monkeypatch)
         assert client.get(upcoming_url).json()["recurrences"] == []
         resumed = client.patch(schedule_url, json={"paused": False})
         assert resumed.status_code == 200 and resumed.json() == created.json()
+        changes = {
+            "first_due_at": time.time() + 360,
+            "interval_seconds": 180,
+            "initial_input": "Updated recurring input",
+            "expected_revision": 0,
+        }
+        edited = client.put(schedule_url, json=changes)
+        assert edited.status_code == 200
+        updated = edited.json()
+        assert updated["id"] == created.json()["id"] and updated["revision"] == 1
+        assert updated["initial_input"] == changes["initial_input"]
+        assert updated["interval_seconds"] == 180
+        assert client.put(schedule_url, json=changes).status_code == 409
+        upcoming, = client.get(upcoming_url).json()["recurrences"]
+        assert upcoming["interval_seconds"] == 180
         original.state.workflow_runtime.close()
 
     offline_store = WorkflowRunStore(db_path)
@@ -137,7 +152,7 @@ def test_recurring_workflow_catches_up_once_after_restart(tmp_path, monkeypatch)
             schedule = client.get(url).json()["recurrences"][0]
             assert schedule["next_due_at"] == overdue["next_due_at"] + 240
             assert client.delete(f"{url}/{overdue['id']}").status_code == 204
-            assert client.get(url).json()["recurrences"] == [created.json()]
+            assert client.get(url).json()["recurrences"] == [updated]
     finally:
         restarted.state.workflow_runtime.close()
         approvals.close()

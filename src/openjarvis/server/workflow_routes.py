@@ -48,6 +48,10 @@ class RecurringWorkflowStatus(BaseModel):
     paused: StrictBool
 
 
+class RecurringWorkflowEdit(RecurringWorkflowInputs):
+    expected_revision: int = Field(ge=0)
+
+
 class RescheduleWorkflowRun(BaseModel):
     scheduled_at: float = Field(gt=0, allow_inf_nan=False)
     expected_scheduled_at: float = Field(gt=0, allow_inf_nan=False)
@@ -365,6 +369,29 @@ def create_workflow_runs_router() -> APIRouter:
                 status_code=404, detail="Workflow definition not found"
             ) from exc
         runtime.start_scheduling()
+        return recurrence
+
+    @root.put("/definitions/{definition_id}/recurrences/{recurrence_id}")
+    def edit_recurrence(
+        definition_id: str, recurrence_id: str,
+        payload: RecurringWorkflowEdit, request: Request,
+    ) -> dict:
+        if payload.first_due_at <= time.time():
+            raise HTTPException(status_code=400, detail="Choose a future start time")
+        runtime = _runtime(request)
+        try:
+            recurrence = runtime.store.update_recurrence(
+                definition_id, recurrence_id, initial_input=payload.initial_input,
+                next_due_at=payload.first_due_at,
+                interval_seconds=payload.interval_seconds,
+                expected_revision=payload.expected_revision,
+            )
+        except WorkflowDefinitionConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if recurrence is None:
+            raise HTTPException(status_code=404, detail="Recurring schedule not found")
+        if not recurrence["paused"]:
+            runtime.start_scheduling()
         return recurrence
 
     @root.patch("/definitions/{definition_id}/recurrences/{recurrence_id}")

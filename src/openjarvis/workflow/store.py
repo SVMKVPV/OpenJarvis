@@ -66,7 +66,8 @@ class WorkflowRunStore:
                     next_due_at REAL NOT NULL,
                     interval_seconds INTEGER NOT NULL,
                     skipped_while_active INTEGER NOT NULL DEFAULT 0,
-                    paused INTEGER NOT NULL DEFAULT 0
+                    paused INTEGER NOT NULL DEFAULT 0,
+                    revision INTEGER NOT NULL DEFAULT 0
                 );
                 CREATE INDEX IF NOT EXISTS idx_workflow_recurrences_due
                     ON workflow_recurrences(next_due_at);
@@ -122,6 +123,11 @@ class WorkflowRunStore:
                 self._conn.execute(
                     "ALTER TABLE workflow_recurrences ADD COLUMN "
                     "paused INTEGER NOT NULL DEFAULT 0"
+                )
+            if "revision" not in recurrence_columns:
+                self._conn.execute(
+                    "ALTER TABLE workflow_recurrences ADD COLUMN "
+                    "revision INTEGER NOT NULL DEFAULT 0"
                 )
             self._conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_workflow_runs_recurrence "
@@ -298,6 +304,7 @@ class WorkflowRunStore:
             "interval_seconds": interval_seconds,
             "skipped_while_active": 0,
             "paused": False,
+            "revision": 0,
         }
         with self._lock, self._conn:
             if self.get_definition(definition_id) is None:
@@ -337,6 +344,39 @@ class WorkflowRunStore:
                 (limit,),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def update_recurrence(
+        self, definition_id: str, recurrence_id: str, *, initial_input: str,
+        next_due_at: float, interval_seconds: int, expected_revision: int,
+    ) -> dict[str, Any] | None:
+        with self._lock, self._conn:
+            self._conn.execute("BEGIN IMMEDIATE")
+            row = self._conn.execute(
+                "SELECT * FROM workflow_recurrences WHERE definition_id = ? AND id = ?",
+                (definition_id, recurrence_id),
+            ).fetchone()
+            if row is None:
+                return None
+            if row["revision"] != expected_revision:
+                raise WorkflowDefinitionConflict(
+                    "The schedule changed. Refresh schedules and retry."
+                )
+            self._conn.execute(
+                "UPDATE workflow_recurrences SET initial_input = ?, next_due_at = ?, "
+                "interval_seconds = ?, revision = revision + 1 "
+                "WHERE definition_id = ? AND id = ?",
+                (
+                    initial_input, next_due_at, interval_seconds,
+                    definition_id, recurrence_id,
+                ),
+            )
+        return dict(row) | {
+            "initial_input": initial_input,
+            "next_due_at": next_due_at,
+            "interval_seconds": interval_seconds,
+            "paused": bool(row["paused"]),
+            "revision": expected_revision + 1,
+        }
 
     def set_recurrence_paused(
         self, definition_id: str, recurrence_id: str, *, paused: bool, now: float
