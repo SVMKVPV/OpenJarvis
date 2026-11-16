@@ -194,7 +194,7 @@ export function SoftwareEngineeringWorkspace() {
   const [stepSetting, setStepSetting] = useState('');
   const models = useAppStore((state) => state.models);
   const workflowModels = [...new Set(models.map((entry) => entry.id).filter((id) => !isEmbedOnlyModel(id)))];
-  const setStepConfig = (node: DraftNode, key: string, value: string) => {
+  const setStepConfig = (node: DraftNode, key: string, value: string | boolean) => {
     if (!draftGraph || savingDefinition) return;
     const config = { ...node.config };
     if (value) config[key] = value;
@@ -692,22 +692,45 @@ export function SoftwareEngineeringWorkspace() {
                       <span>{node.id}</span>
                       {node.type === 'tool' && node.config?.tool_name === 'knowledge_search' &&
                         node.config.query_from_input === true && (
-                          <label>Indexed source for {node.id}
-                            <input value={typeof node.config.source === 'string' ? node.config.source : ''}
-                              disabled={savingDefinition} list="indexed-workflow-sources"
-                              onChange={(event) => setStepConfig(node, 'source', event.target.value)} />
-                          </label>
+                          <>
+                            <label>Indexed source for {node.id}
+                              <input value={typeof node.config.source === 'string' ? node.config.source : ''}
+                                disabled={savingDefinition} list="indexed-workflow-sources"
+                                onChange={(event) => setStepConfig(node, 'source', event.target.value)} />
+                            </label>
+                            <label>
+                              <input type="checkbox" checked={node.config.require_match === true}
+                                disabled={savingDefinition}
+                                onChange={(event) => setStepConfig(node, 'require_match', event.target.checked)} />
+                              Stop the workflow when {node.id} finds no matches
+                            </label>
+                          </>
                         )}
                       {node.type === 'agent' && node.agent === 'none' && (() => {
                         const model = typeof node.config?.model === 'string' ? node.config.model : '';
-                        return <label>Model for {node.id}
-                          <select value={model} disabled={savingDefinition} onChange={(event) => setStepConfig(node, 'model', event.target.value)}>
-                            <option value="">Backend default</option>
-                            {model && !workflowModels.includes(model) && <option value={model}>{model} (configured)</option>}
-                            {workflowModels.map((id) => <option key={id} value={id}>{id}</option>)}
-                          </select>
-                        </label>;
-                      })()}{' '}
+                        return <>
+                          <label>Model for {node.id}
+                            <select value={model} disabled={savingDefinition}
+                              onChange={(event) => setStepConfig(node, 'model', event.target.value)}>
+                              <option value="">Backend default</option>
+                              {model && !workflowModels.includes(model) && <option value={model}>{model} (configured)</option>}
+                              {workflowModels.map((id) => <option key={id} value={id}>{id}</option>)}
+                            </select>
+                          </label>
+                          <label>Model instructions for {node.id}
+                            <textarea value={typeof node.config?.instruction === 'string' ? node.config.instruction : ''}
+                              rows={3} maxLength={4000} disabled={savingDefinition}
+                              onChange={(event) => setStepConfig(node, 'instruction', event.target.value)} />
+                          </label>
+                        </>;
+                      })()}
+                      {node.type === 'approval' && (
+                        <label>Approval request for {node.id}
+                          <input value={typeof node.config?.description === 'string' ? node.config.description : ''}
+                            disabled={savingDefinition}
+                            onChange={(event) => setStepConfig(node, 'description', event.target.value)} />
+                        </label>
+                      )}{' '}
                       <button type="button" disabled={savingDefinition}
                         aria-label={`Rename step ${node.id}`}
                         onClick={() => setStepRename({ id: node.id, name: node.id })}>
