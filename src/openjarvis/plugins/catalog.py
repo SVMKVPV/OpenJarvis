@@ -100,6 +100,9 @@ class PluginCatalog:
                 descriptors[(item.kind, item.id)] = item
             for item in self._extensions(spec):
                 descriptors.setdefault((item.kind, item.id), item)
+        if not kind or kind == "mcp":
+            for item in self._configured_mcp():
+                descriptors[(item.kind, item.id)] = item
         return sorted(
             descriptors.values(),
             key=lambda item: (item.kind, item.name.lower(), item.id),
@@ -110,6 +113,31 @@ class PluginCatalog:
             (item for item in self.list_plugins(kind=kind) if item.id == plugin_id),
             None,
         )
+
+    @staticmethod
+    def _configured_mcp() -> Iterable[PluginDescriptor]:
+        from openjarvis.core.config import load_config, resolve_mcp_servers
+
+        try:
+            config = load_config()
+            settings = config.tools.mcp
+            servers = resolve_mcp_servers(settings.servers, config._config_dir)
+        except (OSError, ValueError, TypeError):
+            return ()
+
+        return [
+            PluginDescriptor(
+                id=f"server-{index}",
+                name=str(server.get("name") or f"MCP server {index}"),
+                kind="mcp",
+                source="configuration",
+                installed=False,
+                enabled=settings.enabled,
+                description="Configured MCP server. Connection not checked.",
+                package="",
+            )
+            for index, server in enumerate(servers, start=1)
+        ]
 
     @staticmethod
     def _builtins(spec: _RegistrySpec) -> Iterable[PluginDescriptor]:

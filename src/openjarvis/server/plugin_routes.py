@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from openjarvis.plugins import PluginCatalog
 
@@ -17,6 +17,14 @@ async def list_plugins(kind: str | None = Query(default=None)) -> dict:
         "count": len(items),
         "kinds": sorted({item.kind for item in items}),
     }
+
+
+@router.post("/mcp/discover")
+def discover_mcp_tools(request: Request) -> dict[str, int]:
+    from openjarvis.server.agent_manager_routes import _get_mcp_tools
+
+    _, tools = _get_mcp_tools(request.app.state)
+    return {"tool_count": len(tools)}
 
 
 @router.get("/{kind}/{plugin_id}")

@@ -5,6 +5,7 @@ import {
   ApprovalDecisionError,
   approveAction,
   denyAction,
+  discoverMcpTools,
   fetchPendingApprovals,
   fetchRuntimePlugins,
   fetchWorkflowDefinition,
@@ -125,6 +126,21 @@ export function SoftwareEngineeringWorkspace() {
   const [runtimePlugins, setRuntimePlugins] = useState<RuntimePlugin[]>([]);
   const [liveConnectors, setLiveConnectors] = useState<ConnectorInfo[] | null>(null);
   const [pluginCatalogState, setPluginCatalogState] = useState<'loading' | 'online' | 'offline'>('loading');
+  const [checkingMcp, setCheckingMcp] = useState(false);
+  const [mcpMessage, setMcpMessage] = useState('');
+  const checkMcp = async () => {
+    if (checkingMcp) return;
+    setCheckingMcp(true);
+    setMcpMessage('');
+    try {
+      const count = await discoverMcpTools();
+      setMcpMessage(count ? `${count} MCP tools available to the runtime.` : 'No MCP tools were discovered.');
+    } catch (error) {
+      setMcpMessage(error instanceof Error ? error.message : 'Could not check MCP tools.');
+    } finally {
+      setCheckingMcp(false);
+    }
+  };
   const [pluginRefresh, setPluginRefresh] = useState(0);
   const [syncConnectorId, setSyncConnectorId] = useState('');
   const [connectorSync, setConnectorSync] = useState<SyncStatus | 'unavailable' | null>(null);
@@ -182,6 +198,7 @@ export function SoftwareEngineeringWorkspace() {
   const [workflowInput, setWorkflowInput] = useState('');
   const [definitionMessage, setDefinitionMessage] = useState('Loading saved workflows…');
   const [launchingSaved, setLaunchingSaved] = useState(false);
+  const savedLaunch = useRef<{ definitionId: string; input: string; key: string } | null>(null);
   const [savingDefinition, setSavingDefinition] = useState(false);
   const [workflowName, setWorkflowName] = useState(GUARDED_DELIVERY.name);
   const [workflowGraph, setWorkflowGraph] = useState(GUARDED_GRAPH_JSON);
@@ -369,12 +386,17 @@ export function SoftwareEngineeringWorkspace() {
   const launchSaved = async (event: FormEvent) => {
     event.preventDefault();
     if (!definitionId || launchingSaved) return;
+    const previous = savedLaunch.current;
+    const repeated = previous?.definitionId === definitionId && previous.input === workflowInput;
+    const attempt = repeated ? previous : { definitionId, input: workflowInput, key: crypto.randomUUID() };
+    savedLaunch.current = attempt;
     setLaunchingSaved(true);
     setDefinitionMessage('');
     try {
-      const run = await runSavedWorkflow(definitionId, workflowInput);
+      const run = await runSavedWorkflow(attempt.definitionId, attempt.input, attempt.key);
+      savedLaunch.current = null;
       setWorkflowRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
-      setDefinitionMessage('Workflow queued.');
+      setDefinitionMessage(repeated ? 'Workflow run confirmed.' : 'Workflow queued.');
     } catch (error) {
       setDefinitionMessage(error instanceof Error ? error.message : 'Could not start workflow.');
     } finally {
@@ -602,6 +624,21 @@ export function SoftwareEngineeringWorkspace() {
           {pluginCatalogState === 'online' ? <>
             <div className="plugin-counts">{(['connector', 'channel', 'tool', 'agent', 'engine'] as const).map((kind) => <div key={kind}><strong>{pluginCounts[kind] ?? 0}</strong><span>{kind.toUpperCase()}S</span></div>)}</div>
             <details>
+              <summary>MCP servers ({pluginCounts.mcp ?? 0})</summary>
+              {pluginCounts.mcp ? <div className="plugin-sample">
+                {runtimePlugins.filter((plugin) => plugin.kind === 'mcp').map((plugin) => (
+                  <span key={plugin.id}>{plugin.name}<i>{plugin.enabled ? 'CONFIGURED' : 'DISABLED'}</i></span>
+                ))}
+              </div> : <p>No MCP servers configured on this backend.</p>}
+              {runtimePlugins.some((plugin) => plugin.kind === 'mcp' && plugin.enabled) && (
+                <button type="button" className="workflow-launch" disabled={checkingMcp}
+                  onClick={() => void checkMcp()}>
+                  {checkingMcp ? 'Checking MCP tools…' : 'Check MCP tools'}
+                </button>
+              )}
+              {mcpMessage && <p role="status">{mcpMessage}</p>}
+            </details>
+            <details>
               <summary>Connector status</summary>
               <div className="plugin-sample">
                 {runtimePlugins.filter((plugin) => plugin.kind === 'connector').map((plugin) => {
@@ -639,6 +676,7 @@ export function SoftwareEngineeringWorkspace() {
             onClick={() => {
               setPluginCatalogState('loading');
               setLiveConnectors(null);
+              setMcpMessage('');
               setConnectorSync(null);
               setPluginRefresh((version) => version + 1);
             }}>

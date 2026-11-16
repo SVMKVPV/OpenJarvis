@@ -124,8 +124,8 @@ export const apiFetch = (
 export type RuntimePlugin = {
   id: string;
   name: string;
-  kind: 'connector' | 'channel' | 'tool' | 'agent' | 'engine';
-  source: 'built-in' | 'extension';
+  kind: 'connector' | 'channel' | 'tool' | 'agent' | 'engine' | 'mcp';
+  source: 'built-in' | 'extension' | 'configuration';
   installed: boolean;
   enabled: boolean;
   auth_type: string;
@@ -133,6 +133,13 @@ export type RuntimePlugin = {
   package: string;
   version: string;
 };
+
+export async function discoverMcpTools(): Promise<number> {
+  const response = await apiFetch('/v1/plugins/mcp/discover', { method: 'POST' });
+  if (!response.ok) throw new Error(`MCP tool discovery failed (${response.status}).`);
+  const payload = await response.json();
+  return payload.tool_count;
+}
 
 export async function fetchRuntimePlugins(): Promise<RuntimePlugin[]> {
   const response = await apiFetch('/v1/plugins');
@@ -1329,10 +1336,15 @@ export async function fetchWorkflowDefinition(id: string): Promise<SavedWorkflow
   return res.json();
 }
 
-export async function runSavedWorkflow(id: string, initialInput: string): Promise<WorkflowRunSummary> {
+export async function runSavedWorkflow(
+  id: string, initialInput: string, launchKey?: string,
+): Promise<WorkflowRunSummary> {
   const res = await apiFetch(`/v1/workflows/definitions/${encodeURIComponent(id)}/runs`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(launchKey ? { 'Idempotency-Key': launchKey } : {}),
+    },
     body: JSON.stringify({ initial_input: initialInput }),
   });
   if (!res.ok) {

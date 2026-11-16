@@ -90,6 +90,26 @@ describe('authHeaders', () => {
   });
 });
 
+describe('saved workflow launch', () => {
+  it('sends the launch key alongside backend authentication', async () => {
+    localStorage.setItem(
+      SETTINGS_KEY,
+      JSON.stringify({ apiUrl: 'https://jarvis.example', apiKey: 'test-key' }),
+    );
+    const run = { id: 'workflow-run-1', status: 'queued' };
+    fetchMock.mockResolvedValue(new Response(JSON.stringify(run), { status: 202 }));
+    const { runSavedWorkflow } = await freshApi();
+
+    await expect(runSavedWorkflow('saved-1', 'query', 'retry-key')).resolves.toEqual(run);
+    const [url, request] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://jarvis.example/v1/workflows/definitions/saved-1/runs');
+    const headers = new Headers(request?.headers);
+    expect(headers.get('Idempotency-Key')).toBe('retry-key');
+    expect(headers.get('Authorization')).toBe('Bearer test-key');
+    expect(request?.body).toBe('{"initial_input":"query"}');
+  });
+});
+
 describe('managed agent channels', () => {
   beforeEach(() => {
     localStorage.setItem(
