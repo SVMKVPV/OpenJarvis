@@ -88,10 +88,10 @@ export async function updateSocialDraft(
 }
 
 export async function recordSocialPublication(
-  draft: SocialDraft, publication: SocialPublication,
+  draft: SocialDraft, publication: SocialPublication, editing = false,
 ): Promise<SocialDraft> {
   return readResponse(await apiFetch(`${base}/${encodeURIComponent(draft.id)}/publications`, {
-    method: 'POST',
+    method: editing ? 'PUT' : 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...publication, revision: draft.revision }),
   }));

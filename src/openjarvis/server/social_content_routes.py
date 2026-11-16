@@ -250,6 +250,15 @@ def transition_draft(draft_id: str, decision: DraftAction) -> dict:
 
 @router.post("/drafts/{draft_id}/publications")
 def record_publication(draft_id: str, publication: Publication) -> dict:
+    return _save_publication(draft_id, publication, edit=False)
+
+
+@router.put("/drafts/{draft_id}/publications")
+def edit_publication(draft_id: str, publication: Publication) -> dict:
+    return _save_publication(draft_id, publication, edit=True)
+
+
+def _save_publication(draft_id: str, publication: Publication, *, edit: bool) -> dict:
     now = time.time()
     if publication.posted_at > now:
         raise HTTPException(
@@ -263,23 +272,41 @@ def record_publication(draft_id: str, publication: Publication) -> dict:
             raise HTTPException(
                 status_code=409, detail="The draft changed. Refresh drafts."
             )
-        if draft["state"] not in {"approved", "planned"} or publication.channel not in (
-            draft["channels"]
-        ):
-            raise HTTPException(status_code=409, detail="This channel is not approved.")
         published_channels = {item["channel"] for item in draft["publications"]}
-        if publication.channel in published_channels:
-            raise HTTPException(
-                status_code=409, detail="This channel already has a post."
+        if edit:
+            result = conn.execute(
+                "UPDATE social_publications SET url = ?, posted_at = ? "
+                "WHERE draft_id = ? AND channel = ?",
+                (
+                    str(publication.url), publication.posted_at,
+                    draft_id, publication.channel,
+                ),
             )
-        conn.execute(
-            "INSERT INTO social_publications VALUES (?, ?, ?, ?)",
-            (
-                draft_id, publication.channel, str(publication.url),
-                publication.posted_at,
-            ),
-        )
-        all_published = len(draft["publications"]) + 1 == len(draft["channels"])
+            if not result.rowcount:
+                raise HTTPException(
+                    status_code=404, detail="Publication record not found."
+                )
+        else:
+            if (
+                draft["state"] not in {"approved", "planned"}
+                or publication.channel not in draft["channels"]
+            ):
+                raise HTTPException(
+                    status_code=409, detail="This channel is not approved."
+                )
+            if publication.channel in published_channels:
+                raise HTTPException(
+                    status_code=409, detail="This channel already has a post."
+                )
+            conn.execute(
+                "INSERT INTO social_publications VALUES (?, ?, ?, ?)",
+                (
+                    draft_id, publication.channel, str(publication.url),
+                    publication.posted_at,
+                ),
+            )
+            published_channels.add(publication.channel)
+        all_published = published_channels == set(draft["channels"])
         conn.execute(
             "UPDATE social_drafts SET state = ?, scheduled_at = ?, "
             "revision = revision + 1, updated_at = ? WHERE id = ?",

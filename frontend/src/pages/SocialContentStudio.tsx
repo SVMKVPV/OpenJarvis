@@ -21,6 +21,9 @@ export function SocialContentStudio() {
   const [editor, setEditor] = useState<{ fields: SocialDraftFields; draft?: SocialDraft } | null>(null);
   const [planningId, setPlanningId] = useState('');
   const [planningTime, setPlanningTime] = useState('');
+  const [editingPublication, setEditingPublication] = useState<{
+    draftId: string; channel: SocialChannel;
+  } | null>(null);
   const [busy, setBusy] = useState(true);
   const [message, setMessage] = useState('Loading content drafts…');
 
@@ -46,6 +49,7 @@ export function SocialContentStudio() {
     setBusy(true);
     try {
       setDrafts(await listSocialDrafts());
+      setEditingPublication(null);
       setAvailable(true);
       setMessage('Content queue refreshed.');
     } catch (error) {
@@ -140,7 +144,11 @@ export function SocialContentStudio() {
       {message && <p className="social-studio-note" role="status">{message}</p>}
       {available && !visible.length && <p className="social-studio-note">No drafts in this view.</p>}
       <div className="content-board">
-        {visible.map((draft) => (
+        {visible.map((draft) => {
+          const existingPublication = draft.id === editingPublication?.draftId
+            ? draft.publications?.find((post) => post.channel === editingPublication.channel)
+            : undefined;
+          return (
           <article key={draft.id}>
             <div className="content-description">
               <h3>{draft.title}</h3>
@@ -154,7 +162,11 @@ export function SocialContentStudio() {
                     </a>{' '}
                     <time dateTime={new Date(post.posted_at * 1000).toISOString()}>
                       {new Date(post.posted_at * 1000).toLocaleString()}
-                    </time>
+                    </time>{' '}
+                    <button type="button" disabled={busy || !available}
+                      onClick={() => setEditingPublication({ draftId: draft.id, channel: post.channel })}>
+                      Correct {SOCIAL_CHANNELS[post.channel]} record
+                    </button>
                   </li>)}
                 </ul>
               )}
@@ -182,11 +194,15 @@ export function SocialContentStudio() {
                 }}>{draft.state === 'planned' ? 'Change planned time' : 'Plan publish time'}</button>
               )}
             </aside>
-            {(draft.state === 'approved' || draft.state === 'planned') && (
-              <SocialPublicationForm draft={draft} onRecorded={(updated) => {
+            {(existingPublication || draft.state === 'approved' || draft.state === 'planned') && (
+              <SocialPublicationForm key={existingPublication?.channel ?? 'new'}
+                draft={draft} existing={existingPublication}
+                onCancel={existingPublication ? () => setEditingPublication(null) : undefined}
+                onRecorded={(updated) => {
                 saveResult(updated);
                 setFilter(updated.state);
-                setMessage('Publication recorded.');
+                setMessage(existingPublication ? 'Publication corrected.' : 'Publication recorded.');
+                setEditingPublication(null);
               }} />
             )}
             {planningId === draft.id && (
@@ -202,7 +218,8 @@ export function SocialContentStudio() {
               </form>
             )}
           </article>
-        ))}
+          );
+        })}
       </div>
     </section>
   );

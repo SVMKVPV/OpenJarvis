@@ -137,7 +137,20 @@ def test_social_draft_review_planning_persists_and_checks_revision(
             **record, "channel": "linkedin", "url": "https://www.linkedin.com/posts/example",
         })
         assert final.status_code == 200 and final.json()["state"] == "published"
+        corrected = {
+            **record,
+            "url": "https://www.instagram.com/p/corrected/",
+            "revision": final.json()["revision"],
+        }
+        revision_conflict = restarted.put(
+            publication_path, headers=headers, json=record
+        )
+        assert revision_conflict.status_code == 409
+        result = restarted.put(publication_path, headers=headers, json=corrected)
+        assert result.status_code == 200 and result.json()["state"] == "published"
+        assert result.json()["caption"] == "Edited caption"
         posted, = restarted.get(summary_path, headers=headers).json()["items"]
         assert {entry["channel"] for entry in posted["publications"]} == {
             "instagram", "linkedin",
         }
+        assert corrected["url"] in {entry["url"] for entry in posted["publications"]}
