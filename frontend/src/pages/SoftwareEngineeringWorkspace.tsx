@@ -232,9 +232,13 @@ export function SoftwareEngineeringWorkspace() {
   };
   const draftEdges = draftGraph?.edges ?? [];
   const newStepId = stepId.trim();
+  const needsJsonFields = stepSetting === 'json_field' || stepSetting === 'json_select';
+  const hasJsonFields = stepSetting === 'json_select'
+    ? jsonField.split(',').every((field) => field.trim())
+    : Boolean(jsonField.trim());
   const canAddStep = draftGraph && newStepId && newStepId !== '_input' &&
     !draftGraph.nodes.some((node) => node.id === newStepId) &&
-    (stepType === 'transform' ? stepSetting !== 'json_field' || jsonField.trim() : stepSetting.trim());
+    (stepType === 'transform' ? !needsJsonFields || hasJsonFields : stepSetting.trim());
   const addStep = () => {
     if (!draftGraph || !canAddStep) return;
     const node = { id: newStepId, type: stepType };
@@ -249,7 +253,7 @@ export function SoftwareEngineeringWorkspace() {
       default:
         definition = {
           ...node,
-          transform_expr: stepSetting === 'json_field' ? `json_field:${jsonField.trim()}` : stepSetting || 'concatenate',
+          transform_expr: needsJsonFields ? `${stepSetting}:${jsonField.trim()}` : stepSetting || 'concatenate',
         };
     }
     setWorkflowGraph(JSON.stringify({ ...draftGraph, nodes: [...draftGraph.nodes, definition] }, null, 2));
@@ -509,6 +513,7 @@ export function SoftwareEngineeringWorkspace() {
                         <option value="concatenate">Combine input</option>
                         <option value="first_line">Keep first line</option>
                         <option value="json_field">Extract JSON field</option>
+                        <option value="json_select">Keep selected JSON fields</option>
                       </select>
                     </label>
                   ) : (
@@ -517,8 +522,8 @@ export function SoftwareEngineeringWorkspace() {
                         placeholder={stepType === 'condition' ? "outputs['_input'] == 'yes'" : 'Review the prepared result'} />
                     </label>
                   )}
-                  {stepType === 'transform' && stepSetting === 'json_field' && (
-                    <label>JSON field name
+                  {stepType === 'transform' && needsJsonFields && (
+                    <label>{stepSetting === 'json_select' ? 'JSON field names (comma-separated)' : 'JSON field name'}
                       <input value={jsonField} onChange={(event) => setJsonField(event.target.value)} />
                     </label>
                   )}

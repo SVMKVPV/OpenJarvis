@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from typing import Dict, List, Optional, Set, Tuple
 
-from openjarvis.workflow.types import WorkflowEdge, WorkflowNode
+from openjarvis.workflow.types import NodeType, WorkflowEdge, WorkflowNode
 
 
 class WorkflowGraph:
@@ -66,7 +66,14 @@ class WorkflowGraph:
         )
 
     def validate(self) -> Tuple[bool, str]:
-        """Validate the graph: check for cycles and orphan nodes."""
+        """Validate node settings and check for cycles."""
+        for node in self._nodes.values():
+            if node.node_type == NodeType.LOOP and (
+                type(node.max_iterations) is not int or node.max_iterations < 1
+            ):
+                message = f"Loop '{node.id}' requires a positive integer max_iterations"
+                return False, message
+
         # Check for cycles using DFS
         visited: Set[str] = set()
         in_stack: Set[str] = set()

@@ -38,15 +38,19 @@ def graph_to_dict(graph: WorkflowGraph) -> dict[str, Any]:
 def graph_from_dict(data: Mapping[str, Any]) -> WorkflowGraph:
     graph = WorkflowGraph(name=str(data.get("name", "workflow")))
     for raw in data.get("nodes", []):
+        node_type = NodeType(str(raw.get("type", "agent")))
+        max_iterations = raw.get("max_iterations", 10)
+        if node_type != NodeType.LOOP or isinstance(max_iterations, str):
+            max_iterations = int(max_iterations)
         graph.add_node(
             WorkflowNode(
                 id=str(raw["id"]),
-                node_type=NodeType(str(raw.get("type", "agent"))),
+                node_type=node_type,
                 agent=str(raw.get("agent", "")),
                 tools=[str(item) for item in raw.get("tools", [])],
                 config=dict(raw.get("config", {})),
                 condition_expr=str(raw.get("condition_expr", "")),
-                max_iterations=int(raw.get("max_iterations", 10)),
+                max_iterations=max_iterations,
                 transform_expr=str(raw.get("transform_expr", "")),
             )
         )

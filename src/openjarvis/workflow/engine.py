@@ -227,7 +227,7 @@ class WorkflowEngine:
             elif node.node_type == NodeType.TRANSFORM:
                 result = self._run_transform_node(
                     node,
-                    self._get_node_input(node, outputs, graph, fallback_on_empty=False),
+                    self._get_node_input(node, outputs, graph),
                 )
             elif node.node_type == NodeType.LOOP:
                 result = self._run_loop_node(node, outputs, system, graph)
@@ -235,7 +235,7 @@ class WorkflowEngine:
                 result = self._run_approval_node(
                     node,
                     ctx,
-                    self._get_node_input(node, outputs, graph, fallback_on_empty=False),
+                    self._get_node_input(node, outputs, graph),
                 )
             else:
                 result = WorkflowStepResult(
@@ -355,19 +355,14 @@ class WorkflowEngine:
         node: WorkflowNode,
         outputs: Dict[str, str],
         graph: WorkflowGraph,
-        *,
-        fallback_on_empty: bool = True,
     ) -> str:
         """Get input for a node from predecessor outputs."""
-        preds = graph.predecessors(node.id)
-        if preds:
-            parts = [
+        if graph.predecessors(node.id):
+            return "\n\n".join(
                 outputs[p]
                 for p in graph.active_predecessors(node.id, outputs)
                 if outputs[p]
-            ]
-            if parts or not fallback_on_empty:
-                return "\n\n".join(parts)
+            )
         return outputs.get("_input", "")
 
     def _run_agent_node(
@@ -478,19 +473,25 @@ class WorkflowEngine:
                 node_id=node.id,
                 output=combined.split("\n")[0] if combined else "",
             )
-        if expr.startswith("json_field:"):
-            key = expr.removeprefix("json_field:")
+        operation, separator, field_names = expr.partition(":")
+        if separator and operation in {"json_field", "json_select"}:
             try:
                 data = json.loads(combined)
-                if not isinstance(data, dict) or key not in data:
-                    raise ValueError("Expected a JSON object with the requested field")
-                value = data[key]
+                if not isinstance(data, dict):
+                    raise ValueError("Expected a JSON object")
+                if operation == "json_field":
+                    value = data[field_names]
+                else:
+                    keys = [key.strip() for key in field_names.split(",")]
+                    if not all(keys):
+                        raise ValueError("Expected a comma-separated list of fields")
+                    value = {key: data[key] for key in keys}
                 output = (
                     value
                     if isinstance(value, str)
                     else json.dumps(value, allow_nan=False)
                 )
-            except (ValueError, RecursionError):
+            except (KeyError, ValueError, RecursionError):
                 return WorkflowStepResult(
                     node_id=node.id,
                     success=False,
@@ -509,26 +510,25 @@ class WorkflowEngine:
         graph: WorkflowGraph,
     ) -> WorkflowStepResult:
         """Execute a loop node (re-runs agent until condition or max iterations)."""
-        input_text = self._get_node_input(node, outputs, graph)
-        max_iter = node.max_iterations
-        last_output = input_text
-        for i in range(max_iter):
-            if system:
-                result = system.ask(last_output, agent=node.agent or None)
-                last_output = result.get("content", "")
-                # Check if loop should terminate
-                if (
-                    node.condition_expr
-                    and node.condition_expr.lower() in last_output.lower()
-                ):
-                    break
-            else:
+        if system is None:
+            return WorkflowStepResult(
+                node_id=node.id,
+                success=False,
+                output="No system available for loop execution.",
+                metadata={"iterations": 0},
+            )
+        last_output = self._get_node_input(node, outputs, graph)
+        exit_condition = node.condition_expr.lower()
+        for iteration in range(1, node.max_iterations + 1):
+            result = system.ask(last_output, agent=node.agent or None)
+            last_output = result.get("content", "")
+            if exit_condition and exit_condition in last_output.lower():
                 break
         return WorkflowStepResult(
             node_id=node.id,
             success=True,
             output=last_output,
-            metadata={"iterations": i + 1},
+            metadata={"iterations": iteration},
         )
 
 

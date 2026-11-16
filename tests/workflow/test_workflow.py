@@ -2,16 +2,27 @@
 
 from __future__ import annotations
 
+import json
+from unittest.mock import Mock
+
 import pytest
 
 from openjarvis.core.events import EventBus, EventType
 from openjarvis.workflow.builder import WorkflowBuilder
 from openjarvis.workflow.engine import WorkflowEngine
 from openjarvis.workflow.graph import WorkflowGraph
+from openjarvis.workflow.serialization import graph_from_dict
 from openjarvis.workflow.types import NodeType, WorkflowEdge, WorkflowNode
 
 
 class TestWorkflowGraph:
+    @pytest.mark.parametrize("count", [0, -1, 1.5, True, None])
+    def test_rejects_invalid_loop_count_in_serialized_graph(self, count):
+        with pytest.raises(ValueError, match="positive integer max_iterations"):
+            graph_from_dict({
+                "nodes": [{"id": "review", "type": "loop", "max_iterations": count}],
+            })
+
     def test_add_node(self):
         g = WorkflowGraph("test")
         g.add_node(WorkflowNode(id="a", node_type=NodeType.AGENT))
@@ -191,6 +202,49 @@ class TestWorkflowEngine:
         else:
             assert result.success
             assert result.final_output == expected
+
+    @pytest.mark.parametrize("node_type", ["agent", "loop"])
+    def test_connected_empty_field_does_not_pass_original_record(self, node_type):
+        builder = WorkflowBuilder("empty field").add_transform(
+            "field", transform="json_field:note"
+        )
+        if node_type == "agent":
+            builder.add_agent("review")
+        else:
+            builder.add_loop("review", max_iterations=1)
+        graph = builder.connect("field", "review").build()
+        system = Mock()
+        system.ask.return_value = {"content": "reviewed"}
+        result = WorkflowEngine().run(
+            graph, system=system, initial_input='{"note":"","private":"internal"}'
+        )
+        assert result.success
+        system.ask.assert_called_once()
+        assert system.ask.call_args.args == ("",)
+
+    def test_loop_without_backend_reports_no_iterations(self):
+        graph = WorkflowBuilder("review").add_loop("review").build()
+        result = WorkflowEngine().run(graph)
+        assert result.status == "failed"
+        assert result.steps[0].metadata["iterations"] == 0
+
+    def test_keep_selected_json_fields(self):
+        graph = (
+            WorkflowBuilder("select")
+            .add_transform("select", transform="json_select:email, qualified")
+            .build()
+        )
+        engine = WorkflowEngine()
+        result = engine.run(
+            graph,
+            initial_input='{"email":"lead@example.com","qualified":false,"notes":"private"}',
+        )
+        assert result.success
+        assert json.loads(result.final_output) == {
+            "email": "lead@example.com",
+            "qualified": False,
+        }
+        assert engine.run(graph, initial_input='{"email":null}').status == "failed"
 
     def test_conditional_edges_skip_unselected_branch(self):
         graph = (
