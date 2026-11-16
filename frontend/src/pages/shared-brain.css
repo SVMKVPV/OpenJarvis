@@ -2,3 +2,7 @@
 @media(max-width:800px){.brain-metrics{grid-template-columns:repeat(2,1fr)}.brain-detail-grid{grid-template-columns:1fr}.shared-brain-panel>header{align-items:flex-start;flex-direction:column;gap:14px}}
 
 .brain-stage .shared-brain-panel { min-height: 0; }
+
+.brain-brief-backend { display: grid; justify-items: start; gap: 8px; margin: 12px 0; }
+.brain-brief-backend details { max-width: 100%; }
+.brain-brief-backend pre { white-space: pre-wrap; overflow-wrap: anywhere; }

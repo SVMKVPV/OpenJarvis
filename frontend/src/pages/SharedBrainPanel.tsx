@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertTriangle, Network, Radio, Users } from 'lucide-react';
+import { fetchSharedBrainBrief, saveSharedBrainBrief, SharedBrainConflict, type SharedBrainBrief } from '../lib/api';
 import './shared-brain.css';
 
 export function SharedBrainPanel({ context, onContextChange, onShare, onOpenDot }: {
@@ -12,6 +13,53 @@ export function SharedBrainPanel({ context, onContextChange, onShare, onOpenDot 
   const [update, setUpdate] = useState('');
   const [shareStatus, setShareStatus] = useState('');
   const [copyMessage, setCopyMessage] = useState('');
+  const [backendBrief, setBackendBrief] = useState<SharedBrainBrief | null>(null);
+  const [checkingBackend, setCheckingBackend] = useState(true);
+  const [backendMessage, setBackendMessage] = useState('Checking backend brief…');
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchSharedBrainBrief(controller.signal).then((brief) => {
+      if (controller.signal.aborted) return;
+      setBackendBrief(brief);
+      setBackendMessage('');
+    }).catch(() => {
+      if (!controller.signal.aborted) setBackendMessage('Backend brief unavailable. Your draft stays on this device.');
+    }).finally(() => {
+      if (!controller.signal.aborted) setCheckingBackend(false);
+    });
+    return () => controller.abort();
+  }, []);
+
+  const refreshBackend = async () => {
+    setCheckingBackend(true);
+    try {
+      setBackendBrief(await fetchSharedBrainBrief());
+      setBackendMessage('Backend brief refreshed.');
+    } catch {
+      setBackendBrief(null);
+      setBackendMessage('Backend brief unavailable. Your draft stays on this device.');
+    } finally {
+      setCheckingBackend(false);
+    }
+  };
+
+  const saveToBackend = async () => {
+    if (!backendBrief || checkingBackend) return;
+    setCheckingBackend(true);
+    try {
+      const saved = await saveSharedBrainBrief({ context, revision: backendBrief.revision });
+      setBackendBrief(saved);
+      setBackendMessage('Brief saved to the backend.');
+    } catch (error) {
+      setBackendBrief(null);
+      setBackendMessage(error instanceof SharedBrainConflict
+        ? 'Another client changed the brief. Refresh to compare it with your draft.'
+        : 'The save could not be confirmed. Refresh to check the backend brief.');
+    } finally {
+      setCheckingBackend(false);
+    }
+  };
   const copyBrief = async () => {
     try {
       await navigator.clipboard.writeText(context.trim());
@@ -39,6 +87,30 @@ export function SharedBrainPanel({ context, onContextChange, onShare, onOpenDot 
       <button type="button" disabled={!context.trim()} onClick={() => void copyBrief()}>
         Copy brief
       </button>
+      <div className="brain-brief-backend">
+        <button type="button" disabled={checkingBackend} onClick={() => void refreshBackend()}>
+          Refresh backend brief
+        </button>
+        {backendBrief && backendBrief.context !== context && (
+          <>
+            <details>
+              <summary>Compare backend brief</summary>
+              <pre>{backendBrief.context || 'The backend brief is empty.'}</pre>
+            </details>
+            {backendBrief.revision > 0 && (
+              <button type="button" disabled={checkingBackend} onClick={() => {
+                onContextChange(backendBrief.context);
+                setBackendMessage('Backend brief loaded into your local draft.');
+              }}>Use backend brief</button>
+            )}
+            <button type="button" disabled={checkingBackend} onClick={() => void saveToBackend()}>
+              Save brief to backend
+            </button>
+          </>
+        )}
+        {backendBrief && backendBrief.context === context && backendBrief.revision > 0 && <small>Draft matches the backend brief.</small>}
+        {backendMessage && <p role="status">{backendMessage}</p>}
+      </div>
       {copyMessage && <p role="status">{copyMessage}</p>}
       <form onSubmit={(event) => {
         event.preventDefault();
@@ -61,7 +133,7 @@ export function SharedBrainPanel({ context, onContextChange, onShare, onOpenDot 
         <button type="submit" disabled={!update.trim()}>Add to shared brief</button>
         {shareStatus && <p role="status">{shareStatus}</p>}
       </form>
-      <p>The brief is saved on this device. When you include it in a message to Dot or a linked agent, it goes to that message’s model.</p>
+      <p>Edits stay in your local draft until you save to the backend. Another client on the same backend can load that brief. If you include the draft in a message to Dot or a linked agent, it goes to that message’s model.</p>
     </section>
   </>;
 }

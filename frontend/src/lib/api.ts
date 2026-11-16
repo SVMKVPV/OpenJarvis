@@ -121,6 +121,35 @@ export const apiFetch = (
   return fetch(`${getBase()}${path}`, { ...init, headers });
 };
 
+export interface SharedBrainBrief {
+  context: string;
+  revision: number;
+}
+
+export class SharedBrainConflict extends Error {}
+
+async function readSharedBrainBrief(response: Response): Promise<SharedBrainBrief> {
+  if (response.status === 409) throw new SharedBrainConflict();
+  if (!response.ok) throw new Error(`Shared Brain backend request failed (${response.status}).`);
+  const data = await response.json().catch(() => null);
+  if (typeof data?.context !== 'string' || !Number.isInteger(data?.revision) || data.revision < 0) {
+    throw new Error('This backend does not provide a shared brief.');
+  }
+  return data;
+}
+
+export async function fetchSharedBrainBrief(signal?: AbortSignal): Promise<SharedBrainBrief> {
+  return readSharedBrainBrief(await apiFetch('/v1/shared-brain/brief', { signal }));
+}
+
+export async function saveSharedBrainBrief(brief: SharedBrainBrief): Promise<SharedBrainBrief> {
+  return readSharedBrainBrief(await apiFetch('/v1/shared-brain/brief', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(brief),
+  }));
+}
+
 export type RuntimePlugin = {
   id: string;
   name: string;
