@@ -548,7 +548,7 @@ export interface AgentMessage {
   agent_id: string;
   direction: 'user_to_agent' | 'agent_to_user';
   content: string;
-  mode: 'immediate' | 'queued';
+  mode: 'immediate' | 'queued' | 'handoff';
   status: 'pending' | 'delivered' | 'responded';
   created_at: number;
   tool_calls?: PersistedToolCall[] | null;

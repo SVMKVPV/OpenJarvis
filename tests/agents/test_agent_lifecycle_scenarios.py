@@ -264,7 +264,8 @@ def test_error_retry_success(scenario_harness: ScenarioHarness) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_error_exhaustion(scenario_harness: ScenarioHarness) -> None:
+@pytest.mark.parametrize("mode", ["queued", "handoff"])
+def test_error_exhaustion(scenario_harness: ScenarioHarness, mode: str) -> None:
     """A failed manager tick keeps queued work available for recovery."""
     h = scenario_harness
     h.engine._responses = [
@@ -274,9 +275,20 @@ def test_error_exhaustion(scenario_harness: ScenarioHarness) -> None:
     ]
     h.engine._call_count = 0
 
-    agent = h.manager.create_from_template("general_manager", "General Manager")
+    if mode == "handoff":
+        from openjarvis.agents.simple import SimpleAgent
+        from openjarvis.core.registry import AgentRegistry
+
+        if not AgentRegistry.contains("simple"):
+            AgentRegistry.register_value("simple", SimpleAgent)
+
+    agent = (
+        h.manager.create_from_template("general_manager", "General Manager")
+        if mode == "queued"
+        else h.manager.create_agent("Handoff recipient", agent_type="simple")
+    )
     aid = agent["id"]
-    queued = h.manager.send_message(aid, "Keep this instruction", mode="queued")
+    queued = h.manager.send_message(aid, "Keep this instruction", mode=mode)
 
     with patch("openjarvis.agents.executor.time.sleep"):
         h.executor.execute_tick(aid)

@@ -468,6 +468,7 @@ class AgentExecutor:
             mcp_clients=mcp_clients,
             knowledge_db_path=getattr(self._system, "knowledge_db_path", None),
             app_config=getattr(self._system, "config", None),
+            agent_manager=self._manager,
         )
         self._toolkit_local.current = resolved_toolkit
         tool_instances = resolved_toolkit.instances
@@ -671,12 +672,18 @@ class AgentExecutor:
         defer_delivery = (
             agent["agent_type"] == "monitor_operative" and not tool_instances
         )
+        deferred_message_ids = []
         if pending:
-            user_msgs = "\n".join(f"User: {m['content']}" for m in pending)
-            input_text = f"{input_text}\n\nNew instructions:\n{user_msgs}"
-            if not defer_delivery:
-                for m in pending:
-                    self._manager.mark_message_delivered(m["id"])
+            instructions = []
+            for message in pending:
+                is_handoff = message.get("mode") == "handoff"
+                prefix = "Handoff" if is_handoff else "User"
+                instructions.append(f"{prefix}: {message['content']}")
+                if defer_delivery or is_handoff:
+                    deferred_message_ids.append(message["id"])
+                else:
+                    self._manager.mark_message_delivered(message["id"])
+            input_text += "\n\nNew instructions:\n" + "\n".join(instructions)
             logger.info(
                 "Agent %s: delivering %d pending message(s)",
                 agent["name"],
@@ -768,10 +775,8 @@ class AgentExecutor:
         finally:
             resolved_toolkit.close()
 
-        if defer_delivery and (result.content or "").strip():
-            result.metadata["_delivered_message_ids"] = tuple(
-                message["id"] for message in pending
-            )
+        if deferred_message_ids and (result.content or "").strip():
+            result.metadata["_delivered_message_ids"] = tuple(deferred_message_ids)
 
         _elapsed = time.time() - _t0
         logger.info(

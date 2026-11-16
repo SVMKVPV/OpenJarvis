@@ -45,3 +45,33 @@ def test_finance_agent_inherits_indexed_search_guidance(tmp_path) -> None:
         assert "knowledge_search" in record["config"]["tools"]
     finally:
         manager.close()
+
+
+def test_quality_manager_queues_a_managed_workstation_handoff(tmp_path) -> None:
+    import json
+
+    from openjarvis.agents.tool_resolver import resolve_agent_tools
+
+    manager = AgentManager(str(tmp_path / "agents.db"))
+    try:
+        reviewer = manager.create_from_template("quality_manager", "Managers")
+        worker = manager.create_agent("Marketing", config={"schedule_type": "manual"})
+        with resolve_agent_tools(
+            reviewer, engine=object(), model="local", agent_manager=manager
+        ) as toolkit:
+            roster = toolkit.by_name["managed_agent_list"].execute()
+            assert [item["id"] for item in json.loads(roster.content)] == [worker["id"]]
+            handoff = toolkit.by_name["managed_agent_queue"].execute(
+                agent_id=worker["id"],
+                message="Correct the headline and return a draft.",
+            )
+            assert handoff.success
+            queued = manager.get_pending_messages(worker["id"])
+            assert [message["id"] for message in queued] == [
+                json.loads(handoff.content)["message_id"]
+            ]
+            assert queued[0]["mode"] == "handoff"
+            assert queued[0]["content"].startswith("Internal handoff from Managers")
+            assert manager.get_agent(worker["id"])["status"] == "idle"
+    finally:
+        manager.close()

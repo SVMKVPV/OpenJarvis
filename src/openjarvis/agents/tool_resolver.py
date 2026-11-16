@@ -323,6 +323,7 @@ def resolve_agent_tools(
     mcp_clients: Iterable[Any] = (),
     knowledge_db_path: str | Path | None = None,
     app_config: Any = None,
+    agent_manager: Any = None,
 ) -> ResolvedAgentTools:
     """Resolve the effective live toolkit for a managed agent.
 
@@ -330,6 +331,7 @@ def resolve_agent_tools(
     over configured registry tools, which take precedence over MCP adapters.
     ``config["mcp_tools"] = false`` excludes MCP adapters from this agent;
     process-wide runtimes may still own connections used by other agents.
+    If present, ``mcp_tool_allowlist`` limits adapters to the named tools.
     """
 
     ensure_registries_populated()
@@ -359,6 +361,14 @@ def resolve_agent_tools(
 
     use_mcp = config.get("mcp_tools", True) is not False
     mcp_tool_list = list(mcp_tools) if use_mcp else []
+    if "mcp_tool_allowlist" in config:
+        allowlist = config["mcp_tool_allowlist"]
+        allowed = (
+            {name for name in allowlist if isinstance(name, str)}
+            if isinstance(allowlist, list)
+            else set()
+        )
+        mcp_tool_list = [tool for tool in mcp_tool_list if _tool_name(tool) in allowed]
     mcp_by_name: dict[str, Any] = {}
     for tool in mcp_tool_list:
         name = _tool_name(tool)
@@ -433,6 +443,18 @@ def resolve_agent_tools(
             if name in seen:
                 continue
             if ChannelRegistry.contains(name):
+                continue
+            if name in {"managed_agent_list", "managed_agent_queue"} and agent_manager:
+                from openjarvis.tools.managed_agent_tools import (
+                    ManagedAgentListTool,
+                    ManagedAgentQueueTool,
+                )
+
+                tool_class = (
+                    ManagedAgentListTool if name == "managed_agent_list"
+                    else ManagedAgentQueueTool
+                )
+                add_instance(tool_class(agent_manager, str(agent_record.get("id", ""))))
                 continue
             if not ToolRegistry.contains(name):
                 logger.warning(

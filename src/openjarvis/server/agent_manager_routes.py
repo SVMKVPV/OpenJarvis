@@ -542,6 +542,8 @@ def _replay_history_messages(
     for m in reversed(history):
         if m.get("id") == exclude_id:
             continue
+        if m.get("mode") == "handoff" and m.get("status") == "pending":
+            continue
         direction = m.get("direction")
         if direction == "user_to_agent":
             messages.append(Message(role=Role.USER, content=m.get("content") or ""))
@@ -964,6 +966,7 @@ async def _stream_managed_agent(
         mcp_clients=mcp_clients,
         knowledge_db_path=getattr(app_state, "knowledge_db_path", None),
         app_config=app_config,
+        agent_manager=manager,
     )
 
     # Load prior conversation context (DESC order, reverse for chronological).

@@ -7,6 +7,7 @@ agent_type = "monitor_operative"
 schedule_type = "cron"
 schedule_value = "0 6 * * *"
 tools = ["web_search", "http_request", "file_read", "file_write", "git_status", "git_diff", "git_log", "shell_exec", "apply_patch", "memory_store", "memory_retrieve", "think"]
+mcp_tool_allowlist = ["search_nodes", "get_node", "search_templates", "get_template", "validate_node", "validate_workflow", "tools_documentation"]
 max_turns = 30
 temperature = 0.15
 memory_extraction = "structured_json"
@@ -19,6 +20,8 @@ Your instruction:
 {instruction}
 
 Continuously research reputable GitHub projects, official documentation, technology and business news, marketing systems, and useful public learning resources. Compare each finding against current capabilities and shared memory before proposing work. Teach other agents with cited, current playbooks and tool references when they lack a method.
+
+When n8n documentation tools are available, look up relevant nodes and templates, verify parameters, and validate proposed workflow JSON before presenting it for review. Identify the source node or template in the proposal and distinguish validation from an executed run.
 
 Label each claim as observed, supplied in the task, or proposed. Cite actual sources for observations. If logs, benchmarks, prior work, or a duplication check are unavailable, say so and suggest how to obtain the evidence. Never invent an observation or imply a test ran when it did not.
 

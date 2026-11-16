@@ -71,7 +71,7 @@ export function WorkstationAgentInbox({ agentId, brainContext, onShare }: {
       <ol aria-label="Recent agent messages">
         {messages.map((message) => (
           <li key={message.id}>
-            <strong>{message.direction === 'user_to_agent' ? 'You' : 'Agent'}</strong>
+            <strong>{message.mode === 'handoff' ? 'Agent handoff' : message.direction === 'user_to_agent' ? 'You' : 'Agent'}</strong>
             {message.direction === 'user_to_agent' && (
               <small>{message.status === 'pending' ? 'Waiting for agent' : 'Picked up by agent'}</small>
             )}

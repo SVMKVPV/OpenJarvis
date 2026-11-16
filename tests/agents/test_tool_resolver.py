@@ -290,6 +290,21 @@ def test_mcp_tools_merge_after_native_tools_without_name_collisions() -> None:
     ]
 
 
+def test_mcp_allowlist_restricts_executable_and_advertised_tools() -> None:
+    resolved = tool_resolver.resolve_agent_tools(
+        {
+            "agent_type": "simple",
+            "config": {"mcp_tool_allowlist": ["mcp_only"]},
+        },
+        engine=object(),
+        model="test-model",
+        mcp_tools=[_MCPSharedTool(), _MCPOnlyTool()],
+    )
+
+    assert list(resolved.by_name) == ["mcp_only"]
+    assert [spec["function"]["name"] for spec in resolved.openai_specs] == ["mcp_only"]
+
+
 def test_mcp_tools_can_be_disabled_per_agent() -> None:
     ToolRegistry.register_value("shared", _NativeSharedTool)
 
