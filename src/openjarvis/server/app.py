@@ -28,6 +28,7 @@ from openjarvis.server.plugin_routes import router as plugin_router
 from openjarvis.server.research_router import router as research_router
 from openjarvis.server.routes import router
 from openjarvis.server.upload_router import router as upload_router
+from openjarvis.server.workflow_routes import create_workflow_runs_router
 
 logger = logging.getLogger(__name__)
 _MANAGED_SHUTDOWN_GRACE_SECONDS = 0.25
@@ -318,9 +319,38 @@ def create_app(
     # Exposed so WebSocket handlers can authenticate the handshake (the HTTP
     # AuthMiddleware never sees WS upgrade requests). Empty = auth disabled.
     app.state.api_key = api_key
+    app.state.workflow_runtime = None
+    try:
+        from openjarvis.core.config import load_config
+        from openjarvis.core.events import EventBus
+        from openjarvis.system import JarvisSystem
+
+        workflow_config = config if config is not None else load_config()
+        workflow_bus = bus if bus is not None else EventBus()
+        app.state.workflow_system = JarvisSystem(
+            config=workflow_config,
+            bus=workflow_bus,
+            engine=engine,
+            engine_key=engine_name or getattr(engine, "engine_id", "server"),
+            model=model,
+            agent=agent,
+            agent_name=agent_name,
+            tool_executor=getattr(agent, "_tool_executor", None) if agent else None,
+            capability_policy=capability_policy,
+            audit_logger=audit_logger,
+            rate_limiter=rate_limiter,
+        )
+    except Exception:
+        app.state.workflow_system = None
 
     @app.on_event("shutdown")
     async def _shutdown_managed_runtime() -> None:
+        workflow_runtime = getattr(app.state, "workflow_runtime", None)
+        if workflow_runtime is not None:
+            try:
+                workflow_runtime.close()
+            except Exception:
+                logger.debug("Workflow runtime shutdown failed", exc_info=True)
         # Quiesce every producer before touching the shared MCP pool. Route
         # workers are registered under this lock, so none can slip in after
         # the snapshot. The scheduler has a two-phase stop because closing an
@@ -483,6 +513,7 @@ def create_app(
     app.include_router(upload_router)
     app.include_router(research_router)
     app.include_router(plugin_router)
+    app.include_router(create_workflow_runs_router())
     app.include_router(analytics_router)
     include_all_routes(app)
 

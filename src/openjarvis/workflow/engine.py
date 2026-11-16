@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from openjarvis.core.events import EventBus, EventType
 from openjarvis.workflow.graph import WorkflowGraph
@@ -31,10 +31,12 @@ class WorkflowEngine:
         bus: Optional[EventBus] = None,
         max_parallel: int = 4,
         default_node_timeout: int = 300,
+        approval_store: Any = None,
     ) -> None:
         self._bus = bus
         self._max_parallel = max_parallel
         self._default_node_timeout = default_node_timeout
+        self._approval_store = approval_store
 
     def run(
         self,
@@ -43,6 +45,10 @@ class WorkflowEngine:
         *,
         initial_input: str = "",
         context: Optional[Dict[str, Any]] = None,
+        step_callback: Optional[Callable[[WorkflowStepResult], None]] = None,
+        should_cancel: Optional[Callable[[], bool]] = None,
+        resume_outputs: Optional[Dict[str, str]] = None,
+        completed_nodes: Optional[set[str]] = None,
     ) -> WorkflowResult:
         """Execute a workflow graph end-to-end."""
         valid, msg = graph.validate()
@@ -50,6 +56,7 @@ class WorkflowEngine:
             return WorkflowResult(
                 workflow_name=graph.name,
                 success=False,
+                status="failed",
                 final_output=f"Invalid workflow: {msg}",
             )
 
@@ -61,13 +68,25 @@ class WorkflowEngine:
             )
 
         # State: outputs keyed by node_id
-        outputs: Dict[str, str] = {"_input": initial_input}
-        ctx = dict(context or {})
+        outputs: Dict[str, str] = {"_input": initial_input, **(resume_outputs or {})}
+        # Keep the caller's mutable context so durable runtimes can persist
+        # approval IDs and other checkpoint state created during execution.
+        ctx = context if context is not None else {}
+        completed = set(completed_nodes or ())
         all_steps: List[WorkflowStepResult] = []
         success = True
+        cancelled = False
+        waiting_approval = False
 
         stages = graph.execution_stages()
         for stage in stages:
+            stage = [node_id for node_id in stage if node_id not in completed]
+            if not stage:
+                continue
+            if should_cancel and should_cancel():
+                success = False
+                cancelled = True
+                break
             if len(stage) == 1:
                 # Sequential execution
                 step = self._execute_node(
@@ -78,7 +97,13 @@ class WorkflowEngine:
                     graph,
                 )
                 all_steps.append(step)
+                if step_callback:
+                    step_callback(step)
                 outputs[stage[0]] = step.output
+                if step.metadata.get("workflow_status") == "waiting_approval":
+                    waiting_approval = True
+                    success = False
+                    break
                 if not step.success:
                     success = False
                     break
@@ -111,7 +136,12 @@ class WorkflowEngine:
                                 output=f"Node execution error: {exc}",
                             )
                         all_steps.append(step)
+                        if step_callback:
+                            step_callback(step)
                         outputs[nid] = step.output
+                        if step.metadata.get("workflow_status") == "waiting_approval":
+                            waiting_approval = True
+                            success = False
                         if not step.success:
                             success = False
 
@@ -131,6 +161,15 @@ class WorkflowEngine:
         return WorkflowResult(
             workflow_name=graph.name,
             success=success,
+            status=(
+                "cancelled"
+                if cancelled
+                else (
+                    "waiting_approval"
+                    if waiting_approval
+                    else ("succeeded" if success else "failed")
+                )
+            ),
             steps=all_steps,
             final_output=final_output,
             total_duration_seconds=total,
@@ -163,6 +202,8 @@ class WorkflowEngine:
                 result = self._run_transform_node(node, outputs)
             elif node.node_type == NodeType.LOOP:
                 result = self._run_loop_node(node, outputs, system, graph)
+            elif node.node_type == NodeType.APPROVAL:
+                result = self._run_approval_node(node, ctx)
             else:
                 result = WorkflowStepResult(
                     node_id=node.id,
@@ -189,6 +230,85 @@ class WorkflowEngine:
             )
 
         return result
+
+    def _run_approval_node(
+        self,
+        node: WorkflowNode,
+        context: Dict[str, Any],
+    ) -> WorkflowStepResult:
+        if self._approval_store is None:
+            return WorkflowStepResult(
+                node_id=node.id,
+                success=False,
+                output="Approval store is unavailable.",
+            )
+
+        from openjarvis.tools.approval_store import (
+            STATUS_APPROVED,
+            STATUS_DENIED,
+            STATUS_EXPIRED,
+        )
+
+        approval_ids = context.setdefault("_workflow_approvals", {})
+        approval_id = approval_ids.get(node.id)
+        if approval_id:
+            action = self._approval_store.get_action(approval_id)
+            if action is None:
+                return WorkflowStepResult(
+                    node_id=node.id,
+                    success=False,
+                    output="Approval record was not found.",
+                )
+            if action.status == STATUS_APPROVED:
+                return WorkflowStepResult(
+                    node_id=node.id,
+                    output="Approved",
+                    metadata={
+                        "approval_id": approval_id,
+                        "approval_status": "approved",
+                    },
+                )
+            if action.status in {STATUS_DENIED, STATUS_EXPIRED}:
+                return WorkflowStepResult(
+                    node_id=node.id,
+                    success=False,
+                    output=f"Approval {action.status}",
+                    metadata={
+                        "approval_id": approval_id,
+                        "approval_status": action.status,
+                    },
+                )
+            return WorkflowStepResult(
+                node_id=node.id,
+                output="Waiting for approval",
+                metadata={
+                    "approval_id": approval_id,
+                    "approval_status": action.status,
+                    "workflow_status": "waiting_approval",
+                },
+            )
+
+        payload = dict(node.config.get("payload", {}))
+        payload["workflow_run_id"] = context.get("_workflow_run_id", "")
+        payload["workflow_node_id"] = node.id
+        action = self._approval_store.queue_action(
+            action_type=str(node.config.get("action_type", "workflow_action")),
+            description=str(node.config.get("description", "Approve workflow action")),
+            payload=payload,
+            permission_key=str(node.config.get("permission_key", node.id)),
+            tier=str(node.config.get("tier", "high")),
+            ttl_hours=int(node.config.get("ttl_hours", 24)),
+        )
+        approval_ids[node.id] = action.id
+        return WorkflowStepResult(
+            node_id=node.id,
+            output="Waiting for approval",
+            metadata={
+                "approval_id": action.id,
+                "approval_status": action.status,
+                "workflow_status": "waiting_approval",
+            },
+        )
 
     def _get_node_input(
         self,

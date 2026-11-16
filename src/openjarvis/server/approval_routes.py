@@ -13,7 +13,7 @@ from openjarvis.tools.approval_store import (
 )
 
 try:
-    from fastapi import APIRouter, HTTPException
+    from fastapi import APIRouter, HTTPException, Request
 except ImportError:
     raise ImportError("fastapi is required for approval routes")
 
@@ -25,11 +25,25 @@ router = APIRouter()
 _store: Optional[ApprovalStore] = None
 
 
-def _get_store() -> ApprovalStore:
+def get_approval_store() -> ApprovalStore:
     global _store
     if _store is None:
         _store = ApprovalStore()
     return _store
+
+
+_get_store = get_approval_store
+
+
+def _resume_workflow(request: Request, action: PendingAction) -> None:
+    run_id = action.payload.get("workflow_run_id")
+    runtime = getattr(request.app.state, "workflow_runtime", None)
+    if not run_id or runtime is None:
+        return
+    try:
+        runtime.resume(run_id)
+    except (KeyError, ValueError):
+        logger.debug("Workflow %s was not resumable after approval decision", run_id)
 
 
 def _serialize(action: PendingAction) -> Dict[str, Any]:
@@ -55,25 +69,27 @@ async def list_pending_approvals() -> Dict[str, Any]:
 
 
 @router.post("/v1/approvals/{action_id}/approve")
-async def approve_action(action_id: str) -> Dict[str, Any]:
+async def approve_action(action_id: str, request: Request) -> Dict[str, Any]:
     store = _get_store()
     action = store.get_action(action_id)
     if action is None:
         raise HTTPException(status_code=404, detail="Action not found")
     store.update_status(action_id, STATUS_APPROVED)
+    _resume_workflow(request, action)
     logger.info("Action %s approved via UI", action_id)
     return {"status": "approved", "id": action_id}
 
 
 @router.post("/v1/approvals/{action_id}/deny")
-async def deny_action(action_id: str) -> Dict[str, Any]:
+async def deny_action(action_id: str, request: Request) -> Dict[str, Any]:
     store = _get_store()
     action = store.get_action(action_id)
     if action is None:
         raise HTTPException(status_code=404, detail="Action not found")
     store.update_status(action_id, STATUS_DENIED)
+    _resume_workflow(request, action)
     logger.info("Action %s denied via UI", action_id)
     return {"status": "denied", "id": action_id}
 
 
-__all__ = ["router"]
+__all__ = ["get_approval_store", "router"]

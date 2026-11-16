@@ -108,6 +108,31 @@ class WorkflowBuilder:
         )
         return self
 
+    def add_approval(
+        self,
+        node_id: str,
+        *,
+        action_type: str,
+        description: str,
+        tier: str = "high",
+        permission_key: str = "",
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> WorkflowBuilder:
+        self._nodes.append(
+            WorkflowNode(
+                id=node_id,
+                node_type=NodeType.APPROVAL,
+                config={
+                    "action_type": action_type,
+                    "description": description,
+                    "tier": tier,
+                    "permission_key": permission_key or action_type,
+                    "payload": payload or {},
+                },
+            )
+        )
+        return self
+
     def connect(
         self,
         source: str,

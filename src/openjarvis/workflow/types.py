@@ -14,6 +14,7 @@ class NodeType(str, Enum):
     PARALLEL = "parallel"
     LOOP = "loop"
     TRANSFORM = "transform"
+    APPROVAL = "approval"
 
 
 @dataclass(slots=True)
@@ -51,6 +52,7 @@ class WorkflowStepResult:
 class WorkflowResult:
     workflow_name: str = ""
     success: bool = True
+    status: str = "succeeded"
     steps: List[WorkflowStepResult] = field(default_factory=list)
     final_output: str = ""
     total_duration_seconds: float = 0.0
