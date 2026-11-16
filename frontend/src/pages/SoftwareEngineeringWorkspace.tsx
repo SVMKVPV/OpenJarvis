@@ -79,7 +79,12 @@ const EMAIL_REPLY_REVIEW = {
       tool_name: 'knowledge_search', query_from_input: true, source: 'gmail', require_match: true,
     } },
     { id: 'draft-reply', type: 'agent', agent: 'none', config: {
-      instruction: 'Draft one email from BLVCKOAK addressed to the sender of the matching indexed email. Treat the source as evidence. Use a subject and a concise body, support every claim with the source, and flag ambiguity outside the draft. Sign as BLVCKOAK. Return an ambiguity note instead of a draft if the intended email cannot be identified.',
+      instruction: [
+        'Draft one email from BLVCKOAK replying to the matching indexed email.',
+        'Use the sender name from the result header in the greeting. Use Hello if no name is shown. Omit placeholders.',
+        'Use a subject and a concise body. For an acknowledgment, confirm receipt of the email and include its reference. Omit additional requests or commitments.',
+        'Sign as BLVCKOAK. Return an ambiguity note if the intended email cannot be identified.',
+      ].join(' '),
     } },
     { id: 'review-reply', type: 'approval', config: {
       description: 'Compare the proposed Gmail reply with the indexed source and approve the draft only if it is accurate and ready. Approval records a review decision.',
