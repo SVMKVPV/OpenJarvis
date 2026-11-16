@@ -51,7 +51,7 @@ type Station = {
   status: 'working' | 'review' | 'ready';
 };
 
-type VoiceMessage = { id: string; role: 'user' | 'dot'; text: string };
+type VoiceMessage = { id: string; role: 'user' | 'dot'; text: string; shareable?: boolean };
 type DotTurn = { request: string; reply: string };
 
 const INITIAL_STATIONS: Station[] = [
@@ -190,12 +190,17 @@ type BrowserRecognition = {
 };
 type BrowserRecognitionConstructor = new () => BrowserRecognition;
 
-function DotVoice({ station, brainContext }: { station: Station; brainContext: string }) {
+function DotVoice({ station, brainContext, onShare }: {
+  station: Station;
+  brainContext: string;
+  onShare: (source: string, text: string) => string;
+}) {
   const speech = useSpeech();
   const tts = useTts();
   const selectedModel = useAppStore((state) => state.selectedModel);
   const [includeBrainBrief, setIncludeBrainBrief] = useState(false);
   const [input, setInput] = useState('');
+  const [shareStatus, setShareStatus] = useState('');
   const [browserListening, setBrowserListening] = useState(false);
   const [thinking, setThinking] = useState(false);
   const [messages, setMessages] = useState<VoiceMessage[]>([
@@ -269,13 +274,14 @@ function DotVoice({ station, brainContext }: { station: Station; brainContext: s
         response = unavailableResponse;
       }
     }
-    if (completed && !brief && !response.trimStart().startsWith('Error during generation:')) {
+    const shareable = completed && !response.trimStart().startsWith('Error during generation:');
+    if (shareable && !brief) {
       conversationHistory.current.set(conversationKey, [
         ...history,
         { request: text.slice(0, 280), reply: response.trim().slice(0, 480) },
       ].slice(-2));
     }
-    const reply: VoiceMessage = { id: `d-${Date.now()}`, role: 'dot', text: response.trim() || unavailableResponse };
+    const reply: VoiceMessage = { id: `d-${Date.now()}`, role: 'dot', text: response.trim() || unavailableResponse, shareable };
     setMessages((current) => [...current, reply]);
     setThinking(false);
     void speakResponse(reply.id, reply.text);
@@ -351,10 +357,16 @@ function DotVoice({ station, brainContext }: { station: Station; brainContext: s
           <div key={message.id} className={`voice-message ${message.role}`}>
             <span>{message.role === 'dot' ? 'DOT' : 'YOU'}</span>
             <p>{message.text}</p>
+            {message.shareable && (
+              <button type="button" onClick={() => setShareStatus(onShare('Dot', message.text))}>
+                Add to Shared Brain
+              </button>
+            )}
           </div>
         ))}
         {thinking && <div className="voice-message dot"><span>DOT</span><p>Processing through OpenJarvis…</p></div>}
       </div>
+      {shareStatus && <p role="status">{shareStatus}</p>}
       <form className="voice-compose" onSubmit={submit}>
         <input ref={inputRef} value={input} onChange={(event) => setInput(event.target.value)} placeholder={`Command ${station.name} through Dot…`} />
         <button type="submit" aria-label="Send to Dot" disabled={!input.trim() || thinking}><ArrowUp size={15} /></button>
@@ -517,6 +529,18 @@ export function CommandCenterPage() {
     () => '',
     (value) => typeof value === 'string' && value.length <= 4000,
   );
+  const addBrainUpdate = (source: string, text: string) => {
+    const entry = `[${source}]\n${text.trim()}`;
+    const current = brainContext.trim();
+    const separator = '\n\n';
+    if (`${separator}${current}${separator}`.includes(`${separator}${entry}${separator}`)) {
+      return 'This update is already in the brief.';
+    }
+    const next = [current, entry].filter(Boolean).join(separator);
+    if (next.length > 4000) return 'The brief is full. Shorten it before adding this update.';
+    setBrainContext(next);
+    return 'Added to Shared Brain.';
+  };
   const [stationEditMessage, setStationEditMessage] = useState<{ id: string; text: string } | null>(null);
   const [stationAgentIds, setStationAgentIds] = useLocalPreference<Record<string, string>>(
     'openjarvis.command-center.station-agents.v1',
@@ -613,7 +637,7 @@ export function CommandCenterPage() {
           <div className="rail-foot"><Activity size={13} /><span>LIVE WORK FEED</span><b>284</b></div>
         </aside>
 
-        {selected.id === 'brain' ? <section className="workflow-stage brain-stage"><SharedBrainPanel context={brainContext} onContextChange={setBrainContext} /></section> : <main className="workflow-stage">
+        {selected.id === 'brain' ? <section className="workflow-stage brain-stage"><SharedBrainPanel context={brainContext} onContextChange={setBrainContext} onShare={addBrainUpdate} /></section> : <main className="workflow-stage">
           <div className="station-header">
             <div><span>{selected.code} // SELECTED STATION</span><h2>{selected.name}</h2><p>{selected.purpose}</p></div>
             <div className="station-now"><span>CURRENT WORK</span><strong>{selected.current}</strong><small>Reports to {selected.reportsTo}</small></div>
@@ -657,7 +681,7 @@ export function CommandCenterPage() {
           />
         </main>}
 
-        <DotVoice station={selected} brainContext={brainContext} />
+        <DotVoice station={selected} brainContext={brainContext} onShare={addBrainUpdate} />
       </div>}
       <footer className="command-footer">
         <span><Square size={7} fill="currentColor" /> BLACK OAK OPERATING SYSTEM</span>

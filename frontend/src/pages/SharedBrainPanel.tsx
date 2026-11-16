@@ -2,10 +2,14 @@ import { useState } from 'react';
 import { AlertTriangle, Network, Radio, Users } from 'lucide-react';
 import './shared-brain.css';
 
-export function SharedBrainPanel({ context, onContextChange }: {
+export function SharedBrainPanel({ context, onContextChange, onShare }: {
   context: string;
   onContextChange: (value: string) => void;
+  onShare: (source: string, text: string) => string;
 }) {
+  const [source, setSource] = useState('ChatGPT');
+  const [update, setUpdate] = useState('');
+  const [shareStatus, setShareStatus] = useState('');
   const [copyMessage, setCopyMessage] = useState('');
   const copyBrief = async () => {
     try {
@@ -20,9 +24,9 @@ export function SharedBrainPanel({ context, onContextChange }: {
     <section aria-label="Shared Brain participants" className="station-details-editor">
       <h3>Shared Brain participants</h3>
       <ul>
-        <li><strong>Dot</strong> · Select Include Shared Brain brief before sending.</li>
-        <li><strong>ChatGPT</strong> · Copy the brief into your ChatGPT conversation.</li>
-        <li><strong>Codex</strong> · Copy the brief into your Codex task.</li>
+        <li><strong>Dot</strong> · Include the brief in a message or save a Dot reply here.</li>
+        <li><strong>ChatGPT</strong> · Copy the brief into your ChatGPT conversation and paste the result below.</li>
+        <li><strong>Codex</strong> · Copy the brief into your Codex task and paste the result below.</li>
       </ul>
       <label>Shared brief
         <textarea rows={5} maxLength={4000} value={context}
@@ -35,6 +39,26 @@ export function SharedBrainPanel({ context, onContextChange }: {
         Copy brief
       </button>
       {copyMessage && <p role="status">{copyMessage}</p>}
+      <form onSubmit={(event) => {
+        event.preventDefault();
+        if (!update.trim()) return;
+        const status = onShare(source, update);
+        setShareStatus(status);
+        if (status === 'Added to Shared Brain.') setUpdate('');
+      }}>
+        <label>Update source
+          <select value={source} onChange={(event) => setSource(event.target.value)}>
+            <option>ChatGPT</option>
+            <option>Codex</option>
+          </select>
+        </label>
+        <label>Paste an update
+          <textarea rows={3} maxLength={4000} value={update}
+            onChange={(event) => setUpdate(event.target.value)} />
+        </label>
+        <button type="submit" disabled={!update.trim()}>Add to shared brief</button>
+        {shareStatus && <p role="status">{shareStatus}</p>}
+      </form>
       <p>Saved on this device. When included in a Dot message, the brief goes to the selected model.</p>
     </section>
   </>;
