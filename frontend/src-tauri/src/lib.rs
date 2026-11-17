@@ -366,6 +366,40 @@ fn find_project_root() -> Option<std::path::PathBuf> {
     None
 }
 
+// A Command Center install can already have a runtime profile beside its
+// executable. Keep that state across upgrades without changing CLI defaults.
+#[cfg(target_os = "windows")]
+fn packaged_runtime_profile(exe: &std::path::Path) -> Option<std::path::PathBuf> {
+    let directory = exe.parent()?;
+    if !directory
+        .join(PACKAGED_BACKEND_DIR)
+        .join("pyproject.toml")
+        .is_file()
+    {
+        return None;
+    }
+    let profile = directory.join("command-center-runtime");
+    profile.join("config.toml").is_file().then_some(profile)
+}
+
+fn desktop_backend_config_dir() -> std::path::PathBuf {
+    if let Some(home) = std::env::var_os("OPENJARVIS_HOME").filter(|value| !value.is_empty()) {
+        return std::path::PathBuf::from(home);
+    }
+    if let Some(data) = std::env::var_os("XDG_DATA_HOME").filter(|value| !value.is_empty()) {
+        return std::path::PathBuf::from(data).join("openjarvis");
+    }
+    #[cfg(target_os = "windows")]
+    if let Some(profile) = std::env::current_exe()
+        .ok()
+        .as_deref()
+        .and_then(packaged_runtime_profile)
+    {
+        return profile;
+    }
+    std::path::PathBuf::from(home_dir()).join(".openjarvis")
+}
+
 fn project_root_near_executable(exe: &std::path::Path) -> Option<std::path::PathBuf> {
     let exe_dir = exe.parent()?;
 
@@ -1750,6 +1784,11 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
     prepare_subprocess_for_appimage(&mut cmd);
     prepare_backend_python(&mut cmd);
 
+    let config_dir = desktop_backend_config_dir();
+    if config_dir.is_absolute() {
+        cmd.env("OPENJARVIS_HOME", config_dir);
+    }
+
     // Inject cloud API keys from secure desktop storage.
     for (key, value) in cloud_keys_for_inference(&cfg) {
         cmd.env(&key, &value);
@@ -3051,9 +3090,7 @@ fn upsert_engine_host(existing: &str, engine: &str, host: &str) -> Result<String
 /// The `<ENGINE>_HOST` env var is unreliable — it is shadowed by the engine's
 /// non-empty default host in the Python layer — so config.toml is the override.
 fn set_engine_host_in_config(engine: &str, host: &str) -> Result<(), String> {
-    let path = std::path::PathBuf::from(home_dir())
-        .join(".openjarvis")
-        .join("config.toml");
+    let path = desktop_backend_config_dir().join("config.toml");
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
@@ -3742,6 +3779,28 @@ mod tests {
             std::process::id(),
             nonce
         ))
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn packaged_backend_finds_existing_command_center_profile() {
+        let directory = unique_test_root("packaged-runtime-profile");
+        let executable = directory.join("openjarvis-desktop.exe");
+        let backend = directory.join(super::PACKAGED_BACKEND_DIR);
+        let profile = directory.join("command-center-runtime");
+        std::fs::create_dir_all(&backend).unwrap();
+        std::fs::create_dir(&profile).unwrap();
+        std::fs::write(profile.join("config.toml"), "").unwrap();
+        assert_eq!(super::packaged_runtime_profile(&executable), None);
+
+        std::fs::write(backend.join("pyproject.toml"), "").unwrap();
+        assert_eq!(super::packaged_runtime_profile(&executable), Some(profile.clone()));
+
+        std::fs::remove_file(backend.join("pyproject.toml")).unwrap();
+        std::fs::remove_file(profile.join("config.toml")).unwrap();
+        std::fs::remove_dir(backend).unwrap();
+        std::fs::remove_dir(profile).unwrap();
+        std::fs::remove_dir(directory).unwrap();
     }
 
     #[test]
