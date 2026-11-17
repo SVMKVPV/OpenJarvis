@@ -136,6 +136,7 @@ def test_recurrence_catchup_counter_migrates_existing_schedules(tmp_path) -> Non
             "skipped_during_catchup": 0,
             "paused": True,
             "revision": 3,
+            "pinned": False,
         }
     finally:
         store.close()

@@ -127,6 +127,10 @@ class WorkflowRunStore:
                     "ALTER TABLE workflow_recurrences ADD COLUMN "
                     "skipped_during_catchup INTEGER NOT NULL DEFAULT 0"
                 )
+            if "pinned_graph_json" not in recurrence_columns:
+                self._conn.execute(
+                    "ALTER TABLE workflow_recurrences ADD COLUMN pinned_graph_json TEXT"
+                )
             if "paused" not in recurrence_columns:
                 self._conn.execute(
                     "ALTER TABLE workflow_recurrences ADD COLUMN "
@@ -329,6 +333,7 @@ class WorkflowRunStore:
     def save_recurrence(
         self, definition_id: str, initial_input: str,
         next_due_at: float, interval_seconds: int,
+        *, definition_revision: str | None = None,
     ) -> dict[str, Any]:
         recurrence = {
             "id": uuid.uuid4().hex,
@@ -342,15 +347,34 @@ class WorkflowRunStore:
             "revision": 0,
         }
         with self._lock, self._conn:
-            if self.get_definition(definition_id) is None:
+            self._conn.execute("BEGIN IMMEDIATE")
+            row = self._conn.execute(
+                "SELECT * FROM workflow_definitions WHERE id = ?", (definition_id,)
+            ).fetchone()
+            if row is None:
                 raise KeyError(definition_id)
+            if definition_revision is not None:
+                if self._definition(row)["revision"] != definition_revision:
+                    raise WorkflowDefinitionConflict(
+                        "The saved workflow changed. Load it into the editor before "
+                        "creating a pinned schedule."
+                    )
+                recurrence["pinned_graph_json"] = row["graph_json"]
             self._conn.execute(
                 "INSERT INTO workflow_recurrences "
-                "(id, definition_id, initial_input, next_due_at, interval_seconds) "
+                "(id, definition_id, initial_input, next_due_at, interval_seconds, "
+                "pinned_graph_json) "
                 "VALUES (:id, :definition_id, :initial_input, :next_due_at, "
-                ":interval_seconds)",
-                recurrence,
+                ":interval_seconds, :pinned_graph_json)",
+                {"pinned_graph_json": None, **recurrence},
             )
+        return self._recurrence(recurrence)
+
+    @staticmethod
+    def _recurrence(row: Mapping[str, Any] | sqlite3.Row) -> dict[str, Any]:
+        recurrence = dict(row)
+        recurrence["pinned"] = recurrence.pop("pinned_graph_json", None) is not None
+        recurrence["paused"] = bool(recurrence["paused"])
         return recurrence
 
     def list_recurrences(self, definition_id: str) -> list[dict[str, Any]]:
@@ -360,7 +384,7 @@ class WorkflowRunStore:
                 "ORDER BY next_due_at, id",
                 (definition_id,),
             ).fetchall()
-        return [dict(row) | {"paused": bool(row["paused"])} for row in rows]
+        return [self._recurrence(row) for row in rows]
 
     def upcoming_recurrences(self, limit: int) -> list[dict[str, Any]]:
         with self._lock:
@@ -369,7 +393,8 @@ class WorkflowRunStore:
                 "recurrence.next_due_at, "
                 "recurrence.interval_seconds, "
                 "recurrence.skipped_while_active, recurrence.skipped_during_catchup, "
-                "COALESCE(json_extract(definition.graph_json, '$.name'), 'workflow') "
+                "COALESCE(json_extract(COALESCE(recurrence.pinned_graph_json, "
+                "definition.graph_json), '$.name'), 'workflow') "
                 "AS workflow_name "
                 "FROM workflow_recurrences AS recurrence "
                 "JOIN workflow_definitions AS definition "
@@ -406,7 +431,7 @@ class WorkflowRunStore:
                     definition_id, recurrence_id,
                 ),
             )
-        return dict(row) | {
+        return self._recurrence(row) | {
             "initial_input": initial_input,
             "next_due_at": next_due_at,
             "interval_seconds": interval_seconds,
@@ -434,7 +459,7 @@ class WorkflowRunStore:
                 "WHERE definition_id = ? AND id = ?",
                 (paused, next_due, definition_id, recurrence_id),
             )
-        return dict(row) | {"paused": paused, "next_due_at": next_due}
+        return self._recurrence(row) | {"paused": paused, "next_due_at": next_due}
 
     def delete_recurrence(self, definition_id: str, recurrence_id: str) -> bool:
         with self._lock, self._conn:
@@ -454,7 +479,8 @@ class WorkflowRunStore:
                 return
             self._conn.execute("BEGIN IMMEDIATE")
             rows = self._conn.execute(
-                "SELECT recurrence.*, definition.graph_json, EXISTS ("
+                "SELECT recurrence.*, COALESCE(recurrence.pinned_graph_json, "
+                "definition.graph_json) AS graph_json, EXISTS ("
                 "SELECT 1 FROM workflow_runs WHERE recurrence_id = recurrence.id "
                 "AND status IN ('scheduled', 'queued', 'running', 'waiting_approval')"
                 ") AS has_active_run "

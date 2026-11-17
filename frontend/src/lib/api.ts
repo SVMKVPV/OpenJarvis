@@ -1800,6 +1800,7 @@ export type WorkflowRecurrence = {
   paused?: boolean;
   initial_input?: string;
   revision?: number;
+  pinned?: boolean;
 };
 
 type WorkflowRecurrenceInputs = {
@@ -1809,7 +1810,7 @@ type WorkflowRecurrenceInputs = {
 };
 
 type WorkflowRecurrenceChange = string
-  | WorkflowRecurrenceInputs
+  | (WorkflowRecurrenceInputs & { definition_revision?: string })
   | { id: string; paused: boolean }
   | (WorkflowRecurrenceInputs & { id: string; expected_revision: number });
 
@@ -1849,7 +1850,8 @@ export async function workflowRecurrences(
       body: JSON.stringify(settings),
     });
   } else {
-    response = await apiFetch(path, action && {
+    const createPath = action?.definition_revision ? `${path}/pinned` : path;
+    response = await apiFetch(createPath, action && {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(action),

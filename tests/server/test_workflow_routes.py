@@ -466,6 +466,47 @@ def test_saved_definition_survives_runtime_restart(tmp_path, monkeypatch) -> Non
         app.state.workflow_runtime.close()
 
 
+def test_pinned_recurring_schedule_keeps_reviewed_graph(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(tmp_path / "workflow.db"))
+    app = FastAPI()
+    app.state.workflow_system = None
+    app.include_router(create_workflow_runs_router())
+    path = "/v1/workflows/definitions"
+
+    with TestClient(app) as client:
+        graph = {"name": "Original", "nodes": [{"id": "copy", "type": "transform"}]}
+        original = client.post(path, json=graph).json()
+        definition_path = f"{path}/{original['id']}"
+        schedule_path = f"{definition_path}/recurrences"
+        due = time.time() + 600
+        schedule = {"first_due_at": due, "interval_seconds": 60}
+        pinned_inputs = {**schedule, "definition_revision": original["revision"]}
+        pinned = client.post(f"{schedule_path}/pinned", json=pinned_inputs)
+        assert pinned.status_code == 201 and pinned.json()["pinned"] is True
+        following = client.post(schedule_path, json=schedule)
+        assert following.status_code == 201 and following.json()["pinned"] is False
+
+        revised = client.put(definition_path, json={**graph, "name": "Revised"})
+        assert revised.status_code == 200
+        stale = client.post(f"{schedule_path}/pinned", json=pinned_inputs)
+        assert stale.status_code == 412
+        upcoming = client.get("/v1/workflows/recurrences/upcoming").json()
+        names = {row["id"]: row["workflow_name"] for row in upcoming["recurrences"]}
+        assert names == {
+            pinned.json()["id"]: "Original", following.json()["id"]: "Revised",
+        }
+
+        store = app.state.workflow_runtime.store
+        store.enqueue_due_recurrences(due)
+        runs = {
+            item["recurrence_id"]: store.get_run(item["id"], include_graph=True)
+            for item in store.list_runs()
+        }
+        assert runs[pinned.json()["id"]]["graph"] == original["graph"]
+        assert runs[following.json()["id"]]["graph"] == revised.json()["graph"]
+        app.state.workflow_runtime.close()
+
+
 @pytest.mark.parametrize("action", ["runs", "schedule"])
 def test_saved_launch_checks_revision_and_confirms_retries(
     tmp_path, monkeypatch, action

@@ -69,3 +69,6 @@
   margin: 0;
   font-variant-numeric: tabular-nums;
 }
+
+.connector-editor .workflow-pin-revision{display:flex;align-items:center;gap:8px}
+.connector-editor .workflow-pin-revision input{width:auto;margin:0;accent-color:#caa348}

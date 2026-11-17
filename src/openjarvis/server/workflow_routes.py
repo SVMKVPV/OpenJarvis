@@ -52,6 +52,10 @@ class RecurringWorkflowInputs(BaseModel):
     interval_seconds: int = Field(ge=60, le=31536000)
 
 
+class PinnedRecurringWorkflowInputs(RecurringWorkflowInputs):
+    definition_revision: str = Field(min_length=1, max_length=128)
+
+
 class RecurringWorkflowStatus(BaseModel):
     paused: StrictBool
 
@@ -539,6 +543,21 @@ def create_workflow_runs_router() -> APIRouter:
     def create_recurrence(
         definition_id: str, payload: RecurringWorkflowInputs, request: Request
     ) -> dict:
+        return save_recurrence(definition_id, payload, request)
+
+    @root.post("/definitions/{definition_id}/recurrences/pinned", status_code=201)
+    def create_pinned_recurrence(
+        definition_id: str, payload: PinnedRecurringWorkflowInputs, request: Request
+    ) -> dict:
+        return save_recurrence(
+            definition_id, payload, request,
+            definition_revision=payload.definition_revision,
+        )
+
+    def save_recurrence(
+        definition_id: str, payload: RecurringWorkflowInputs, request: Request,
+        *, definition_revision: str | None = None,
+    ) -> dict:
         if payload.first_due_at <= time.time():
             raise HTTPException(status_code=400, detail="Choose a future start time")
         runtime = _runtime(request)
@@ -546,7 +565,10 @@ def create_workflow_runs_router() -> APIRouter:
             recurrence = runtime.store.save_recurrence(
                 definition_id, payload.initial_input,
                 payload.first_due_at, payload.interval_seconds,
+                definition_revision=definition_revision,
             )
+        except WorkflowDefinitionConflict as exc:
+            raise HTTPException(status_code=412, detail=str(exc)) from exc
         except KeyError as exc:
             raise HTTPException(
                 status_code=404, detail="Workflow definition not found"

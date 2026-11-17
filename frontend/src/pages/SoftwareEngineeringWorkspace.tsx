@@ -1835,7 +1835,8 @@ export function SoftwareEngineeringWorkspace({
           )}
           {selectedDefinition && (
             <WorkflowRecurrenceEditor key={selectedDefinition.id}
-              definitionId={selectedDefinition.id} initialInput={workflowInput}
+              definitionId={selectedDefinition.id} definitionRevision={selectedDefinition.revision}
+              initialInput={workflowInput}
               onShowHistory={showScheduleHistory}
               initiallyOpen={selectedDefinition.id === initialDefinitionId}
               initialRecurrenceId={selectedDefinition.id === initialDefinitionId ? initialRecurrenceId : undefined} />

@@ -2,9 +2,10 @@ import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { type WorkflowRecurrence, workflowRecurrences } from '../lib/api';
 
 export function WorkflowRecurrenceEditor({
-  definitionId, initialInput, initiallyOpen, initialRecurrenceId, onShowHistory,
+  definitionId, definitionRevision, initialInput, initiallyOpen, initialRecurrenceId, onShowHistory,
 }: {
   definitionId: string;
+  definitionRevision?: string;
   initialInput: string;
   initiallyOpen?: boolean;
   initialRecurrenceId?: string;
@@ -13,6 +14,7 @@ export function WorkflowRecurrenceEditor({
   const [schedules, setSchedules] = useState<WorkflowRecurrence[]>([]);
   const [firstRun, setFirstRun] = useState('');
   const [interval, setInterval] = useState('60');
+  const [pinRevision, setPinRevision] = useState(false);
   const [editing, setEditing] = useState<{ id: string; revision: number } | null>(null);
   const [editedInput, setEditedInput] = useState('');
   const [refreshVersion, setRefreshVersion] = useState(0);
@@ -74,7 +76,8 @@ export function WorkflowRecurrenceEditor({
       void changeSchedule({ ...settings, id: editing.id, expected_revision: editing.revision },
         'Schedule updated.');
     } else {
-      void changeSchedule(settings, 'Schedule created.');
+      void changeSchedule({ ...settings, definition_revision: pinRevision ? definitionRevision : undefined },
+        'Schedule created.');
     }
   };
 
@@ -105,8 +108,13 @@ export function WorkflowRecurrenceEditor({
           <textarea rows={3} disabled={pending} value={editedInput}
             onChange={(event) => setEditedInput(event.target.value)} />
         </label>}
+        {!editing && definitionRevision && <label className="workflow-pin-revision">
+          <input type="checkbox" checked={pinRevision} disabled={pending}
+            onChange={(event) => setPinRevision(event.target.checked)} />
+          Keep this saved workflow revision
+        </label>}
         <small>{editing ? 'Existing runs keep their original input.' : 'Uses the run input above.'}{' '}
-          Runs use the latest saved workflow. A scheduled start is skipped
+          Unpinned schedules follow the latest saved workflow. A scheduled start is skipped
           while the previous run is active or waiting for approval. After downtime, only the
           latest missed start is considered. Pausing leaves existing runs in place. Resuming
           starts at the next future time.</small>
@@ -120,6 +128,7 @@ export function WorkflowRecurrenceEditor({
               ref={schedule.id === initialRecurrenceId ? targetSchedule : undefined}
               tabIndex={schedule.id === initialRecurrenceId ? -1 : undefined}>
               Every {schedule.interval_seconds / 60} min.{' '}
+              <span>{schedule.pinned ? 'Pinned revision.' : 'Follows latest.'}</span>{' '}
               {schedule.paused ? 'Paused' :
                 `Next recorded start ${new Date(schedule.next_due_at * 1000).toLocaleString()}`}{' '}
               {!!schedule.skipped_while_active && (
