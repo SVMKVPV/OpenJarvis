@@ -1770,6 +1770,17 @@ def create_agent_manager_router(
                 scheduler.deregister_agent(agent_id)
         return updated
 
+    @agents_router.post("/{agent_id}/refresh-template-prompt/{template_id}")
+    async def refresh_template_prompt(agent_id: str, template_id: str):
+        from openjarvis.agents.manager import AgentTemplateNotFound
+
+        try:
+            return manager.refresh_template_prompt(agent_id, template_id)
+        except (KeyError, AgentTemplateNotFound) as exc:
+            raise HTTPException(status_code=404, detail="Agent or role template not found.") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
     @agents_router.delete("/{agent_id}")
     async def delete_agent(agent_id: str):
         if not manager.get_agent(agent_id):

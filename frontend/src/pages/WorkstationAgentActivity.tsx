@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  createManagedAgent, fetchManagedAgents, fetchTemplates, recoverManagedAgent, runManagedAgent, updateManagedAgent, type ManagedAgent,
+  createManagedAgent, fetchManagedAgents, fetchTemplates, recoverManagedAgent, refreshManagedAgentTemplatePrompt, runManagedAgent, updateManagedAgent, type ManagedAgent,
 } from '../lib/api';
 import { isEmbedOnlyModel } from '../lib/model-capabilities';
 import { useAppStore } from '../lib/store';
@@ -109,6 +109,22 @@ export function WorkstationAgentActivity({
     }
   };
 
+  const refreshRolePrompt = async () => {
+    if (!selected || !templateId || unavailable || savingOption || starting || recovering ||
+        selected.status === 'running') return;
+    setSavingOption(true);
+    setOptionMessage(null);
+    try {
+      const updated = await refreshManagedAgentTemplatePrompt(selected.id, templateId);
+      setAgents((current) => current?.map((agent) => agent.id === updated.id ? updated : agent) ?? null);
+      setOptionMessage({ id: selected.id, text: 'Role prompt refreshed.' });
+    } catch (error) {
+      setOptionMessage({ id: selected.id, text: error instanceof Error ? error.message : 'Could not refresh the role prompt.' });
+    } finally {
+      setSavingOption(false);
+    }
+  };
+
   const startRun = async () => {
     if (!selected || unavailable || starting || recovering || selected.status !== 'idle') return;
     setStarting(true);
@@ -183,6 +199,14 @@ export function WorkstationAgentActivity({
             Include the saved Shared Brain brief in agent runs
           </label>
           {useSharedBrain && <small>The brief is sent to the model used by this agent.</small>}
+          {templateId && (
+            <details>
+              <summary>Refresh role prompt</summary>
+              <p>Replace this agent’s current prompt with the workstation template. The agent keeps its history and other settings.</p>
+              <button type="button" disabled={savingOption || starting || recovering || selected.status === 'running'}
+                onClick={() => void refreshRolePrompt()}>Apply latest role prompt</button>
+            </details>
+          )}
           {optionMessage?.id === selected.id && <p role="status">{optionMessage.text}</p>}
           <p>Status: {selected.status.replace(/_/g, ' ')}</p>
           <p>{selected.current_activity || 'No active task reported.'}</p>

@@ -50,6 +50,32 @@ class TestAgentManagerRoutes:
         assert resp.status_code == 200
         assert resp.json()["agents"] == []
 
+    def test_refresh_role_prompt_preserves_config_and_inbox(self, client, manager):
+        agent = manager.create_agent("Email", "monitor_operative", config={
+            "system_prompt": "Old prompt",
+            "instruction": "Use our approved wording.",
+            "model": "test-model",
+            "schedule_type": "manual",
+        })
+        agent_id = agent["id"]
+        message = manager.send_message(agent_id, "Draft a reply.")
+        url = f"/v1/managed-agents/{agent_id}/refresh-template-prompt/email_briefing"
+        manager.start_tick(agent_id)
+        assert client.post(url).status_code == 409
+        manager.end_tick(agent_id)
+
+        refreshed = client.post(url)
+        assert refreshed.status_code == 200
+        data = refreshed.json()
+        assert data["id"] == agent_id
+        assert "Use our approved wording." in data["config"]["system_prompt"]
+        assert "draft it directly" in data["config"]["system_prompt"]
+        assert {k: v for k, v in data["config"].items() if k != "system_prompt"} == {
+            k: v for k, v in agent["config"].items() if k != "system_prompt"
+        }
+        assert manager.list_messages(agent_id)[0]["id"] == message["id"]
+        assert client.post(url.replace("email_briefing", "missing")).status_code == 404
+
     def test_schedule_edits_update_scheduler(self, client, manager):
         from openjarvis.agents.scheduler import AgentScheduler
 

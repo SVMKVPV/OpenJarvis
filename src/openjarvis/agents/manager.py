@@ -667,6 +667,29 @@ class AgentManager:
 
         return self.create_agent(name=name, agent_type=agent_type, config=config)
 
+    @_db_locked
+    def refresh_template_prompt(self, agent_id: str, template_id: str) -> Dict[str, Any]:
+        """Replace only the role prompt, keeping the linked agent's configuration."""
+        agent = self.get_agent(agent_id)
+        if agent is None:
+            raise KeyError(agent_id)
+        template = next((item for item in self.list_templates()
+                         if item.get("id") == template_id), None)
+        if template is None:
+            raise AgentTemplateNotFound(f"Template not found: {template_id}")
+        if agent["status"] in {"running", "archived"}:
+            raise ValueError("Wait until the linked agent is idle before refreshing its role prompt.")
+        if agent["agent_type"] != template.get("agent_type", "monitor_operative"):
+            raise ValueError("The linked agent type does not match this workstation template.")
+        prompt = template.get("system_prompt_template")
+        if not prompt:
+            raise ValueError("This template has no role prompt.")
+        config = dict(agent["config"])
+        config["system_prompt"] = prompt.format(
+            instruction=config.get("instruction") or "(No specific instruction provided)",
+        )
+        return self.update_agent(agent_id, config=config)
+
     # ── Message queue ─────────────────────────────────────────────
 
     @_db_locked

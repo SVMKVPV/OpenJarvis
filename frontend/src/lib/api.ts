@@ -718,6 +718,17 @@ export async function updateManagedAgent(
   return res.json();
 }
 
+export async function refreshManagedAgentTemplatePrompt(agentId: string, templateId: string): Promise<ManagedAgent> {
+  const res = await apiFetch(`/v1/managed-agents/${encodeURIComponent(agentId)}/refresh-template-prompt/${encodeURIComponent(templateId)}`, { method: 'POST' });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(res.status === 409 && typeof body?.detail === 'string'
+      ? body.detail
+      : 'Could not refresh the role prompt. Check the linked agent and backend version.');
+  }
+  return res.json();
+}
+
 export async function deleteManagedAgent(agentId: string): Promise<void> {
   const res = await apiFetch(`/v1/managed-agents/${agentId}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(`Failed: ${res.status}`);
