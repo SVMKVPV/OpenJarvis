@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import json
 import logging
 import os
+import re
 import secrets
 
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -12,6 +15,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
+
+_WORKFLOW_LAUNCH_PATH = re.compile(r"/v1/workflows/definitions/([0-9a-f]{32})/runs")
 
 _WS_AUTH_PROTOCOL = "openjarvis.auth.v1"
 _WS_KEY_PROTOCOL_PREFIX = "openjarvis.key.b64url."
@@ -27,6 +32,24 @@ def _api_keys_match(presented: str, expected: str) -> bool:
     return secrets.compare_digest(presented_bytes, expected_bytes)
 
 
+def _load_workflow_launch_keys() -> dict[str, str]:
+    raw = os.environ.get("OPENJARVIS_WORKFLOW_LAUNCH_KEYS", "")
+    if not raw:
+        return {}
+    try:
+        keys = json.loads(raw)
+        if not isinstance(keys, dict) or not all(
+            re.fullmatch(r"[0-9a-f]{32}", workflow_id)
+            and isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest)
+            for workflow_id, digest in keys.items()
+        ):
+            raise ValueError("invalid workflow IDs or key digests")
+    except ValueError:
+        logger.warning("Invalid OPENJARVIS_WORKFLOW_LAUNCH_KEYS. Scoped keys disabled.")
+        return {}
+    return keys
+
+
 class AuthMiddleware(BaseHTTPMiddleware):
     """Validates ``Authorization: Bearer <key>`` on ``/v1/*`` and ``/api/*`` routes.
 
@@ -37,6 +60,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, api_key: str = "") -> None:  # noqa: ANN001
         super().__init__(app)
         self._api_key = api_key or os.environ.get("OPENJARVIS_API_KEY", "")
+        self._workflow_launch_keys = (
+            _load_workflow_launch_keys() if self._api_key else {}
+        )
 
     async def dispatch(self, request: Request, call_next):  # noqa: ANN001
         # Browser CORS preflights never carry Authorization, and rejecting
@@ -54,13 +80,29 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     status_code=401,
                 )
             scheme, _, token = auth.partition(" ")
-            # Constant-time comparison to avoid leaking the key via timing.
-            if scheme.lower() != "bearer" or not _api_keys_match(token, self._api_key):
-                return JSONResponse(
-                    {"detail": "Invalid API key"},
-                    status_code=401,
-                )
+            if scheme.lower() == "bearer":
+                if _api_keys_match(token, self._api_key):
+                    return await call_next(request)
+                if self._matches_workflow_launch_key(request, token):
+                    request.state.scoped_workflow_launch = True
+                    return await call_next(request)
+            return JSONResponse(
+                {"detail": "Invalid API key"},
+                status_code=401,
+            )
         return await call_next(request)
+
+    def _matches_workflow_launch_key(self, request: Request, token: str) -> bool:
+        if request.method != "POST" or not token or not self._workflow_launch_keys:
+            return False
+        match = _WORKFLOW_LAUNCH_PATH.fullmatch(request.url.path)
+        if match is None:
+            return False
+        expected = self._workflow_launch_keys.get(match[1])
+        if expected is None:
+            return False
+        digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        return _api_keys_match(digest, expected)
 
     @staticmethod
     def _is_cors_preflight(request: Request) -> bool:

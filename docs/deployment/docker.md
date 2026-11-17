@@ -189,6 +189,31 @@ For an HTTPS reverse proxy on the Docker host, set
 Forward the HTTPS backend address to port 8000 only. Ollama communicates with
 OpenJarvis over the Compose network.
 
+### Launch a workflow from another app
+
+Use the request example in Workspace for the selected saved workflow. To limit
+an automation to starting one workflow, generate a separate random key and
+record its SHA-256 digest. This command prints a new key on the first line and
+its digest on the second line:
+
+```sh
+python -c "import hashlib,secrets; k=secrets.token_urlsafe(32); print(k); print(hashlib.sha256(k.encode()).hexdigest())"
+```
+
+Set `OPENJARVIS_WORKFLOW_LAUNCH_KEYS` in the backend environment to a JSON
+object mapping the saved workflow ID to its digest, then restart the backend:
+
+```dotenv
+OPENJARVIS_WORKFLOW_LAUNCH_KEYS='{"<workflow-id>":"<sha256-digest>"}'
+```
+
+Store the raw key in the calling app's credential store. Pass it as the Bearer
+token for the workflow's `POST .../runs` request with an `Idempotency-Key`
+header and `expected_revision` in the JSON body. Scoped launches return the
+run ID and status. Check the run in Command Center using your regular login
+and backend connection. Remove the digest and restart the backend to revoke
+the key.
+
 ### Persistent data
 
 The `openjarvis-data` named volume persists Command Center state, including

@@ -516,6 +516,18 @@ def create_workflow_runs_router() -> APIRouter:
             None, alias="Idempotency-Key", min_length=1, max_length=128
         ),
     ) -> dict:
+        if getattr(request.state, "scoped_workflow_launch", False):
+            if not launch_key or not payload.expected_revision or payload.context:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "Use a retry key and expected revision. Omit workflow context."
+                    ),
+                )
+            result = launch_definition(
+                definition_id, payload, request, "scoped:" + launch_key
+            )
+            return {"id": result["id"], "status": result["status"]}
         return launch_definition(definition_id, payload, request, launch_key)
 
     @root.post("/definitions/{definition_id}/schedule", status_code=202)

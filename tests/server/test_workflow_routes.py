@@ -507,6 +507,61 @@ def test_pinned_recurring_schedule_keeps_reviewed_graph(tmp_path, monkeypatch):
         app.state.workflow_runtime.close()
 
 
+def test_scoped_workflow_key_can_launch_only_its_saved_revision(tmp_path, monkeypatch):
+    import hashlib
+    import json
+
+    from openjarvis.server.auth_middleware import AuthMiddleware
+
+    monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(tmp_path / "workflow.db"))
+    app = FastAPI()
+    app.state.workflow_system = None
+    app.include_router(create_workflow_runs_router())
+    path = "/v1/workflows/definitions"
+    graph = {"name": "External intake", "nodes": [{"id": "copy", "type": "transform"}]}
+    with TestClient(app) as client:
+        saved = client.post(path, json=graph).json()
+        other = client.post(path, json=graph).json()
+        app.state.workflow_runtime.close()
+
+    token = "test-scoped-launch-token"
+    monkeypatch.setenv("OPENJARVIS_WORKFLOW_LAUNCH_KEYS", json.dumps({
+        saved["id"]: hashlib.sha256(token.encode()).hexdigest(),
+    }))
+    secured = FastAPI()
+    secured.state.workflow_system = None
+    secured.include_router(create_workflow_runs_router())
+    secured.add_middleware(AuthMiddleware, api_key="test-owner-key")
+    headers = {"Authorization": f"Bearer {token}", "Idempotency-Key": "event-1"}
+    launch = f"{path}/{saved['id']}/runs"
+    body = {"expected_revision": saved["revision"], "initial_input": "sample event"}
+    with TestClient(secured) as client:
+        assert client.get(path, headers=headers).status_code == 401
+        other_path = f"{path}/{other['id']}/runs"
+        assert client.post(other_path, json=body, headers=headers).status_code == 401
+        schedule = f"{path}/{saved['id']}/schedule"
+        assert client.post(schedule, json=body, headers=headers).status_code == 401
+        assert client.post(launch, headers=headers, json={}).status_code == 422
+        assert client.post(
+            launch, headers=headers, json={**body, "context": {"extra": "value"}},
+        ).status_code == 422
+        assert client.post(
+            launch, headers=headers, json={**body, "expected_revision": "stale"},
+        ).status_code == 412
+
+        response = client.post(launch, headers=headers, json=body)
+        assert response.status_code == 202
+        run_id = response.json()["id"]
+        replay = client.post(launch, headers=headers, json=body)
+        assert replay.status_code == 202 and replay.json()["id"] == run_id
+        assert set(replay.json()) == {"id", "status"}
+        run_path = f"/v1/workflows/runs/{run_id}"
+        assert client.get(run_path, headers=headers).status_code == 401
+        owner = {"Authorization": "Bearer test-owner-key"}
+        assert client.get(run_path, headers=owner).status_code == 200
+        secured.state.workflow_runtime.close()
+
+
 @pytest.mark.parametrize("action", ["runs", "schedule"])
 def test_saved_launch_checks_revision_and_confirms_retries(
     tmp_path, monkeypatch, action
