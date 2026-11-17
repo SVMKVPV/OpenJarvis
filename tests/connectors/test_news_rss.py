@@ -409,6 +409,38 @@ def test_https_connection_uses_url_hostname_for_tls_sni():
     assert connection.sock is tls_socket
 
 
+def test_system_builder_feeds_preserve_config_and_backfill_new_sources(
+    tmp_path, monkeypatch,
+):
+    from openjarvis.connectors import news_rss
+
+    monkeypatch.setenv("OPENJARVIS_HOME", str(tmp_path))
+    path = tmp_path / "connectors" / "news_rss.json"
+    path.parent.mkdir()
+    path.write_text(
+        '{"feeds":[{"name":"Custom","url":"https://example.com/original.xml"}]}',
+        encoding="utf-8",
+    )
+    connector = news_rss.NewsRSSConnector()
+    monkeypatch.setattr(news_rss, "_validate_feed_url", MagicMock())
+    monkeypatch.setattr(news_rss, "_fetch_feed", MagicMock(return_value=_SAMPLE_RSS))
+    prior_sync = datetime.now(timezone.utc) - timedelta(hours=1)
+
+    connector.add_system_builder_feeds()
+    configured = path.read_text(encoding="utf-8")
+    connector.add_system_builder_feeds()
+    assert path.read_text(encoding="utf-8") == configured
+    sources = connector._load_config()
+    assert sources[0]["name"] == "Custom"
+    assert len(sources) == len(news_rss._SYSTEM_BUILDER_FEEDS) + 1
+
+    backfill = list(connector.sync(since=prior_sync))
+    assert {doc.metadata["feed_name"] for doc in backfill} == {
+        name for name, _ in news_rss._SYSTEM_BUILDER_FEEDS
+    }
+    assert list(connector.sync(since=datetime.now(timezone.utc))) == []
+
+
 def test_configure_writes_private_atomic_config(tmp_path):
     from openjarvis.connectors.news_rss import NewsRSSConnector
 

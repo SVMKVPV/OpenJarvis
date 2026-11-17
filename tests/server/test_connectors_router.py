@@ -746,12 +746,17 @@ def test_connect_weather_requires_location(app, tmp_path: Path) -> None:
         _instances.pop("weather", None)
 
 
-def test_connect_news_rss_requires_and_persists_feeds(app, tmp_path: Path) -> None:
+def test_connect_news_rss_requires_and_persists_feeds(
+    app, tmp_path: Path, monkeypatch,
+) -> None:
     """A local connector with required setup cannot claim success for ``{}``."""
     from openjarvis.connectors.news_rss import NewsRSSConnector
     from openjarvis.server.connectors_router import _instances
 
     path = tmp_path / "news_rss.json"
+    monkeypatch.setattr(
+        "openjarvis.connectors.news_rss._validate_feed_url", lambda _url: None
+    )
     instance = NewsRSSConnector(config_path=str(path))
     instance.sync = lambda **_kwargs: iter(())
     _instances["news_rss"] = instance
@@ -763,9 +768,18 @@ def test_connect_news_rss_requires_and_persists_feeds(app, tmp_path: Path) -> No
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["connected"] is True
-        assert json.loads(path.read_text())["feeds"] == [
-            {"name": "example.com", "url": "https://example.com/feed.xml"}
-        ]
+        feed, = json.loads(path.read_text())["feeds"]
+        assert feed["name"] == "example.com"
+        assert feed["url"] == "https://example.com/feed.xml"
+        assert feed["added_at"]
+        preset = app.post(
+            "/v1/connectors/news_rss/connect",
+            json={"config": {"preset": "system_builder"}},
+        )
+        assert preset.status_code == 200, preset.text
+        configured = json.loads(path.read_text())["feeds"]
+        assert configured[0] == feed
+        assert any(item["name"] == "OpenJarvis releases" for item in configured)
     finally:
         _instances.pop("news_rss", None)
 

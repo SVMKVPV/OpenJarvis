@@ -25,10 +25,17 @@ from urllib.parse import urljoin, urlparse
 import httpx
 
 from openjarvis.connectors._stubs import BaseConnector, Document, SyncStatus
-from openjarvis.core.config import DEFAULT_CONFIG_DIR
+from openjarvis.core.paths import get_config_dir
 from openjarvis.core.registry import ConnectorRegistry
 
-_DEFAULT_CONFIG_PATH = str(DEFAULT_CONFIG_DIR / "connectors" / "news_rss.json")
+_SYSTEM_BUILDER_FEEDS = (
+    ("OpenJarvis releases", "https://github.com/open-jarvis/OpenJarvis/releases.atom"),
+    ("n8n releases", "https://github.com/n8n-io/n8n/releases.atom"),
+    ("Ollama releases", "https://github.com/ollama/ollama/releases.atom"),
+    ("OmniRoute releases", "https://github.com/cheaper-inference/OmniRoute/releases.atom"),
+    ("GitHub Changelog", "https://github.blog/changelog/feed/"),
+    ("OpenAI news", "https://openai.com/news/rss.xml"),
+)
 _MAX_REDIRECTS = 5
 _MAX_FEED_BYTES = 10 * 1024 * 1024
 
@@ -168,6 +175,12 @@ def _request_feed(url: str, target: _FeedTarget) -> httpx.Response:
     """GET *url* using only the already-validated addresses in *target*."""
     request = httpx.Request("GET", url)
     last_error: Exception | None = None
+    tls_options: dict[str, Any] = {}
+    if target.scheme == "https":
+        # Use HTTPX's verified roots as well as platform-installed roots.
+        context = httpx.create_ssl_context()
+        context.load_default_certs()
+        tls_options["context"] = context
 
     for address in target.addresses:
         connection_cls = (
@@ -180,6 +193,7 @@ def _request_feed(url: str, target: _FeedTarget) -> httpx.Response:
             target.port,
             pinned_ip=address,
             timeout=30.0,
+            **tls_options,
         )
         try:
             connection.request(
@@ -314,31 +328,67 @@ class NewsRSSConnector(BaseConnector):
     display_name = "News / RSS"
     auth_type = "local"
 
-    def __init__(self, *, config_path: str = _DEFAULT_CONFIG_PATH) -> None:
-        self._config_path = Path(config_path)
+    def __init__(self, *, config_path: str | None = None) -> None:
+        self._config_path = (
+            Path(config_path) if config_path is not None
+            else get_config_dir() / "connectors" / "news_rss.json"
+        )
         self._status = SyncStatus()
 
     def _load_config(self) -> List[Dict[str, str]]:
         """Load feed list from disk."""
         data = json.loads(self._config_path.read_text(encoding="utf-8"))
-        return data.get("feeds", [])
+        feeds = data.get("feeds") if isinstance(data, dict) else None
+        if not isinstance(feeds, list) or not all(
+            isinstance(feed, dict) for feed in feeds
+        ):
+            raise ValueError("Invalid RSS feed configuration")
+        return feeds
 
-    def configure(self, feeds: List[Dict[str, Any]]) -> None:
+    def configure(
+        self, feeds: List[Dict[str, Any]], *, append: bool = False
+    ) -> None:
         """Validate and persist RSS feed configuration from the connect UI."""
-        normalized: List[Dict[str, str]] = []
+        try:
+            existing = self._load_config() if self._config_path.exists() else []
+        except (ValueError, OSError, AttributeError):
+            if append:
+                raise ValueError(
+                    "The existing RSS feed configuration could not be read"
+                )
+            existing = []
+        known = {
+            feed["url"]: feed for feed in existing
+            if isinstance(feed, dict) and isinstance(feed.get("url"), str)
+        }
+        normalized = dict(known) if append else {}
+        added_at = datetime.now(timezone.utc).isoformat()
         for feed in feeds:
             if not isinstance(feed, dict):
                 continue
             url = str(feed.get("url", "")).strip()
+            if append and url in normalized:
+                continue
             _validate_feed_url(url)
             parsed = urlparse(url)
             name = str(feed.get("name", "")).strip() or parsed.netloc
-            normalized.append({"name": name, "url": url})
+            entry = {"name": name, "url": url}
+            if url not in known:
+                entry["added_at"] = added_at
+            elif known[url].get("added_at"):
+                entry["added_at"] = known[url]["added_at"]
+            normalized[url] = entry
         if not normalized:
             raise ValueError("At least one RSS feed URL is required")
         from openjarvis.security.file_utils import secure_write_json
 
-        secure_write_json(self._config_path, {"feeds": normalized})
+        secure_write_json(self._config_path, {"feeds": list(normalized.values())})
+
+    def add_system_builder_feeds(self) -> None:
+        self.configure(
+            [{"name": name, "url": url} for name, url in _SYSTEM_BUILDER_FEEDS],
+            append=True,
+        )
 
     def is_connected(self) -> bool:
         if not self._config_path.exists():
@@ -346,7 +396,7 @@ class NewsRSSConnector(BaseConnector):
         try:
             feeds = self._load_config()
             return len(feeds) > 0
-        except (json.JSONDecodeError, OSError):
+        except (ValueError, OSError):
             return False
 
     def disconnect(self) -> None:
@@ -364,12 +414,15 @@ class NewsRSSConnector(BaseConnector):
         cutoff = since
         if since is not None and since.tzinfo is None:
             cutoff = since.replace(tzinfo=timezone.utc)
+        cutoff_iso = cutoff.astimezone(timezone.utc).isoformat() if cutoff else ""
 
         for feed in feeds:
             feed_name = feed.get("name", "Unknown Feed")
             feed_url = feed.get("url", "")
             if not feed_url:
                 continue
+            added_at = feed.get("added_at")
+            include_backlog = isinstance(added_at, str) and added_at >= cutoff_iso
 
             try:
                 items = _parse_rss_items(_fetch_feed(feed_url))
@@ -395,7 +448,12 @@ class NewsRSSConnector(BaseConnector):
                     pub_dt = pub_dt.replace(tzinfo=timezone.utc)
 
                 # Filter by since if the date is parseable
-                if cutoff is not None and pub_dt is not None and pub_dt < cutoff:
+                if (
+                    cutoff is not None
+                    and not include_backlog
+                    and pub_dt is not None
+                    and pub_dt < cutoff
+                ):
                     continue
 
                 title = item["title"] or "Untitled"

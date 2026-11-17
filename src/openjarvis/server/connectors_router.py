@@ -608,12 +608,14 @@ def create_connectors_router():
                 instance.configure(api_key=req.token, location=location)
 
             elif connector_id == "news_rss":
-                feeds = (req.config or {}).get("feeds")
-                if not isinstance(feeds, list):
-                    raise HTTPException(
-                        status_code=400, detail="At least one RSS feed URL is required"
-                    )
-                instance.configure(feeds)
+                config = req.config or {}
+                if config.get("preset") == "system_builder":
+                    instance.add_system_builder_feeds()
+                else:
+                    feeds = config.get("feeds")
+                    if not isinstance(feeds, list):
+                        raise ValueError("At least one RSS feed URL is required")
+                    instance.configure(feeds)
 
             else:
                 # Generic: try to store token or credentials if the instance
