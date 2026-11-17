@@ -427,12 +427,22 @@ const ORGANIZATION_POSITIONS: Record<string, { x: number; y: number }> = {
   'system-builder': { x: 1205, y: 455 },
 };
 
-const REPORTING_LINKS = [
-  ['dot', 'ceo'], ['general-manager', 'dot'], ['operations-manager', 'dot'],
-  ['finance', 'general-manager'], ['growth', 'general-manager'], ['marketing', 'general-manager'],
-  ['research', 'operations-manager'], ['managers', 'operations-manager'], ['email', 'operations-manager'],
-  ['system-builder', 'operations-manager'],
-] as const;
+function reportingManager(station: Station, stations: Station[]): Station | undefined {
+  if (station.id === 'brain' || station.id === 'dot') return;
+  return stations.find((candidate) => candidate.id !== 'brain' &&
+    candidate.id !== station.id && candidate.name === station.reportsTo);
+}
+
+function canReportTo(station: Station, candidate: Station, stations: Station[]): boolean {
+  const seen = new Set([station.id]);
+  let manager: Station | undefined = candidate;
+  while (manager) {
+    if (manager.id === 'brain' || seen.has(manager.id)) return false;
+    seen.add(manager.id);
+    manager = reportingManager(manager, stations);
+  }
+  return true;
+}
 
 function OrganizationOverview({ stations, onOpen, accent }: {
   stations: Station[];
@@ -453,9 +463,10 @@ function OrganizationOverview({ stations, onOpen, accent }: {
       : `${station.name}. Reports to ${station.reportsTo}. ${station.current}`,
   })), [organizationStations, onOpen]);
   const existing = new Set(organizationStations.map((station) => station.id));
-  const dynamicStations = stations.filter((station) => !ORGANIZATION_POSITIONS[station.id]);
-  const dynamicLinks = dynamicStations.map((station) => [station.id, 'operations-manager'] as const);
-  const reportingEdges: Edge[] = [...REPORTING_LINKS, ...dynamicLinks]
+  const links = stations.map((station) => [
+    station.id, station.id === 'dot' ? 'ceo' : reportingManager(station, stations)?.id ?? '',
+  ]);
+  const reportingEdges: Edge[] = links
     .filter(([source, target]) => existing.has(source) && existing.has(target))
     .map(([source, target]) => ({
       id: `org-${source}-${target}`,
@@ -554,6 +565,7 @@ export function CommandCenterPage() {
   );
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
+  const [addStationError, setAddStationError] = useState('');
   const [brainContext, setBrainContext] = useLocalPreference(
     'openjarvis.command-center.brain-brief.v1',
     () => '',
@@ -598,6 +610,8 @@ export function CommandCenterPage() {
     '--gold-dim': 'color-mix(in srgb, var(--gold), black 45%)',
   } as CSSProperties;
   const selected = stations.find((station) => station.id === selectedId) ?? stations[0];
+  const managerOptions = selected.id === 'dot' || selected.id === 'brain' ? []
+    : stations.filter((station) => canReportTo(selected, station, stations));
   const apps = useMemo(() => STACKS[selected.id] ?? FALLBACK_STACK, [selected.id]);
   const stationWidgets = DASHBOARD_WIDGETS.filter((widget) => widget.stationId === selected.id);
 
@@ -610,6 +624,10 @@ export function CommandCenterPage() {
     event.preventDefault();
     const name = newName.trim();
     if (!name) return;
+    if (stations.some((station) => station.name.toLowerCase() === name.toLowerCase())) {
+      setAddStationError('A workstation with this name already exists.');
+      return;
+    }
     const id = `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${Date.now()}`;
     const managerName = stations.find((station) => station.id === 'operations-manager')?.name;
     const station: Station = { id, code: name.slice(0, 3).toUpperCase(), name, purpose: 'A configurable specialist workstation connected to Shared Brain.', current: 'Waiting for its first objective', reportsTo: managerName ?? 'Operations Manager', status: 'ready' };
@@ -617,6 +635,7 @@ export function CommandCenterPage() {
     setGraphs((current) => ({ ...current, [id]: makeGraph(station) }));
     setSelectedId(id);
     setNewName('');
+    setAddStationError('');
     setAdding(false);
   };
 
@@ -626,6 +645,12 @@ export function CommandCenterPage() {
     const name = String(fields.get('station-name') ?? '').trim();
     const purpose = String(fields.get('station-purpose') ?? '').trim();
     const current = String(fields.get('station-current') ?? '').trim();
+    const managerId = fields.get('station-manager');
+    const manager = managerOptions.find((option) => option.id === managerId);
+    if (managerId !== null && !manager) {
+      setStationEditMessage({ id: selected.id, text: 'Choose a valid reporting manager.' });
+      return;
+    }
     if (!name || !purpose || !current) {
       setStationEditMessage({ id: selected.id, text: 'Fill in all workstation fields.' });
       return;
@@ -637,7 +662,7 @@ export function CommandCenterPage() {
       return;
     }
     setStations((previous) => previous.map((station) => {
-      if (station.id === selected.id) return { ...station, name, purpose, current };
+      if (station.id === selected.id) return { ...station, name, purpose, current, reportsTo: manager?.name ?? station.reportsTo };
       return station.reportsTo === selected.name ? { ...station, reportsTo: name } : station;
     }));
     setStationEditMessage({ id: selected.id, text: 'Workstation details saved.' });
@@ -660,7 +685,13 @@ export function CommandCenterPage() {
           openWorkspace({ initialDefinitionId, initialRecurrenceId })} /> : <div className="command-grid">
         <aside className="station-rail">
           <div className="rail-head"><div><span>WORKSTATIONS</span><strong>{stations.length} ACTIVE</strong></div><button onClick={() => setAdding((value) => !value)} aria-label="Add workstation"><Plus size={15} /></button></div>
-          {adding && <form className="station-add" onSubmit={addStation}><input autoFocus value={newName} onChange={(event) => setNewName(event.target.value)} placeholder="Station name" /><button type="submit">ADD</button></form>}
+          {adding && <>
+            <form className="station-add" onSubmit={addStation}><input autoFocus value={newName} onChange={(event) => {
+              setNewName(event.target.value);
+              setAddStationError('');
+            }} placeholder="Station name" /><button type="submit">ADD</button></form>
+            {addStationError && <p role="status">{addStationError}</p>}
+          </>}
           <div className="station-list">
             {stations.map((station) => (
               <button key={station.id} className={station.id === selected.id ? 'selected' : ''} onClick={() => setSelectedId(station.id)}>
@@ -684,6 +715,15 @@ export function CommandCenterPage() {
               <label>Name <input name="station-name" defaultValue={selected.name} maxLength={80} required /></label>
               <label>Purpose <textarea name="station-purpose" defaultValue={selected.purpose} maxLength={400} required /></label>
               <label>Current-work note <textarea name="station-current" defaultValue={selected.current} maxLength={400} required /></label>
+              {managerOptions.length > 0 && (
+                <label><span id="station-manager-label">Reports to</span>
+                  <select name="station-manager" aria-labelledby="station-manager-label"
+                    defaultValue={reportingManager(selected, stations)?.id ?? ''} required>
+                    <option value="">Choose a workstation</option>
+                    {managerOptions.map((manager) => <option key={manager.id} value={manager.id}>{manager.name}</option>)}
+                  </select>
+                </label>
+              )}
               <button type="submit">Save workstation</button>
             </form>
             {stationEditMessage?.id === selected.id && <p role="status">{stationEditMessage.text}</p>}
