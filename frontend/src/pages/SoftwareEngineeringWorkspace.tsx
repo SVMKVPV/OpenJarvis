@@ -327,6 +327,7 @@ const ITEMS: WorkItem[] = [
 export type WorkspaceEntry = {
   initialRunId?: string;
   initialDefinitionId?: string;
+  initialRecurrenceId?: string;
   initialGmailReference?: string;
   initialUploadReference?: string;
   initialStarter?: 'finance' | 'leads' | 'competitor-ads' | 'delivery-quality' | 'builder-research';
@@ -334,6 +335,7 @@ export type WorkspaceEntry = {
 
 export function SoftwareEngineeringWorkspace({
   initialRunId = '', initialDefinitionId = '', initialGmailReference = '',
+  initialRecurrenceId = '',
   initialUploadReference = '', initialStarter,
   recipients = [], onOpenStation,
 }: WorkspaceEntry & {
@@ -1392,7 +1394,8 @@ export function SoftwareEngineeringWorkspace({
           {selectedDefinition && (
             <WorkflowRecurrenceEditor key={selectedDefinition.id}
               definitionId={selectedDefinition.id} initialInput={workflowInput}
-              initiallyOpen={selectedDefinition.id === initialDefinitionId} />
+              initiallyOpen={selectedDefinition.id === initialDefinitionId}
+              initialRecurrenceId={selectedDefinition.id === initialDefinitionId ? initialRecurrenceId : undefined} />
           )}
           {definitionMessage && <p role="status">{definitionMessage}</p>}
           {workflowApprovals.map((approval) => {

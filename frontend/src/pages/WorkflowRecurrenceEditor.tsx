@@ -1,10 +1,13 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { type WorkflowRecurrence, workflowRecurrences } from '../lib/api';
 
-export function WorkflowRecurrenceEditor({ definitionId, initialInput, initiallyOpen }: {
+export function WorkflowRecurrenceEditor({
+  definitionId, initialInput, initiallyOpen, initialRecurrenceId,
+}: {
   definitionId: string;
   initialInput: string;
   initiallyOpen?: boolean;
+  initialRecurrenceId?: string;
 }) {
   const [schedules, setSchedules] = useState<WorkflowRecurrence[]>([]);
   const [firstRun, setFirstRun] = useState('');
@@ -15,10 +18,16 @@ export function WorkflowRecurrenceEditor({ definitionId, initialInput, initially
   const [pending, setPending] = useState(true);
   const [message, setMessage] = useState('');
   const scheduleHeading = useRef<HTMLElement>(null);
+  const targetSchedule = useRef<HTMLLIElement>(null);
+  const hasTargetSchedule = schedules.some((schedule) => schedule.id === initialRecurrenceId);
 
   useEffect(() => {
     if (initiallyOpen) scheduleHeading.current?.focus();
   }, [initiallyOpen]);
+
+  useEffect(() => {
+    if (hasTargetSchedule) targetSchedule.current?.focus();
+  }, [hasTargetSchedule, initialRecurrenceId]);
 
   useEffect(() => {
     let active = true;
@@ -106,7 +115,9 @@ export function WorkflowRecurrenceEditor({ definitionId, initialInput, initially
       {schedules.length > 0 && (
         <ul>
           {schedules.map((schedule) => (
-            <li key={schedule.id}>
+            <li key={schedule.id}
+              ref={schedule.id === initialRecurrenceId ? targetSchedule : undefined}
+              tabIndex={schedule.id === initialRecurrenceId ? -1 : undefined}>
               Every {schedule.interval_seconds / 60} min.{' '}
               {schedule.paused ? 'Paused' :
                 `Next recorded start ${new Date(schedule.next_due_at * 1000).toLocaleString()}`}{' '}

@@ -652,7 +652,8 @@ export function CommandCenterPage() {
         <div className="header-telemetry"><span><i /> SYSTEM ONLINE</span><span>{stations.length} STATIONS</span><span>LOCAL FIRST</span></div>
       </header>
       {view === 'overview' ? <OrganizationOverview stations={stations} onOpen={openStation} /> : view === 'workspace' ? <SoftwareEngineeringWorkspace {...workspaceEntry} recipients={workflowRecipients} onOpenStation={openStation} /> : view === 'dashboard' ? <CustomDashboard widgetIds={dashboardWidgetIds} setWidgetIds={setDashboardWidgetIds} onOpenStation={openStation} onOpenWorkflow={openWorkflowReview}
-        onOpenRecurringWorkflow={(initialDefinitionId) => openWorkspace({ initialDefinitionId })} /> : <div className="command-grid">
+        onOpenRecurringWorkflow={(initialDefinitionId, initialRecurrenceId) =>
+          openWorkspace({ initialDefinitionId, initialRecurrenceId })} /> : <div className="command-grid">
         <aside className="station-rail">
           <div className="rail-head"><div><span>WORKSTATIONS</span><strong>{stations.length} ACTIVE</strong></div><button onClick={() => setAdding((value) => !value)} aria-label="Add workstation"><Plus size={15} /></button></div>
           {adding && <form className="station-add" onSubmit={addStation}><input autoFocus value={newName} onChange={(event) => setNewName(event.target.value)} placeholder="Station name" /><button type="submit">ADD</button></form>}

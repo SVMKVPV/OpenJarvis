@@ -57,7 +57,7 @@ export function CustomDashboard({
   setWidgetIds: (ids: string[]) => void;
   onOpenStation: (id: string) => void;
   onOpenWorkflow: (id: string) => void;
-  onOpenRecurringWorkflow: (definitionId: string) => void;
+  onOpenRecurringWorkflow: (definitionId: string, recurrenceId: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[] | null>(null);
@@ -315,7 +315,8 @@ export function CustomDashboard({
               const start = new Date(schedule.next_due_at * 1000);
               return (
                 <li key={schedule.id}>
-                  <button type="button" onClick={() => onOpenRecurringWorkflow(schedule.definition_id)}>
+                  <button type="button" onClick={() =>
+                    onOpenRecurringWorkflow(schedule.definition_id, schedule.id)}>
                     <time dateTime={start.toISOString()}>{start.toLocaleString([], {
                       month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
                     })}</time>
