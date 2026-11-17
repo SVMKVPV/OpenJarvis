@@ -173,49 +173,30 @@ docker run -d --gpus all -p 8000:8000 openjarvis:gpu
 
 ## Docker Compose Configuration
 
-The `docker-compose.yml` defines a complete deployment with the OpenJarvis API server and an Ollama backend:
+The [Compose file](../../deploy/docker/docker-compose.yml) defines the OpenJarvis
+API server and its Ollama backend. Both require a running Docker host.
 
-```yaml
-version: "3.9"
+### Connect a hosted Command Center
 
-services:
-  jarvis:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
-    environment:
-      - OPENJARVIS_ENGINE_DEFAULT=ollama
-      - OPENJARVIS_OLLAMA_HOST=http://ollama:11434
-    depends_on:
-      - ollama
-    restart: unless-stopped
+Keep the API key in the server's `.env` file and enter it in the Command Center
+Settings alongside the backend URL. Set `OPENJARVIS_CORS_ORIGINS` to the exact
+HTTPS origin of your Netlify frontend, without a trailing slash. CORS controls
+browser access, and the API key authenticates API requests independently of the
+Netlify login.
 
-  ollama:
-    image: ollama/ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama-models:/root/.ollama
-    restart: unless-stopped
+For an HTTPS reverse proxy on the Docker host, set
+`OPENJARVIS_BIND_ADDRESS=127.0.0.1` to bind both published ports to loopback.
+Forward the HTTPS backend address to port 8000 only. Ollama communicates with
+OpenJarvis over the Compose network.
 
-volumes:
-  ollama-models:
-```
+### Persistent data
 
-### Environment Variables
-
-The `jarvis` service is configured through environment variables:
-
-| Variable                      | Description                                             | Default                    |
-|-------------------------------|---------------------------------------------------------|----------------------------|
-| `OPENJARVIS_ENGINE_DEFAULT`   | Inference engine backend to use                         | `ollama`                   |
-| `OPENJARVIS_OLLAMA_HOST`      | URL of the Ollama server (uses Docker service name)     | `http://ollama:11434`      |
-
-### Volumes
-
-The `ollama-models` named volume persists downloaded models across container restarts, so models do not need to be re-pulled after a `docker compose down` / `docker compose up` cycle.
+The `openjarvis-data` named volume persists Command Center state, including
+workflows, schedules, approvals, and connector indexes. The `ollama-models`
+volume persists downloaded models. If upgrading from an older Compose setup,
+back up `/home/openjarvis/.openjarvis` from the existing API container before
+replacing it. Existing container files do not migrate automatically to the new
+volume.
 
 ### Service Dependencies
 
