@@ -295,11 +295,12 @@ function formatWorkflowDuration(seconds: number) {
   return `${seconds.toLocaleString(undefined, { maximumFractionDigits: 1 })} s`;
 }
 
+function reviewChecklistLines(items: unknown): string[] {
+  return Array.isArray(items) ? items.filter((item): item is string => typeof item === 'string') : [];
+}
+
 function workflowReviewChecklist(approval: PendingApproval): string[] {
-  const items = approval.payload.review_checklist;
-  return Array.isArray(items) ? items.filter(
-    (item): item is string => typeof item === 'string' && !!item.trim(),
-  ) : [];
+  return reviewChecklistLines(approval.payload.review_checklist).filter((item) => item.trim());
 }
 
 function downloadWorkflowJson(filename: string, data: object) {
@@ -584,7 +585,7 @@ export function SoftwareEngineeringWorkspace({
   const [stepSetting, setStepSetting] = useState('');
   const models = useAppStore((state) => state.models);
   const workflowModels = [...new Set(models.map((entry) => entry.id).filter((id) => !isEmbedOnlyModel(id)))];
-  const setStepConfig = (node: DraftNode, key: string, value: string | boolean) => {
+  const setStepConfig = (node: DraftNode, key: string, value: string | boolean | Record<string, unknown>) => {
     if (!draftGraph || savingDefinition) return;
     const config = { ...node.config };
     if (value) config[key] = value;
@@ -1314,13 +1315,30 @@ export function SoftwareEngineeringWorkspace({
                           </label>
                         </>;
                       })()}
-                      {node.type === 'approval' && (
-                        <label>Approval request for {node.id}
-                          <input value={typeof node.config?.description === 'string' ? node.config.description : ''}
-                            disabled={savingDefinition}
-                            onChange={(event) => setStepConfig(node, 'description', event.target.value)} />
-                        </label>
-                      )}{' '}
+                      {node.type === 'approval' && (() => {
+                        const configuredPayload = node.config?.payload;
+                        const payload = configuredPayload && typeof configuredPayload === 'object' &&
+                          !Array.isArray(configuredPayload) ? configuredPayload as Record<string, unknown> : {};
+                        return <>
+                          <label>Approval request for {node.id}
+                            <input value={typeof node.config?.description === 'string' ? node.config.description : ''}
+                              disabled={savingDefinition}
+                              onChange={(event) => setStepConfig(node, 'description', event.target.value)} />
+                          </label>
+                          <label>Reviewer checklist for {node.id}
+                            <textarea rows={3} maxLength={4000} disabled={savingDefinition}
+                              value={reviewChecklistLines(payload.review_checklist).join('\n')}
+                              onChange={(event) => {
+                                const nextPayload = { ...payload };
+                                const text = event.target.value;
+                                if (text) nextPayload.review_checklist = text.split('\n');
+                                else delete nextPayload.review_checklist;
+                                setStepConfig(node, 'payload', nextPayload);
+                              }} />
+                            <small>Enter one check per line.</small>
+                          </label>
+                        </>;
+                      })()}{' '}
                       <button type="button" disabled={savingDefinition}
                         aria-label={`Rename step ${node.id}`}
                         onClick={() => setStepRename({ id: node.id, name: node.id })}>
