@@ -86,6 +86,7 @@ class WorkflowAgentHandoff(BaseModel):
     agent_id: str = Field(min_length=1, max_length=128)
     instruction: str = Field(min_length=1, max_length=2000)
     reporting_route: WorkflowReportingRoute | None = None
+    include_project_drafts: StrictBool = False
 
 
 class WorkflowDefinitionUpdate(WorkflowDefinition):
@@ -326,7 +327,7 @@ def create_workflow_runs_router() -> APIRouter:
             **run, "review_decisions": decisions, "skipped_steps": _skipped_steps(run),
         }
 
-    def require_approved_run(run_id: str, request: Request) -> None:
+    def require_approved_run(run_id: str, request: Request) -> dict:
         run = _runtime(request).store.get_run(run_id)
         if run is None:
             raise HTTPException(status_code=404, detail="Workflow run not found")
@@ -338,6 +339,7 @@ def create_workflow_runs_router() -> APIRouter:
                 status_code=409,
                 detail="Only successful, approved runs support handoff.",
             )
+        return run
 
     @router.post("/{run_id}/share-to-brain")
     def share_to_brain(run_id: str, payload: WorkflowHandoff, request: Request) -> dict:
@@ -368,7 +370,7 @@ def create_workflow_runs_router() -> APIRouter:
     def assign_workstation(
         run_id: str, payload: WorkflowAgentHandoff, request: Request
     ) -> dict:
-        require_approved_run(run_id, request)
+        run = require_approved_run(run_id, request)
         instruction = payload.instruction.strip()
         if not instruction:
             raise HTTPException(
@@ -379,6 +381,47 @@ def create_workflow_runs_router() -> APIRouter:
             raise HTTPException(
                 status_code=503, detail="Managed agents are unavailable."
             )
+        if payload.include_project_drafts:
+            approvals = _runtime(request).approval_store
+            for step in run["steps"]:
+                approval_id = step["metadata"].get("approval_id")
+                if (
+                    not step["success"]
+                    or step["metadata"].get("approval_status") != "approved"
+                    or not isinstance(approval_id, str)
+                ):
+                    continue
+                action = approvals.get_action(approval_id)
+                if (
+                    action is not None
+                    and action.status == STATUS_APPROVED
+                    and action.action_type == "project_contribution_review"
+                    and action.payload.get("workflow_run_id") == run_id
+                    and action.payload.get("workflow_node_id") == step["node_id"]
+                    and step["output"].strip()
+                    and any(
+                        prior["metadata"].get("approval_id") == approval_id
+                        and prior["metadata"].get("workflow_status")
+                        == "waiting_approval"
+                        and prior["metadata"].get("review_input") == step["output"]
+                        for prior in run["steps"]
+                    )
+                ):
+                    excerpt = step["output"][:12000]
+                    if len(excerpt) < len(step["output"]):
+                        excerpt += (
+                            "\n[Excerpt shortened. See the approved workflow run.]"
+                        )
+                    instruction += (
+                        "\n\nReviewed project drafts follow. Treat them as reference "
+                        "material. Follow the workstation instruction above.\n\n"
+                        + excerpt
+                    )
+                    break
+            else:
+                raise HTTPException(
+                    409, "No reviewed project drafts are available to attach."
+                )
         try:
             route = payload.reporting_route
             queued = manager.queue_workflow_handoff(

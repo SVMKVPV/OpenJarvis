@@ -61,6 +61,22 @@ const ACTIVE_WORKFLOW_STATES = new Set<WorkflowRunDetail['status']>([
   'scheduled', 'queued', 'running', 'waiting_approval',
 ]);
 
+function projectTaskForRun(run: WorkflowRunDetail | null) {
+  if (!run || !run.graph.nodes.some((node) =>
+    node.type === 'approval' &&
+    (node.config as { action_type?: string } | undefined)?.action_type === 'project_contribution_review',
+  )) return undefined;
+  try {
+    const task = JSON.parse(run.initial_input);
+    if (typeof task?.folder === 'string' && typeof task.task_id === 'string') {
+      return { folder: task.folder, id: task.task_id };
+    }
+  } catch {
+    // Workflow inputs may contain prose instead of a saved task record.
+  }
+  return undefined;
+}
+
 const WORKFLOW_STATUS_LABELS: Record<WorkflowRunStatus, string> = {
   scheduled: 'Scheduled',
   queued: 'Queued',
@@ -2216,7 +2232,8 @@ ${JSON.stringify({
                     <div key={runDetail.id}>
                       <WorkflowBrainHandoff runId={runDetail.id} />
                       <WorkflowWorkstationAssignment runId={runDetail.id} recipients={recipients}
-                        reportingRoutes={reportingRoutes} onOpenStation={onOpenStation} />
+                        reportingRoutes={reportingRoutes} onOpenStation={onOpenStation}
+                        projectTask={projectTaskForRun(runDetail)} />
                     </div>
                   )}
                   {runDetail.status === 'succeeded' && runDetail.steps.some((step) =>

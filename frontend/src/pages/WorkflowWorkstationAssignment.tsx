@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useState } from 'react';
-import { assignWorkflowFollowUp, fetchWorkflowFollowUps, type WorkflowFollowUp } from '../lib/api';
+import { assignWorkflowFollowUp, fetchWorkflowFollowUps, fetchWorkspaceTasks, type WorkflowFollowUp } from '../lib/api';
 
 export type WorkflowRecipient = { stationId: string; name: string; agentId: string };
 export type WorkflowReportingRoute = {
@@ -9,11 +9,12 @@ export type WorkflowReportingRoute = {
   managerName: string;
 };
 
-export function WorkflowWorkstationAssignment({ runId, recipients, reportingRoutes, onOpenStation }: {
+export function WorkflowWorkstationAssignment({ runId, recipients, reportingRoutes, onOpenStation, projectTask }: {
   runId: string;
   recipients: WorkflowRecipient[];
   reportingRoutes: WorkflowReportingRoute[];
   onOpenStation?: (stationId: string) => void;
+  projectTask?: { folder: string; id: string };
 }) {
   const [stationId, setStationId] = useState('');
   const [sourceStationId, setSourceStationId] = useState('');
@@ -25,9 +26,27 @@ export function WorkflowWorkstationAssignment({ runId, recipients, reportingRout
   const [followUps, setFollowUps] = useState<WorkflowFollowUp[]>([]);
   const [followUpStatus, setFollowUpStatus] = useState('Checking follow-ups…');
   const [refreshVersion, setRefreshVersion] = useState(0);
+  const [projectOwnerId, setProjectOwnerId] = useState('');
+  const [includeProjectDrafts, setIncludeProjectDrafts] = useState(false);
+  const taskFolder = projectTask?.folder;
+  const taskId = projectTask?.id;
+  const projectOwner = recipients.find((entry) => entry.stationId === projectOwnerId);
   const recipient = recipients.find((entry) => entry.stationId === stationId);
   const reportingRoute = reportingRoutes.find((route) =>
     route.stationId === sourceStationId && route.managerId === stationId);
+
+  useEffect(() => {
+    if (!open || !taskFolder || !taskId) return;
+    const controller = new AbortController();
+    fetchWorkspaceTasks(taskFolder, controller.signal).then((tasks) => {
+      if (!controller.signal.aborted) {
+        setProjectOwnerId(tasks.find((task) => task.id === taskId)?.station_id ?? '');
+      }
+    }).catch(() => {
+      if (!controller.signal.aborted) setProjectOwnerId('');
+    });
+    return () => controller.abort();
+  }, [open, taskFolder, taskId]);
 
   useEffect(() => {
     if (!open) return;
@@ -64,7 +83,7 @@ export function WorkflowWorkstationAssignment({ runId, recipients, reportingRout
         reportingRoute && {
           source_workstation: reportingRoute.stationName,
           manager_workstation: reportingRoute.managerName,
-        },
+        }, includeProjectDrafts,
       );
       setMessage(queued ? `Follow-up queued for ${recipient.name}.`
         : `${recipient.name} already has a follow-up for this run.`);
@@ -82,6 +101,14 @@ export function WorkflowWorkstationAssignment({ runId, recipients, reportingRout
       <summary>Assign approved follow-up</summary>
       {recipients.length === 0 ? <p>Link a managed agent to a workstation to assign follow-ups.</p> : (
         <form className="connector-editor" onSubmit={assign}>
+          {projectOwner && (
+            <button type="button" disabled={pending} onClick={() => {
+              setStationId(projectOwner.stationId);
+              setSourceStationId('');
+              setConfirmedStation('');
+              setMessage('');
+            }}>Use current task owner · {projectOwner.name}</button>
+          )}
           {reportingRoutes.length > 0 && (
             <label>Use a workstation’s reporting manager
               <select aria-label="Use a workstation’s reporting manager" value={sourceStationId} disabled={pending}
@@ -124,6 +151,11 @@ export function WorkflowWorkstationAssignment({ runId, recipients, reportingRout
               onChange={(event) => setInstruction(event.target.value)} />
           </label>
           <small>The recipient receives the instruction and a run reference on its next run.</small>
+          {projectTask && <label>
+            <input type="checkbox" checked={includeProjectDrafts} disabled={pending}
+              onChange={(event) => setIncludeProjectDrafts(event.target.checked)} />
+            Attach reviewed project drafts
+          </label>}
           <button disabled={!recipient || !instruction.trim() || pending}>Queue follow-up</button>
           {message && <small role="status">{message}</small>}
           {confirmedStation && onOpenStation && (

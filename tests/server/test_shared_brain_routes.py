@@ -12,7 +12,10 @@ from fastapi.testclient import TestClient  # noqa: E402
 from openjarvis.server.app import create_app  # noqa: E402
 
 
-def test_handoff_approved_run_keeps_evidence_in_workflow(tmp_path, monkeypatch):
+@pytest.mark.parametrize("project_draft", [False, True])
+def test_handoff_approved_run_attaches_only_explicitly_requested_project_drafts(
+    tmp_path, monkeypatch, project_draft,
+):
     from openjarvis.agents.manager import AgentManager
     from openjarvis.server import approval_routes
     from openjarvis.tools.approval_store import ApprovalStore
@@ -31,7 +34,11 @@ def test_handoff_approved_run_keeps_evidence_in_workflow(tmp_path, monkeypatch):
         ).status_code == 200
         started = client.post("/v1/workflows/runs", json={
             "initial_input": "Private evidence should stay in the workflow",
-            "nodes": [{"id": "review", "type": "approval"}],
+            "nodes": [{
+                "id": "review", "type": "approval",
+                "config": {"action_type": "project_contribution_review"}
+                if project_draft else {},
+            }],
         })
         assert started.status_code == 202
         run_id = started.json()["id"]
@@ -50,6 +57,9 @@ def test_handoff_approved_run_keeps_evidence_in_workflow(tmp_path, monkeypatch):
         summary = {"summary": "Delivery wording confirmed."}
         assert client.post(share_path, json=summary).status_code == 409
         assert client.post(assign_path, json=assignment).status_code == 409
+        assert client.post(
+            assign_path, json={**assignment, "include_project_drafts": True}
+        ).status_code == 409
         assert client.get(follow_ups_path).status_code == 409
 
         def wait_for(expected):
@@ -105,6 +115,22 @@ def test_handoff_approved_run_keeps_evidence_in_workflow(tmp_path, monkeypatch):
         }
         manager.store_agent_response(agent["id"], "Unrelated later reply.")
         assert client.get(follow_ups_path).json()["follow_ups"] == [received]
+        review_agent = manager.create_agent("Draft reviewer")
+        response = client.post(assign_path, json={
+            **assignment,
+            "agent_id": review_agent["id"],
+            "include_project_drafts": True,
+        })
+        if project_draft:
+            assert response.status_code == 200
+            reviewed_handoff, = manager.get_pending_messages(review_agent["id"])
+            assert "Plan a delivery check." in reviewed_handoff["content"]
+            assert "Private evidence should stay in the workflow" in (
+                reviewed_handoff["content"]
+            )
+        else:
+            assert response.status_code == 409
+            assert manager.get_pending_messages(review_agent["id"]) == []
     approvals.close()
     manager.close()
 
@@ -156,7 +182,9 @@ def test_shared_brief_is_authenticated_persistent_and_revisioned(
         assert restarted.get(path, headers=headers).json() == winner
 
 
-def test_shared_brain_read_key_cannot_edit_or_access_other_routes(tmp_path, monkeypatch):
+def test_shared_brain_read_key_cannot_edit_or_access_other_routes(
+    tmp_path, monkeypatch
+):
     import hashlib
 
     from fastapi import FastAPI

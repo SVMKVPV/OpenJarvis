@@ -166,11 +166,15 @@ type WorkflowHandoffRoute = { source_workstation: string; manager_workstation: s
 export async function assignWorkflowFollowUp(
   runId: string, agentId: string, instruction: string,
   reportingRoute?: WorkflowHandoffRoute,
+  includeProjectDrafts = false,
 ): Promise<boolean> {
   const response = await apiFetch(`/v1/workflows/runs/${encodeURIComponent(runId)}/assign-workstation`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ agent_id: agentId, instruction, reporting_route: reportingRoute }),
+    body: JSON.stringify({
+      agent_id: agentId, instruction, reporting_route: reportingRoute,
+      ...(includeProjectDrafts ? { include_project_drafts: true } : {}),
+    }),
   });
   const result = await response.json().catch(() => null);
   if (!response.ok || typeof result?.queued !== 'boolean') {
