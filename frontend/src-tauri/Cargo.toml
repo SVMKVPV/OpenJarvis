@@ -1,6 +1,6 @@
 [package]
 name = "openjarvis-desktop"
-version = "1.102.0"
+version = "1.103.0"
 description = "OpenJarvis Command Center — Native AI organization dashboard with Dot and local intelligence"
 edition = "2021"
 license = "MIT"
