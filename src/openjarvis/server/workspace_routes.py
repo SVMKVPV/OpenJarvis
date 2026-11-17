@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import closing
+from typing import Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, Response
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException, Response
+from pydantic import BaseModel, Field, StringConstraints
 
 from openjarvis.core.paths import get_config_dir
 from openjarvis.security.file_utils import secure_create
@@ -43,3 +45,84 @@ def list_folders(response: Response) -> dict[str, list[str]]:
 @router.post("/folders")
 def add_folder(folder: ProjectFolder) -> dict[str, list[str]]:
     return {"folders": _folders(folder.name)}
+
+
+FolderName = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")]
+TaskTitle = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=160)
+]
+
+
+class ProjectTaskInput(BaseModel):
+    id: UUID
+    title: TaskTitle
+
+
+class ProjectTaskStatus(BaseModel):
+    completed: bool
+
+
+class ProjectTask(ProjectTaskInput, ProjectTaskStatus):
+    pass
+
+
+def _task_db() -> sqlite3.Connection:
+    conn = sqlite3.connect(secure_create(get_config_dir() / "workspace.db"))
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS project_tasks ("
+            "id TEXT PRIMARY KEY, folder TEXT NOT NULL, title TEXT NOT NULL, "
+            "completed INTEGER NOT NULL DEFAULT 0)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS project_tasks_folder ON project_tasks(folder)"
+        )
+    except sqlite3.Error:
+        conn.close()
+        raise
+    return conn
+
+
+@router.get("/folders/{folder}/tasks")
+def list_tasks(folder: FolderName, response: Response) -> list[ProjectTask]:
+    response.headers["Cache-Control"] = "no-store"
+    with closing(_task_db()) as conn:
+        rows = conn.execute(
+            "SELECT id, title, completed FROM project_tasks "
+            "WHERE folder = ? ORDER BY completed, rowid DESC",
+            (folder,),
+        )
+        return [ProjectTask(**dict(row)) for row in rows]
+
+
+@router.post("/folders/{folder}/tasks")
+def add_task(folder: FolderName, task: ProjectTaskInput) -> ProjectTask:
+    with closing(_task_db()) as conn, conn:
+        conn.execute(
+            "INSERT INTO project_tasks (id, folder, title) VALUES (?, ?, ?) "
+            "ON CONFLICT(id) DO NOTHING",
+            (str(task.id), folder, task.title),
+        )
+        row = conn.execute(
+            "SELECT folder, title, completed FROM project_tasks WHERE id = ?",
+            (str(task.id),),
+        ).fetchone()
+        if row["folder"] != folder or row["title"] != task.title:
+            raise HTTPException(409, "This task ID is already in use.")
+        return ProjectTask(id=task.id, title=row["title"], completed=row["completed"])
+
+
+@router.patch("/folders/{folder}/tasks/{task_id}")
+def update_task(
+    folder: FolderName, task_id: UUID, status: ProjectTaskStatus
+) -> ProjectTask:
+    with closing(_task_db()) as conn, conn:
+        row = conn.execute(
+            "UPDATE project_tasks SET completed = ? WHERE id = ? AND folder = ? "
+            "RETURNING title",
+            (status.completed, str(task_id), folder),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(404, "Project task was not found.")
+        return ProjectTask(id=task_id, title=row["title"], completed=status.completed)

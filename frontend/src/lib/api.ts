@@ -1499,6 +1499,34 @@ export async function fetchWorkspaceFolders(signal?: AbortSignal, name?: string)
   return result.folders;
 }
 
+export interface WorkspaceTask {
+  id: string;
+  title: string;
+  completed: boolean;
+}
+
+export async function fetchWorkspaceTasks(folder: string, signal: AbortSignal): Promise<WorkspaceTask[]> {
+  const response = await apiFetch(`/v1/workspace/folders/${encodeURIComponent(folder)}/tasks`, { signal });
+  if (!response.ok) throw new Error('Project tasks could not be loaded.');
+  const tasks = await response.json();
+  if (!Array.isArray(tasks)) throw new Error('Project tasks could not be loaded.');
+  return tasks;
+}
+
+export async function saveWorkspaceTask(
+  folder: string, task: Pick<WorkspaceTask, 'id' | 'title'> | Pick<WorkspaceTask, 'id' | 'completed'>,
+): Promise<WorkspaceTask> {
+  const endpoint = `/v1/workspace/folders/${encodeURIComponent(folder)}/tasks`;
+  const creating = 'title' in task;
+  const response = await apiFetch(creating ? endpoint : `${endpoint}/${encodeURIComponent(task.id)}`, {
+    method: creating ? 'POST' : 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(creating ? task : { completed: task.completed }),
+  });
+  if (!response.ok) throw new Error('Project task could not be saved.');
+  return response.json();
+}
+
 export async function fetchSystemBuilderProposals(
   signal: AbortSignal, inputContains: string,
 ): Promise<Array<WorkflowRunSummary & { initial_input?: string }>> {

@@ -36,6 +36,7 @@ import { WorkflowDraftMap } from './WorkflowDraftMap';
 import { WorkflowBrainHandoff } from './WorkflowBrainHandoff';
 import { WorkflowWorkstationAssignment, type WorkflowRecipient, type WorkflowReportingRoute } from './WorkflowWorkstationAssignment';
 import { WorkflowEvidenceUpload } from './WorkflowEvidenceUpload';
+import { WorkspaceProjectTasks } from './WorkspaceProjectTasks';
 import { PriorResearchCheck } from './PriorResearchCheck';
 import { WorkflowRecurrenceEditor } from './WorkflowRecurrenceEditor';
 import './software-workspace.css';
@@ -1157,11 +1158,12 @@ export function SoftwareEngineeringWorkspace({
       <section className="project-surface">
         <header><div><span>ACTIVE FOLDER</span><strong>/{selectedFolder}</strong></div><em>{visibleItems.length} ITEMS</em></header>
         <div className="project-body">
-          <div className="work-items">{visibleItems.length ? visibleItems.map((item) => <button key={item.id} className={item.id === selectedItem?.id ? 'active' : ''} onClick={() => setSelectedItemId(item.id)}><span>{item.type}</span><strong>{item.name}</strong><small>{item.owner}</small><em data-state={item.state}>{item.state}</em></button>) : <div className="workspace-empty"><Folder size={20}/><strong>Empty folder</strong><small>Add project files when the live adapter is connected.</small></div>}</div>
+          <div className="work-items">{visibleItems.length ? visibleItems.map((item) => <button key={item.id} className={item.id === selectedItem?.id ? 'active' : ''} onClick={() => setSelectedItemId(item.id)}><span>{item.type}</span><strong>{item.name}</strong><small>{item.owner}</small><em data-state={item.state}>{item.state}</em></button>) : <div className="workspace-empty"><Folder size={20}/><strong>Empty folder</strong><small>No file previews in this folder.</small></div>}</div>
           {selectedItem && <article className="item-preview"><div className="preview-meta"><span>{selectedItem.type}</span><em data-state={selectedItem.state}>{selectedItem.state}</em></div><h3>{selectedItem.name}</h3><p>{selectedItem.detail}</p><dl><div><dt>OWNER</dt><dd>{selectedItem.owner}</dd></div><div><dt>SHARED CONTEXT</dt><dd>AVAILABLE TO ALL ASSIGNED AGENTS</dd></div></dl>
             <div className="assignment"><span>ASSIGN COLLABORATORS</span><div>{connectors.filter((connector) => connector.enabled).map((connector) => <label key={connector.id}><input type="checkbox" checked={assigned.includes(connector.id)} onChange={() => setAssigned((current) => current.includes(connector.id) ? current.filter((id) => id !== connector.id) : [...current, connector.id])}/><b>{connector.code}</b></label>)}</div><button onClick={contribute} disabled={!assigned.length}><Plus size={12}/> CREATE SIMULATED CONTRIBUTION</button>{warning && <p className="brain-warning">{warning}</p>}</div>
           </article>}
         </div>
+        <WorkspaceProjectTasks key={selectedFolder} folder={selectedFolder} />
         <section className="proposal-feed"><header><span>PROPOSED CONTRIBUTIONS</span><strong>{proposals.filter((proposal) => !proposal.approved).length} AWAITING APPROVAL</strong></header>{proposals.slice(0,4).map((proposal) => <article key={proposal.id}><div><strong>{proposal.connector}</strong><p>{proposal.text}</p></div><button className={proposal.approved ? 'approved' : ''} onClick={() => setProposals((current) => current.map((item) => item.id === proposal.id ? {...item, approved: true} : item))}>{proposal.approved ? <><Check size={11}/> APPROVED</> : 'APPROVE'}</button></article>)}</section>
       </section>
 
