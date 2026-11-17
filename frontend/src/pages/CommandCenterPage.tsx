@@ -23,6 +23,7 @@ import { useLocalPreference } from '../hooks/useLocalPreference';
 import { streamChat } from '../lib/sse';
 import { useAppStore } from '../lib/store';
 import { SoftwareEngineeringWorkspace, type WorkspaceEntry } from './SoftwareEngineeringWorkspace';
+import { FinanceRevenue } from './FinanceRevenue';
 import { CustomDashboard, DASHBOARD_WIDGETS, DEFAULT_WIDGET_IDS } from './CustomDashboard';
 import { SharedBrainPanel } from './SharedBrainPanel';
 import { GmailReviewList } from './GmailReviewList';
@@ -798,6 +799,7 @@ export function CommandCenterPage() {
               </div>
               <p>Search indexed invoices and receipts, then review the draft against its sources.</p>
             </section>
+            <FinanceRevenue editable />
             <WorkflowReviewHistory kind="finance" onOpenWorkflow={openWorkflowReview} />
             <GmailReviewList onOpenFinance={(initialUploadReference) =>
               openWorkspace({ initialStarter: 'finance', initialUploadReference })} />
