@@ -317,9 +317,14 @@ def test_parallel_approval_keeps_other_checkpoint_available(
         assert runtime.decide_approval(first, STATUS_APPROVED)
         assert store.get_run(run_id)["status"] == "waiting_approval"
         assert runtime.is_waiting_for(second)
-        assert runtime.decide_approval(second, decision)
+        assert runtime.decide_approval(second, decision, checks=["Checked source"])
         final = _wait_for_terminal(store, run_id)
         assert final["status"] == expected
+        assert any(
+            step["metadata"].get("approval_id") == second.id
+            and step["metadata"].get("decision_checks") == ["Checked source"]
+            for step in final["steps"]
+        )
     finally:
         runtime.close()
         approvals.close()

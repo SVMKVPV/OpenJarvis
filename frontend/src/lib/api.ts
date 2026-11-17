@@ -1511,6 +1511,14 @@ export async function fetchWorkflowHistory(
 export interface WorkflowRunDetail extends WorkflowRunSummary {
   initial_input: string;
   graph: SavedWorkflowDefinition['graph'];
+  review_decisions?: Array<{
+    node_id: string;
+    approval_id: string;
+    status: 'approved' | 'denied';
+    decided_at: string | null;
+    note: string;
+    checks: string[];
+  }>;
   steps: Array<{
     node_id: string;
     attempt: number;

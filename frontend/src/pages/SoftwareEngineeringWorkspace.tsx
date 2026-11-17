@@ -450,6 +450,10 @@ export function SoftwareEngineeringWorkspace({
   const [inspectedRunId, setInspectedRunId] = useState(initialRunId);
   const runInspector = useRef<HTMLElement>(null);
   const [runDetail, setRunDetail] = useState<WorkflowRunDetail | null>(null);
+  const reviewDecisionsWithoutSteps = runDetail?.review_decisions?.filter((decision) =>
+    !runDetail.steps.some((step) => step.metadata.approval_id === decision.approval_id &&
+      step.metadata.approval_status === decision.status),
+  ) ?? [];
   const runGraph = useMemo(
     () => runDetail?.graph ? readDraftGraph(JSON.stringify(runDetail.graph)) : null,
     [runDetail?.graph],
@@ -905,6 +909,7 @@ export function SoftwareEngineeringWorkspace({
         finished_at: run.finished_at,
         graph: run.graph,
         steps: run.steps,
+        review_decisions: run.review_decisions,
         ...(followUps === null ? { workstation_follow_ups_status: 'unavailable' }
           : followUps ? { workstation_follow_ups: followUps } : {}),
       });
@@ -1717,6 +1722,22 @@ export function SoftwareEngineeringWorkspace({
                     </li>
                   ))}</ol> : <p>No steps recorded yet.</p>}
                   {runDetail.final_output && <><h5>Final output</h5><pre>{runDetail.final_output}</pre></>}
+                  {reviewDecisionsWithoutSteps.length > 0 && (
+                    <section aria-label="Recorded review decisions">
+                      <h5>Recorded review decisions</h5>
+                      {reviewDecisionsWithoutSteps.map((decision) => (
+                        <article key={decision.approval_id}>
+                          <strong>{decision.node_id} · {decision.status === 'approved' ? 'Approved' : 'Denied'}</strong>
+                          {decision.note && <p>{decision.note}</p>}
+                          {decision.checks.length > 0 && (
+                            <ul aria-label="Checks recorded at decision">
+                              {decision.checks.map((item, index) => <li key={index}>{item}</li>)}
+                            </ul>
+                          )}
+                        </article>
+                      ))}
+                    </section>
+                  )}
                   {runDetail.status === 'succeeded' && runDetail.steps.some((step) =>
                     step.metadata.approval_status === 'approved'
                   ) && (

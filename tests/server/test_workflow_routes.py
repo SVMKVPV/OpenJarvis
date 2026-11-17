@@ -228,7 +228,10 @@ def test_recurring_workflow_catches_up_once_after_restart(tmp_path, monkeypatch)
         approvals.close()
 
 
-def test_parallel_approvals_survive_runtime_restart(tmp_path, monkeypatch) -> None:
+@pytest.mark.parametrize("cancel_after_restart", [False, True])
+def test_parallel_approvals_survive_runtime_restart(
+    tmp_path, monkeypatch, cancel_after_restart
+) -> None:
     from openjarvis.server import approval_routes
     from openjarvis.tools.approval_store import ApprovalStore
 
@@ -273,7 +276,11 @@ def test_parallel_approvals_survive_runtime_restart(tmp_path, monkeypatch) -> No
         approvals_by_node = paused["context"]["_workflow_approvals"]
         first_id = approvals_by_node["first"]
         second_id = approvals_by_node["second"]
-        assert client.post(f"/v1/approvals/{first_id}/approve").status_code == 200
+        review_note = "First source verified."
+        assert client.post(
+            f"/v1/approvals/{first_id}/decide-with-note",
+            json={"decision": "approve", "note": review_note},
+        ).status_code == 200
         pending = client.get("/v1/approvals/pending").json()
         assert [action["id"] for action in pending["actions"]] == [second_id]
     original.state.workflow_runtime.close()
@@ -284,6 +291,17 @@ def test_parallel_approvals_survive_runtime_restart(tmp_path, monkeypatch) -> No
         assert [action["id"] for action in pending["actions"]] == [second_id]
         assert "review_input" not in pending["actions"][0]["payload"]
         assert "decision_checks" not in pending["actions"][0]["payload"]
+        if cancel_after_restart:
+            path = f"/v1/workflows/runs/{run_id}/cancel"
+            assert client.post(path).status_code == 202
+            cancelled = wait_status(client, run_id, "cancelled")
+            recorded, = cancelled["review_decisions"]
+            assert recorded["approval_id"] == first_id
+            assert recorded["status"] == "approved"
+            assert recorded["note"] == review_note
+            restarted.state.workflow_runtime.close()
+            approvals.close()
+            return
         paused = wait_status(client, run_id, "waiting_approval")
         second_step = next(
             step for step in paused["steps"] if step["node_id"] == "second"

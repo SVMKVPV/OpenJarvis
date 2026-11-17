@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, StrictBool
 from openjarvis.core.paths import get_config_dir
 from openjarvis.core.shared_brain import SharedBriefConflict, append_workflow_handoff
 from openjarvis.server.approval_routes import get_approval_store
+from openjarvis.tools.approval_store import STATUS_APPROVED, STATUS_DENIED
 from openjarvis.workflow.runtime import WorkflowRuntime, WorkflowRuntimeStopping
 from openjarvis.workflow.serialization import graph_from_dict, graph_to_dict
 from openjarvis.workflow.store import (
@@ -160,10 +161,29 @@ def create_workflow_runs_router() -> APIRouter:
 
     @router.get("/{run_id}")
     async def get_run(run_id: str, request: Request) -> dict:
-        run = _runtime(request).store.get_run(run_id, include_graph=True)
+        runtime = _runtime(request)
+        run = runtime.store.get_run(run_id, include_graph=True)
         if run is None:
             raise HTTPException(status_code=404, detail="Workflow run not found")
-        return run
+        decisions = []
+        for node_id, action_id in run["context"].get("_workflow_approvals", {}).items():
+            action = runtime.approval_store.get_action(action_id)
+            if (
+                action is None
+                or action.status not in {STATUS_APPROVED, STATUS_DENIED}
+                or action.payload.get("workflow_run_id") != run_id
+                or action.payload.get("workflow_node_id") != node_id
+            ):
+                continue
+            decisions.append({
+                "node_id": node_id,
+                "approval_id": action_id,
+                "status": action.status,
+                "decided_at": action.decision_at,
+                "note": action.payload.get("decision_note", ""),
+                "checks": action.payload.get("decision_checks", []),
+            })
+        return {**run, "review_decisions": decisions}
 
     def require_approved_run(run_id: str, request: Request) -> None:
         run = _runtime(request).store.get_run(run_id)
