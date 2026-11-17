@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import NamedTuple
 
 import httpx
 
@@ -20,6 +23,15 @@ from openjarvis.core.paths import get_config_dir
 from openjarvis.security.file_utils import secure_write_json
 
 _credential_lock = threading.Lock()
+
+
+class _ViewsSnapshot(NamedTuple):
+    scope: tuple[str, str, bytes]
+    views: int
+    as_of: str
+
+
+_last_views: _ViewsSnapshot | None = None
 
 
 def _run_views_report(token: str, property_id: str) -> dict:
@@ -114,11 +126,14 @@ def authorize_ga4(client_file: Path) -> None:
 
 
 def remove_ga4_authorization() -> None:
+    global _last_views
     with _credential_lock:
         delete_tokens(ga4_credentials_path())
+        _last_views = None
 
 
 def ga4_views() -> dict:
+    global _last_views
     property_id = ga4_settings()["property_id"]
     if not property_id:
         return {"status": "unconfigured", "views": None}
@@ -133,8 +148,19 @@ def ga4_views() -> dict:
         if not isinstance(token, str) or not token:
             return {"status": "authorization_required", "views": None}
 
+        scope: tuple[str, str, bytes] | None = None
+
+        def read_report(access_token: str, report_property: str) -> dict:
+            nonlocal scope
+            scope = (
+                credentials,
+                report_property,
+                hashlib.sha256(access_token.encode()).digest(),
+            )
+            return _run_views_report(access_token, report_property)
+
         try:
-            report = call_with_refresh(_run_views_report, credentials, property_id)
+            report = call_with_refresh(read_report, credentials, property_id)
             headers = report["metricHeaders"]
             if headers[0]["name"] != "screenPageViews":
                 raise ValueError("Unexpected GA4 metric")
@@ -143,11 +169,28 @@ def ga4_views() -> dict:
             if views < 0:
                 raise ValueError("Invalid GA4 views count")
         except GoogleAuthError:
+            _last_views = None
             return {"status": "authorization_required", "views": None}
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code in {401, 403}:
+                _last_views = None
                 return {"status": "authorization_required", "views": None}
+            if exc.response.status_code != 429 and exc.response.status_code < 500:
+                return {"status": "unavailable", "views": None}
+        except httpx.RequestError:
+            pass
+        except (KeyError, IndexError, TypeError, ValueError):
             return {"status": "unavailable", "views": None}
-        except (httpx.RequestError, KeyError, IndexError, TypeError, ValueError):
-            return {"status": "unavailable", "views": None}
-        return {"status": "live", "views": views}
+        else:
+            if scope is not None:
+                _last_views = _ViewsSnapshot(
+                    scope, views, datetime.now(timezone.utc).isoformat()
+                )
+            return {"status": "live", "views": views}
+        if _last_views is not None and _last_views.scope == scope:
+            return {
+                "status": "stale",
+                "views": _last_views.views,
+                "as_of": _last_views.as_of,
+            }
+        return {"status": "unavailable", "views": None}

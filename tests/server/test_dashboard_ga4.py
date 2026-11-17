@@ -62,6 +62,43 @@ def test_ga4_dashboard_reads_views_only_after_configuration(tmp_path, monkeypatc
         "dateRanges": [{"startDate": "28daysAgo", "endDate": "yesterday"}],
     }
 
+def test_ga4_uses_last_report_only_for_same_authorized_scope(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENJARVIS_HOME", str(tmp_path))
+    monkeypatch.setenv("OPENJARVIS_GA4_PROPERTY_ID", "123")
+    credentials = tmp_path / "connectors" / "ga4.json"
+    credentials.parent.mkdir()
+    credentials.write_text('{"access_token":"fixture-token"}')
+    app = FastAPI()
+    app.include_router(dashboard_router)
+    route = "/v1/dashboard/ga4-views"
+    responses = [200, 503, 429, 503, 503, 403, 503]
+
+    def report(url, **kwargs):
+        return httpx.Response(
+            responses.pop(0),
+            request=httpx.Request("POST", url),
+            json={"metricHeaders": [{"name": "screenPageViews"}], "rows": []},
+        )
+
+    monkeypatch.setattr(ga4_report.httpx, "post", report)
+    with TestClient(app) as client:
+        assert client.get(route).json() == {"status": "live", "views": 0}
+        stale = client.get(route)
+        assert stale.headers["Cache-Control"] == "no-store"
+        assert stale.json()["status"] == "stale"
+        assert stale.json()["views"] == 0
+        assert stale.json()["as_of"].endswith("+00:00")
+        assert client.get(route).json() == stale.json()
+        monkeypatch.setenv("OPENJARVIS_GA4_PROPERTY_ID", "456")
+        assert client.get(route).json() == {"status": "unavailable", "views": None}
+        monkeypatch.setenv("OPENJARVIS_GA4_PROPERTY_ID", "123")
+        credentials.write_text('{"access_token":"different-fixture-token"}')
+        assert client.get(route).json()["status"] == "unavailable"
+        credentials.write_text('{"access_token":"fixture-token"}')
+        assert client.get(route).json()["status"] == "authorization_required"
+        assert client.get(route).json()["status"] == "unavailable"
+
+
 def test_ga4_property_persists_without_overriding_backend_environment(
     tmp_path, monkeypatch
 ):

@@ -1513,8 +1513,9 @@ export async function removeGa4Authorization(): Promise<void> {
 }
 
 export type Ga4Views = {
-  status: 'unconfigured' | 'invalid_property' | 'authorization_required' | 'unavailable' | 'live';
+  status: 'unconfigured' | 'invalid_property' | 'authorization_required' | 'unavailable' | 'live' | 'stale';
   views: number | null;
+  as_of?: string;
 };
 
 export async function fetchGa4Views(signal?: AbortSignal): Promise<Ga4Views> {

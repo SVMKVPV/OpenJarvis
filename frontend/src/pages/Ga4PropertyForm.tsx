@@ -9,6 +9,7 @@ const CONNECTION_MESSAGES: Record<Ga4Views['status'], string> = {
   invalid_property: 'The configured GA4 property ID must be numeric.',
   authorization_required: 'Google Analytics authorization is required.',
   unavailable: 'Google Analytics could not return a report.',
+  stale: 'Google Analytics could not return a fresh report. The dashboard shows the last successful report.',
   live: 'Connection verified. The property returned a GA4 report.',
 };
 

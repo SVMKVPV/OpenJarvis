@@ -249,6 +249,9 @@ export function CustomDashboard({
     invalid_property: 'GA4 property ID must be numeric',
     authorization_required: 'GA4 authorization required',
     unavailable: 'Google Analytics unavailable',
+    stale: analytics?.as_of
+      ? `Last successful report · ${new Date(analytics.as_of).toLocaleString()}`
+      : 'Last successful report',
     live: 'Last 28 completed days',
   };
 
