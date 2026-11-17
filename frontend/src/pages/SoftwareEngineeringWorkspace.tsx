@@ -13,6 +13,7 @@ import {
   fetchWorkflowFollowUps,
   fetchWorkflowRun,
   fetchWorkflowHistory,
+  fetchWorkspaceFolders,
   requestWorkflowRunAction,
   rescheduleWorkflowRun,
   runSavedWorkflow,
@@ -374,7 +375,26 @@ export function SoftwareEngineeringWorkspace({
   reportingRoutes?: WorkflowReportingRoute[];
   onOpenStation?: (stationId: string) => void;
 } = {}) {
-  const [folders, setFolders] = useState(INITIAL_FOLDERS);
+  const [customFolders, setCustomFolders] = useState<string[]>([]);
+  const folders = [...new Set([...INITIAL_FOLDERS, ...customFolders])];
+  const [folderError, setFolderError] = useState('');
+  const [savingFolder, setSavingFolder] = useState(false);
+  const [folderReload, setFolderReload] = useState(0);
+  useEffect(() => {
+    const request = new AbortController();
+    fetchWorkspaceFolders(request.signal).then(
+      (names) => {
+        if (!request.signal.aborted) {
+          setCustomFolders((current) => [...new Set([...names, ...current])]);
+          setFolderError('');
+        }
+      },
+      () => {
+        if (!request.signal.aborted) setFolderError('Saved project folders could not be loaded.');
+      },
+    );
+    return () => request.abort();
+  }, [folderReload]);
   const [selectedFolder, setSelectedFolder] = useState('04-frontend');
   const [selectedItemId, setSelectedItemId] = useState('shell');
   const [connectors, setConnectors] = useState(INITIAL_CONNECTORS);
@@ -609,7 +629,7 @@ export function SoftwareEngineeringWorkspace({
     { id: 'p-1', connector: 'OpenAI / ChatGPT', text: 'Prepared the command-center component boundary and preserved existing voice routing.', approved: false },
   ]);
   const visibleItems = useMemo(() => ITEMS.filter((item) => item.folder === selectedFolder), [selectedFolder]);
-  const selectedItem = ITEMS.find((item) => item.id === selectedItemId) ?? visibleItems[0] ?? ITEMS[0];
+  const selectedItem = visibleItems.find((item) => item.id === selectedItemId) ?? visibleItems[0];
 
   useEffect(() => {
     if (!inspectedRunId) return;
@@ -1081,15 +1101,34 @@ export function SoftwareEngineeringWorkspace({
     return counts;
   }, {}), [runtimePlugins]);
 
-  const addFolder = (event: FormEvent) => {
+  const addFolder = async (event: FormEvent) => {
     event.preventDefault();
+    if (savingFolder) return;
     const next = folderName.trim().toLowerCase().replace(/\s+/g, '-');
-    if (!next || folders.includes(next)) return;
-    setFolders((current) => [...current, next]); setSelectedFolder(next); setFolderName(''); setShowAddFolder(false);
+    if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(next)) {
+      setFolderError('Use up to 64 letters, numbers, hyphens or underscores.');
+      return;
+    }
+    if (folders.includes(next)) {
+      setFolderError('A project folder with that name already exists.');
+      return;
+    }
+    setSavingFolder(true);
+    setFolderError('');
+    try {
+      setCustomFolders(await fetchWorkspaceFolders(undefined, next));
+      setSelectedFolder(next);
+      setFolderName('');
+      setShowAddFolder(false);
+    } catch {
+      setFolderError('The folder could not be saved. Try again.');
+    } finally {
+      setSavingFolder(false);
+    }
   };
 
   const contribute = () => {
-    if (!assigned.length) return;
+    if (!assigned.length || !selectedItem) return;
     if (assigned.length > 1) { setWarning(`Shared Brain warning: ${selectedItem.name} already has an owner. Confirmed collaborators will contribute without replacing ownership.`); }
     const additions = assigned.map((id) => {
       const connector = connectors.find((item) => item.id === id)!;
@@ -1103,7 +1142,14 @@ export function SoftwareEngineeringWorkspace({
     <div className="se-layout">
       <aside className="folder-rail">
         <header><div><span>PROJECT FOLDERS</span><strong>{folders.length} DIRECTORIES</strong></div><button onClick={() => setShowAddFolder((value) => !value)} aria-label="Add project folder"><FolderPlus size={14}/></button></header>
-        {showAddFolder && <form onSubmit={addFolder}><input autoFocus value={folderName} onChange={(event) => setFolderName(event.target.value)} placeholder="folder-name"/><button>ADD</button></form>}
+        {showAddFolder && <form onSubmit={addFolder}>
+          <input autoFocus aria-label="Project folder name" maxLength={64} value={folderName}
+            onChange={(event) => setFolderName(event.target.value)} placeholder="folder-name" />
+          <button disabled={savingFolder}>{savingFolder ? 'Saving…' : 'Add'}</button>
+        </form>}
+        {folderError && <p role="status">{folderError}</p>}
+        {folderError === 'Saved project folders could not be loaded.' &&
+          <button type="button" onClick={() => setFolderReload((value) => value + 1)}>Retry folders</button>}
         <nav>{folders.map((folder) => <button key={folder} className={folder === selectedFolder ? 'active' : ''} onClick={() => setSelectedFolder(folder)}><Folder size={13}/><span>{folder}</span><ChevronRight size={11}/></button>)}</nav>
         <div className="folder-status"><span>SHARED BRAIN</span><strong>CONTEXT SYNCHRONIZED</strong><small>10 stations · 0 duplicate conflicts</small></div>
       </aside>
@@ -1111,10 +1157,10 @@ export function SoftwareEngineeringWorkspace({
       <section className="project-surface">
         <header><div><span>ACTIVE FOLDER</span><strong>/{selectedFolder}</strong></div><em>{visibleItems.length} ITEMS</em></header>
         <div className="project-body">
-          <div className="work-items">{visibleItems.length ? visibleItems.map((item) => <button key={item.id} className={item.id === selectedItem.id ? 'active' : ''} onClick={() => setSelectedItemId(item.id)}><span>{item.type}</span><strong>{item.name}</strong><small>{item.owner}</small><em data-state={item.state}>{item.state}</em></button>) : <div className="workspace-empty"><Folder size={20}/><strong>Empty folder</strong><small>Add project files when the live adapter is connected.</small></div>}</div>
-          <article className="item-preview"><div className="preview-meta"><span>{selectedItem.type}</span><em data-state={selectedItem.state}>{selectedItem.state}</em></div><h3>{selectedItem.name}</h3><p>{selectedItem.detail}</p><dl><div><dt>OWNER</dt><dd>{selectedItem.owner}</dd></div><div><dt>SHARED CONTEXT</dt><dd>AVAILABLE TO ALL ASSIGNED AGENTS</dd></div></dl>
+          <div className="work-items">{visibleItems.length ? visibleItems.map((item) => <button key={item.id} className={item.id === selectedItem?.id ? 'active' : ''} onClick={() => setSelectedItemId(item.id)}><span>{item.type}</span><strong>{item.name}</strong><small>{item.owner}</small><em data-state={item.state}>{item.state}</em></button>) : <div className="workspace-empty"><Folder size={20}/><strong>Empty folder</strong><small>Add project files when the live adapter is connected.</small></div>}</div>
+          {selectedItem && <article className="item-preview"><div className="preview-meta"><span>{selectedItem.type}</span><em data-state={selectedItem.state}>{selectedItem.state}</em></div><h3>{selectedItem.name}</h3><p>{selectedItem.detail}</p><dl><div><dt>OWNER</dt><dd>{selectedItem.owner}</dd></div><div><dt>SHARED CONTEXT</dt><dd>AVAILABLE TO ALL ASSIGNED AGENTS</dd></div></dl>
             <div className="assignment"><span>ASSIGN COLLABORATORS</span><div>{connectors.filter((connector) => connector.enabled).map((connector) => <label key={connector.id}><input type="checkbox" checked={assigned.includes(connector.id)} onChange={() => setAssigned((current) => current.includes(connector.id) ? current.filter((id) => id !== connector.id) : [...current, connector.id])}/><b>{connector.code}</b></label>)}</div><button onClick={contribute} disabled={!assigned.length}><Plus size={12}/> CREATE SIMULATED CONTRIBUTION</button>{warning && <p className="brain-warning">{warning}</p>}</div>
-          </article>
+          </article>}
         </div>
         <section className="proposal-feed"><header><span>PROPOSED CONTRIBUTIONS</span><strong>{proposals.filter((proposal) => !proposal.approved).length} AWAITING APPROVAL</strong></header>{proposals.slice(0,4).map((proposal) => <article key={proposal.id}><div><strong>{proposal.connector}</strong><p>{proposal.text}</p></div><button className={proposal.approved ? 'approved' : ''} onClick={() => setProposals((current) => current.map((item) => item.id === proposal.id ? {...item, approved: true} : item))}>{proposal.approved ? <><Check size={11}/> APPROVED</> : 'APPROVE'}</button></article>)}</section>
       </section>

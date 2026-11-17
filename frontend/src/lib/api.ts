@@ -1486,6 +1486,19 @@ export async function fetchWorkflowRuns(status?: WorkflowRunStatus): Promise<Wor
   return data.runs || [];
 }
 
+export async function fetchWorkspaceFolders(signal?: AbortSignal, name?: string): Promise<string[]> {
+  const options: RequestInit = name ? {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+  } : {};
+  const response = await apiFetch('/v1/workspace/folders', { ...options, signal });
+  if (!response.ok) throw new Error('Project folders are unavailable.');
+  const result = await response.json();
+  if (!Array.isArray(result.folders) || !result.folders.every((value: unknown) => typeof value === 'string')) {
+    throw new Error('Project folders are unavailable.');
+  }
+  return result.folders;
+}
+
 export async function fetchSystemBuilderProposals(
   signal: AbortSignal, inputContains: string,
 ): Promise<Array<WorkflowRunSummary & { initial_input?: string }>> {

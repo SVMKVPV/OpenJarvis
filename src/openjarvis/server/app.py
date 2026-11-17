@@ -36,6 +36,7 @@ from openjarvis.server.workflow_routes import (
     create_workflow_runs_router,
     start_workflow_scheduler,
 )
+from openjarvis.server.workspace_routes import router as workspace_router
 
 logger = logging.getLogger(__name__)
 _MANAGED_SHUTDOWN_GRACE_SECONDS = 0.25
@@ -537,6 +538,7 @@ def create_app(
     app.include_router(research_router)
     app.include_router(plugin_router)
     app.include_router(shared_brain_router)
+    app.include_router(workspace_router)
     app.include_router(social_content_router)
     app.include_router(system_audit_router)
     app.include_router(create_workflow_runs_router())
