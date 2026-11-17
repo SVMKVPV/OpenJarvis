@@ -58,7 +58,9 @@ def test_revenue_history_records_changes_only(tmp_path, monkeypatch):
         assert older.status_code == 409
         params = {"month": "2026-11", "include_history": True}
         result = client.get(path, params=params).json()
-        assert result["records"] == [{**corrected, "month": "2026-11"}]
+        assert result["records"] == [{
+            **corrected, "month": "2026-11", "revision": result["history"][0]["id"],
+        }]
         assert [row["source_reference"] for row in result["history"]] == [
             "Adjusted report", "Initial report",
         ]
@@ -94,3 +96,32 @@ def test_revenue_history_keeps_total_from_older_database(tmp_path, monkeypatch):
         assert current["amount"] == "110.00"
         assert baseline["amount"] == "100.00"
         assert baseline["recorded_at"] is None
+
+
+def test_revenue_rejects_stale_edits_and_accepts_identical_retries(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENJARVIS_HOME", str(tmp_path))
+    app = FastAPI()
+    app.include_router(router)
+    path = "/v1/finance/revenue"
+    original = {
+        "as_of": "2026-11-15",
+        "currency": "AUD",
+        "amount": "100.00",
+        "source_reference": "Reviewed report",
+    }
+    with TestClient(app) as client:
+        initial = client.put(path, json={**original, "expected_revision": None})
+        assert initial.status_code == 200
+        revision = initial.json()["revision"]
+        saved = client.put(path, json={**original, "amount": "120.00", "expected_revision": revision})
+        assert saved.status_code == 200
+        assert saved.json()["revision"] > revision
+        stale = client.put(path, json={**original, "amount": "130.00", "expected_revision": revision})
+        assert stale.status_code == 409
+        create = client.put(path, json={**original, "expected_revision": None})
+        assert create.status_code == 409
+        retry = client.put(path, json={**original, "amount": "120.00", "expected_revision": revision})
+        assert retry.json() == saved.json()
+        result = client.get(path, params={"month": "2026-11", "include_history": True}).json()
+        assert result["records"] == [saved.json()]
+        assert [row["amount"] for row in result["history"]] == ["120.00", "100.00"]

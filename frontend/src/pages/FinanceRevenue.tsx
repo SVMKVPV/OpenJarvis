@@ -6,6 +6,7 @@ type RevenueRecord = {
   currency: string;
   amount: string;
   source_reference: string;
+  revision?: number;
 };
 
 type RevenueHistoryRecord = RevenueRecord & { id: number; recorded_at: number | null };
@@ -22,7 +23,7 @@ export function FinanceRevenue({ editable = false }: { editable?: boolean }) {
   const [amount, setAmount] = useState('');
   const [reference, setReference] = useState('');
   const [loaded, setLoaded] = useState<{
-    month: string; records: RevenueRecord[]; history?: RevenueHistoryRecord[];
+    month: string; revision_checks?: boolean; records: RevenueRecord[]; history?: RevenueHistoryRecord[];
   } | null>(null);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [errorMonth, setErrorMonth] = useState('');
@@ -56,6 +57,8 @@ export function FinanceRevenue({ editable = false }: { editable?: boolean }) {
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (saving || records === null) return;
+    const currencyCode = currency.trim().toUpperCase();
+    const existing = records.find((record) => record.currency === currencyCode);
     setSaving(true);
     setSaveMessage('');
     try {
@@ -63,18 +66,22 @@ export function FinanceRevenue({ editable = false }: { editable?: boolean }) {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          as_of: date, amount: amount.trim(), currency: currency.trim().toUpperCase(),
+          as_of: date, amount: amount.trim(), currency: currencyCode,
+          expected_revision: loaded?.revision_checks ? (existing?.revision ?? null) : undefined,
           source_reference: reference.trim(),
         }),
       });
       const result = await response.json().catch(() => null);
       if (response.status === 409 && typeof result?.detail === 'string') {
+        setLoaded(null);
+        setRefreshVersion((version) => version + 1);
         throw new Error(result.detail);
       }
       if (!response.ok || result?.month !== month) throw new Error('Revenue total could not be saved.');
       const saved = result as RevenueRecord;
       setLoaded({
         month,
+        revision_checks: loaded?.revision_checks,
         history: loaded?.history,
         records: [...records.filter((row) => row.currency !== saved.currency), saved]
           .sort((a, b) => a.currency.localeCompare(b.currency)),
