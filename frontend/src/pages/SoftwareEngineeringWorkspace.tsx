@@ -117,6 +117,14 @@ const FINANCE_EVIDENCE_REVIEW = {
     { id: 'finance-review', type: 'approval', config: {
       description: 'Compare the source documents, proposed workpaper, and advisory workpaper check. Verify figures, currencies, duplicates, and missing evidence before approving.',
       tier: 'high',
+      payload: {
+        review_checklist: [
+          'Match the vendor, document date, and reference to the original source.',
+          'Verify the currency, total, and any explicitly stated GST or tax against the source.',
+          'Check whether the subtotal and line items are present before treating the figures as reconciled.',
+          'Flag duplicates, conflicting amounts, and fields that remain unknown.',
+        ],
+      },
     } },
   ],
   edges: [
@@ -285,6 +293,13 @@ const GUARDED_GRAPH_JSON = JSON.stringify({
 function formatWorkflowDuration(seconds: number) {
   if (seconds < 1) return `${Math.round(seconds * 1000)} ms`;
   return `${seconds.toLocaleString(undefined, { maximumFractionDigits: 1 })} s`;
+}
+
+function workflowReviewChecklist(approval: PendingApproval): string[] {
+  const items = approval.payload.review_checklist;
+  return Array.isArray(items) ? items.filter(
+    (item): item is string => typeof item === 'string' && !!item.trim(),
+  ) : [];
 }
 
 function downloadWorkflowJson(filename: string, data: object) {
@@ -1506,7 +1521,7 @@ export function SoftwareEngineeringWorkspace({
                       else inspectRun(runId);
                     }}>Review workflow run</button>
                   )}
-                  {approvalButtons(approval)}
+                  {!workflowReviewChecklist(approval).length && approvalButtons(approval)}
                 </div>
               </article>
             );
@@ -1691,17 +1706,27 @@ export function SoftwareEngineeringWorkspace({
                   {runDetail.status === 'waiting_approval' && !cancellationPending && inspectedApprovals.length > 0 && (
                     <div>
                       <h5>Pending approvals for this run</h5>
-                      {inspectedApprovals.map((approval) => (
-                        <article className="workflow-approval" key={approval.id}>
-                          <span>{approval.description}</span>
-                          <label>Reviewer note (optional)
-                            <textarea rows={2} maxLength={2000} value={approvalNotes[approval.id] ?? ''}
-                              disabled={!!decidingApprovalId}
-                              onChange={(event) => setApprovalNotes((notes) => ({ ...notes, [approval.id]: event.target.value }))} />
-                          </label>
-                          <div>{approvalButtons(approval)}</div>
-                        </article>
-                      ))}
+                      {inspectedApprovals.map((approval) => {
+                        const checklist = workflowReviewChecklist(approval);
+                        return (
+                          <article className="workflow-approval" key={approval.id}>
+                            <div>
+                              <span>{approval.description}</span>
+                              {checklist.length > 0 && (
+                                <ul aria-label="Reviewer checklist">
+                                  {checklist.map((item, index) => <li key={index}>{item}</li>)}
+                                </ul>
+                              )}
+                              <label>Reviewer note (optional)
+                                <textarea rows={2} maxLength={2000} value={approvalNotes[approval.id] ?? ''}
+                                  disabled={!!decidingApprovalId}
+                                  onChange={(event) => setApprovalNotes((notes) => ({ ...notes, [approval.id]: event.target.value }))} />
+                              </label>
+                            </div>
+                            <div>{approvalButtons(approval)}</div>
+                          </article>
+                        );
+                      })}
                     </div>
                   )}
                 </>
