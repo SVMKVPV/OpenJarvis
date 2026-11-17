@@ -95,3 +95,11 @@ def test_reviewed_leads_keep_deduplicated_pairs_from_approved_evidence(
         assert bad.status_code == 400
         good = client.post("/v1/leads", json={**fields, "source_reference": "Ref-1"})
         assert good.status_code == 201
+        retry = client.post("/v1/leads", json={**fields, "source_reference": "Ref-1"})
+        assert retry.status_code == 200
+        assert retry.json() == good.json()
+        other_run = client.post("/v1/leads", json={
+            **fields, "source_reference": "Ref-1", "workflow_run_id": "other-run",
+        })
+        assert other_run.status_code == 409
+        assert client.get("/v1/leads/summary").json() == {"count": 1}

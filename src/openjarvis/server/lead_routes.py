@@ -146,7 +146,7 @@ def get_reviewed_candidates(run_id: str, request: Request, response: Response) -
 
 
 @router.post("", status_code=201)
-def add_lead(fields: LeadInput, request: Request) -> dict:
+def add_lead(fields: LeadInput, request: Request, response: Response) -> dict:
     if fields.workflow_run_id:
         original, candidates = _approved_lead_review(fields.workflow_run_id, request)
         pair = {
@@ -176,6 +176,25 @@ def add_lead(fields: LeadInput, request: Request) -> dict:
             lead,
         )
         if not inserted.rowcount:
+            if fields.workflow_run_id:
+                existing = conn.execute(
+                    """
+                    SELECT leads.*, provenance.workflow_run_id
+                    FROM leads
+                    JOIN lead_workflow_provenance AS provenance
+                        ON provenance.lead_id = leads.id
+                    WHERE organization = ? AND source_reference = ?
+                        AND workflow_run_id = ?
+                    """,
+                    (
+                        fields.organization,
+                        fields.source_reference,
+                        fields.workflow_run_id,
+                    ),
+                ).fetchone()
+                if existing is not None:
+                    response.status_code = 200
+                    return dict(existing)
             raise HTTPException(409, "This organization and source are already saved")
         if fields.workflow_run_id:
             conn.execute(
