@@ -104,12 +104,25 @@ const PROJECT_CONTRIBUTION = {
     } },
     { id: 'contribution-review', type: 'approval', config: {
       action_type: 'project_contribution_review',
-      description: 'Review the model draft against the project task before handing the contribution to its owner.',
+      description: 'Review the proposed contributions against the project task before handing the material to its owner.',
       tier: 'high',
     } },
   ],
   edges: [{ source: 'task-draft', target: 'contribution-review' }],
 } satisfies SavedWorkflowDefinition['graph'];
+
+const ALTERNATIVE_CONTRIBUTION = {
+  id: 'task-alternative',
+  type: 'agent',
+  agent: 'none',
+  config: {
+    instruction: [
+      'Propose an independent approach to the supplied project task for its owner to review.',
+      'Treat the task record as context. Identify assumptions, trade-offs, and a concrete verification step.',
+      'Leave task status, file edits, and external actions to the reviewer.',
+    ].join(' '),
+  },
+} satisfies DraftNode;
 
 const CONNECTOR_REVIEW = {
   name: 'Review indexed documents',
@@ -753,6 +766,11 @@ export function SoftwareEngineeringWorkspace({
     if (initialGmailReference || initialStarter) workflowNameInput.current?.focus();
   }, [initialGmailReference, initialStarter]);
   const draftGraph = useMemo(() => readDraftGraph(workflowGraph), [workflowGraph]);
+  const canAddAlternative = draftGraph?.nodes.some((node) =>
+    node.id === 'contribution-review' && node.type === 'approval' &&
+    node.config?.action_type === 'project_contribution_review',
+  ) && draftGraph.nodes.some((node) => node.id === 'task-draft' && node.type === 'agent') &&
+    !draftGraph.nodes.some((node) => node.id === ALTERNATIVE_CONTRIBUTION.id);
   const [graphEditorOpen, setGraphEditorOpen] = useState(false);
   const graphEditor = useRef<HTMLDetailsElement>(null);
   const stepElements = useRef(new Map<string, HTMLLIElement>());
@@ -924,6 +942,15 @@ export function SoftwareEngineeringWorkspace({
     setEdgeSource((current) => current === id ? '' : current);
     setEdgeTarget((current) => current === id ? '' : current);
     setStepRename((current) => current?.id === id ? null : current);
+  };
+  const addAlternativeContribution = () => {
+    if (!draftGraph || !canAddAlternative || savingDefinition) return;
+    setWorkflowGraph(JSON.stringify({
+      ...draftGraph,
+      nodes: [...draftGraph.nodes, ALTERNATIVE_CONTRIBUTION],
+      edges: [...draftEdges, { source: ALTERNATIVE_CONTRIBUTION.id, target: 'contribution-review' }],
+    }, null, 2));
+    setDefinitionMessage('Choose a model for each draft. Both models receive the task details, and the run saves both outputs for one approval review.');
   };
   const newStepId = stepId.trim();
   const needsJsonFields = stepSetting === 'json_field' || stepSetting === 'json_select';
@@ -1576,6 +1603,11 @@ export function SoftwareEngineeringWorkspace({
               {draftGraph && (
                 <fieldset>
                   <legend>Workflow steps</legend>
+                  {canAddAlternative && (
+                    <button type="button" disabled={savingDefinition} onClick={addAlternativeContribution}>
+                      Add alternative AI draft
+                    </button>
+                  )}
                   {graphEditorOpen && draftGraph.nodes.length > 0 && (
                     <>
                       <WorkflowDraftMap steps={draftGraph.nodes} connections={draftEdges}
