@@ -190,6 +190,7 @@ export type WorkflowFollowUp = {
   status: AgentMessage['status'];
   created_at: number;
   reporting_route?: WorkflowHandoffRoute;
+  response?: { id: string; content: string; created_at: number };
 };
 
 export async function fetchWorkflowFollowUps(

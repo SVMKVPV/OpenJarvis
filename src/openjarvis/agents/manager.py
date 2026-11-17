@@ -150,6 +150,7 @@ class AgentManager:
             # JSON-encoded array of {tool, arguments, result, success, latency}
             "ALTER TABLE agent_messages ADD COLUMN tool_calls TEXT",
             "ALTER TABLE agent_messages ADD COLUMN handoff_route TEXT",
+            "ALTER TABLE agent_messages ADD COLUMN handoff_response_id TEXT",
         ]
         for migration in _MIGRATIONS:
             try:
@@ -721,9 +722,15 @@ class AgentManager:
     def list_workflow_handoffs(self, run_id: str) -> list[dict]:
         rows = self._conn.execute(
             "SELECT message.id, message.agent_id, agent.name AS agent_name, "
-            "message.status, message.created_at, message.handoff_route "
+            "message.status, message.created_at, message.handoff_route, "
+            "response.id AS response_id, response.content AS response_content, "
+            "response.created_at AS response_created_at "
             "FROM agent_messages AS message "
             "JOIN managed_agents AS agent ON agent.id = message.agent_id "
+            "LEFT JOIN agent_messages AS response "
+            "ON response.id = message.handoff_response_id "
+            "AND response.agent_id = message.agent_id "
+            "AND response.direction = 'agent_to_user' "
             "WHERE message.id GLOB ? AND message.mode = 'handoff' "
             "ORDER BY message.created_at DESC, message.id",
             (f"workflow:{run_id}:*",),
@@ -734,6 +741,14 @@ class AgentManager:
             route = follow_up.pop("handoff_route")
             if route is not None:
                 follow_up["reporting_route"] = json.loads(route)
+            response_id = follow_up.pop("response_id")
+            response_content = follow_up.pop("response_content")
+            response_created_at = follow_up.pop("response_created_at")
+            if response_id is not None:
+                follow_up["response"] = {
+                    "id": response_id, "content": response_content,
+                    "created_at": response_created_at,
+                }
             follow_ups.append(follow_up)
         return follow_ups
 
@@ -765,10 +780,14 @@ class AgentManager:
                 (msg_id, agent_id, content, now, tool_calls_json),
             )
             self._conn.executemany(
-                "UPDATE agent_messages SET status = 'delivered'"
+                "UPDATE agent_messages SET status = 'delivered',"
+                " handoff_response_id = CASE WHEN mode = 'handoff' THEN ? END"
                 " WHERE id = ? AND agent_id = ? AND direction = 'user_to_agent'"
                 " AND status = 'pending'",
-                ((message_id, agent_id) for message_id in delivered_message_ids),
+                (
+                    (msg_id, message_id, agent_id)
+                    for message_id in delivered_message_ids
+                ),
             )
         return {
             "id": msg_id,

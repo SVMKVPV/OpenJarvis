@@ -94,11 +94,17 @@ def test_handoff_approved_run_keeps_evidence_in_workflow(tmp_path, monkeypatch):
         assert follow_up["agent_name"] == agent["name"]
         assert follow_up["status"] == "pending"
         assert follow_up["reporting_route"] == route
-        manager.store_agent_response(
+        reply = manager.store_agent_response(
             agent["id"], "Checklist ready", delivered_message_ids=(queued["id"],)
         )
         received, = client.get(follow_ups_path).json()["follow_ups"]
-        assert received == {**follow_up, "status": "delivered"}
+        assert received == {
+            **follow_up,
+            "status": "delivered",
+            "response": {key: reply[key] for key in ("id", "content", "created_at")},
+        }
+        manager.store_agent_response(agent["id"], "Unrelated later reply.")
+        assert client.get(follow_ups_path).json()["follow_ups"] == [received]
     approvals.close()
     manager.close()
 

@@ -143,6 +143,12 @@ export function WorkflowWorkstationAssignment({ runId, recipients, reportingRout
                   {followUp.reporting_route.source_workstation} → {followUp.reporting_route.manager_workstation}
                 </small>
               )}
+              {followUp.response && (
+                <details>
+                  <summary>Read agent reply</summary>
+                  <pre>{followUp.response.content}</pre>
+                </details>
+              )}
             </li>
           ))}
         </ul>
