@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useLocation } from 'react-router';
 import {
   Palette,
   Globe,
@@ -205,13 +206,13 @@ function CloudProviderStatus({ label, keyName }: { label: string; keyName: strin
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children, id }: { title: string; children: React.ReactNode; id?: string }) {
   return (
     <div
       className="rounded-xl p-5"
       style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
     >
-      <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--color-text)' }}>
+      <h3 id={id} tabIndex={id ? -1 : undefined} className="text-sm font-semibold mb-4" style={{ color: 'var(--color-text)' }}>
         {title}
       </h3>
       {children}
@@ -290,6 +291,13 @@ const themeOptions: { value: ThemeMode; label: string; icon: typeof Sun }[] = [
 ];
 
 export function SettingsPage() {
+  const { hash } = useLocation();
+  useEffect(() => {
+    if (hash !== '#inference-source') return;
+    const section = document.getElementById('inference-source');
+    section?.scrollIntoView({ block: 'start' });
+    section?.focus({ preventScroll: true });
+  }, [hash]);
   const settings = useAppStore((s) => s.settings);
   const timeZones = useMemo(listTimeZones, []);
   const updateSettings = useAppStore((s) => s.updateSettings);
@@ -619,7 +627,7 @@ export function SettingsPage() {
           </Section>
 
           {/* Inference source */}
-          <Section title="Inference source">
+          <Section title="Inference source" id="inference-source">
             <SettingRow label="Source" description="Where the app runs models. Applies after restart.">
               <select
                 value={srcKind}

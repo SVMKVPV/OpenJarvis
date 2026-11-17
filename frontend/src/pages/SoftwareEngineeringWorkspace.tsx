@@ -14,6 +14,7 @@ import {
   fetchWorkflowRun,
   fetchWorkflowHistory,
   fetchWorkspaceFolders,
+  isTauri,
   requestWorkflowRunAction,
   rescheduleWorkflowRun,
   runSavedWorkflow,
@@ -345,7 +346,7 @@ const INITIAL_CONNECTORS: Connector[] = [
   { id: 'google', code: 'GOO', provider: 'Google', product: 'Gemini', role: 'Research + multimodal QA', model: 'Gemini Pro', status: 'setup', enabled: true, contributions: 7 },
   { id: 'xai', code: 'XAI', provider: 'xAI', product: 'Grok', role: 'Current-context + adversarial review', model: 'Grok', status: 'setup', enabled: false, contributions: 3 },
   { id: 'meta', code: 'MET', provider: 'Meta', product: 'Llama', role: 'Open-model + batch specialist', model: 'Llama', status: 'setup', enabled: false, contributions: 5 },
-  { id: 'local', code: 'LOC', provider: 'Local AI', product: 'Ollama / compatible', role: 'Private local execution', model: 'llama-local', status: 'local', enabled: true, contributions: 11 },
+  { id: 'local', code: 'LOC', provider: 'Local AI', product: 'Local AI', role: 'Runtime inference', model: '', status: 'local', enabled: true, contributions: 11 },
 ];
 
 const INITIAL_FOLDERS = ['00-command', '01-product', '02-research', '03-design', '04-frontend', '05-backend', '06-tests', '07-releases'];
@@ -609,6 +610,7 @@ export function SoftwareEngineeringWorkspace({
   const [stepRename, setStepRename] = useState<{ id: string; name: string } | null>(null);
   const [stepType, setStepType] = useState<NewStepType>('transform');
   const [stepSetting, setStepSetting] = useState('');
+  const serverInfo = useAppStore((state) => state.serverInfo);
   const models = useAppStore((state) => state.models);
   const workflowModels = [...new Set(models.map((entry) => entry.id).filter((id) => !isEmbedOnlyModel(id)))];
   const setStepConfig = (node: DraftNode, key: string, value: string | boolean | Record<string, unknown>) => {
@@ -1133,7 +1135,7 @@ export function SoftwareEngineeringWorkspace({
     if (assigned.length > 1) { setWarning(`Shared Brain warning: ${selectedItem.name} already has an owner. Confirmed collaborators will contribute without replacing ownership.`); }
     const additions = assigned.map((id) => {
       const connector = connectors.find((item) => item.id === id)!;
-      return { id: `${id}-${Date.now()}`, connector: `${connector.provider} / ${connector.product}`, text: `Simulated ${connector.role.toLowerCase()} proposal for ${selectedItem.name}.`, approved: false };
+      return { id: `${id}-${Date.now()}`, connector: connector.status === 'local' ? connector.product : `${connector.provider} / ${connector.product}`, text: `Simulated ${connector.role.toLowerCase()} proposal for ${selectedItem.name}.`, approved: false };
     });
     setProposals((current) => [...additions, ...current]);
   };
@@ -1169,7 +1171,55 @@ export function SoftwareEngineeringWorkspace({
 
       <aside className="connector-column">
         <header><div><span>AI CONNECTORS</span><strong>CONTRIBUTOR ROSTER</strong></div><em>{connectors.filter((item) => item.enabled).length} ENABLED</em></header>
-        <div className="connector-list">{connectors.map((connector) => <article key={connector.id} className={connector.enabled ? 'enabled' : ''}><button className="connector-toggle" aria-label={`${connector.enabled ? 'Disable' : 'Enable'} ${connector.product}`} onClick={() => setConnectors((current) => current.map((item) => item.id === connector.id ? {...item, enabled: !item.enabled} : item))}><i/></button><div className="connector-code">{connector.code}</div><div><strong>{connector.product}</strong><small>{connector.provider} · {connector.model}</small><p>{connector.role}</p></div><button className="connector-config" onClick={() => setConfiguring(configuring === connector.id ? null : connector.id)} aria-label={`Configure ${connector.product}`}><Settings2 size={12}/></button>{configuring === connector.id && <div className="connector-editor"><label>ROLE<input value={connector.role} onChange={(event) => setConnectors((current) => current.map((item) => item.id === connector.id ? {...item, role: event.target.value} : item))}/></label><label>MODEL<input value={connector.model} onChange={(event) => setConnectors((current) => current.map((item) => item.id === connector.id ? {...item, model: event.target.value} : item))}/></label>{connector.id === 'local' && <label>LOCAL ENDPOINT<input value="http://localhost:11434" readOnly/></label>}<small>{connector.status === 'local' ? 'LOCAL CONFIGURATION · NOT PROBED' : 'NEEDS SETUP · NO CREDENTIALS STORED'}</small></div>}</article>)}</div>
+        <div className="connector-list">
+          {connectors.map((connector) => (
+            <article key={connector.id} className={connector.enabled ? 'enabled' : ''}>
+              <button className="connector-toggle"
+                aria-label={`${connector.enabled ? 'Disable' : 'Enable'} ${connector.product} for simulated contributions`}
+                onClick={() => setConnectors((current) => current.map((item) =>
+                  item.id === connector.id ? { ...item, enabled: !item.enabled } : item))}><i /></button>
+              <div className="connector-code">{connector.code}</div>
+              <div>
+                <strong>{connector.product}</strong>
+                <small>{connector.status === 'local'
+                  ? [serverInfo?.engine, serverInfo?.model].filter(Boolean).join(' / ') || 'Runtime inference unavailable'
+                  : `${connector.provider} · ${connector.model}`}</small>
+                <p>{connector.role}</p>
+              </div>
+              <button className="connector-config" type="button"
+                onClick={() => setConfiguring(configuring === connector.id ? null : connector.id)}
+                aria-expanded={configuring === connector.id} aria-label={`Configure ${connector.product}`}>
+                <Settings2 size={12} />
+              </button>
+              {configuring === connector.id && (
+                <div className="connector-editor">
+                  {connector.status === 'local' ? (
+                    <>
+                      <small>{isTauri()
+                        ? 'Choose Ollama or a custom inference server in desktop Settings.'
+                        : 'This workspace uses the inference engine configured on its backend.'}</small>
+                      <Link to="/settings#inference-source">Open inference settings</Link>
+                    </>
+                  ) : (
+                    <>
+                      <label>Role
+                        <input value={connector.role} onChange={(event) => setConnectors((current) => current.map(
+                          (item) => item.id === connector.id ? { ...item, role: event.target.value } : item,
+                        ))} />
+                      </label>
+                      <label>Model
+                        <input value={connector.model} onChange={(event) => setConnectors((current) => current.map(
+                          (item) => item.id === connector.id ? { ...item, model: event.target.value } : item,
+                        ))} />
+                      </label>
+                      <small>NEEDS SETUP · NO CREDENTIALS STORED</small>
+                    </>
+                  )}
+                </div>
+              )}
+            </article>
+          ))}
+        </div>
         <section className="runtime-plugins">
           <header><div><span>BUSINESS PLUGINS</span><strong>OPENJARVIS RUNTIME</strong></div><em data-state={pluginCatalogState}>{pluginCatalogState.toUpperCase()}</em></header>
           {pluginCatalogState === 'online' ? <>
