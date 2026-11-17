@@ -49,7 +49,7 @@ import { WorkflowTransformEditor } from './WorkflowTransformEditor';
 import { WorkflowConditionPreview } from './WorkflowConditionPreview';
 import { WorkflowIndexPreview } from './WorkflowIndexPreview';
 import { N8nWorkflowInspector } from './N8nWorkflowInspector';
-import { PriorResearchCheck } from './PriorResearchCheck';
+import { PriorWorkflowCheck } from './PriorWorkflowCheck';
 import { WorkflowRecurrenceEditor } from './WorkflowRecurrenceEditor';
 import './software-workspace.css';
 
@@ -697,6 +697,10 @@ export function SoftwareEngineeringWorkspace({
     setRunDetailError('');
     setNewRunTime('');
     setInspectedRunId(id);
+  };
+  const openPriorRun = (id: string) => {
+    if (inspectedRunId === id) runInspector.current?.focus();
+    else inspectRun(id);
   };
 
   const pendingRetryKeys = useRef(new Map<string, string>());
@@ -1390,7 +1394,8 @@ export function SoftwareEngineeringWorkspace({
         <WorkspaceProjectTasks key={selectedFolder} folder={selectedFolder}
           focusTaskId={selectedFolder === initialProjectFolder ? initialProjectTaskId : undefined}
           stations={projectStations.filter((station) => station.id !== 'brain')}
-          onDraftContribution={draftProjectContribution} draftingDisabled={savingDefinition || launchingSaved} />
+          onDraftContribution={draftProjectContribution} onOpenRun={openPriorRun}
+          draftingDisabled={savingDefinition || launchingSaved} />
         <section className="proposal-feed"><header><span>PROPOSED CONTRIBUTIONS</span><strong>{proposals.filter((proposal) => !proposal.approved).length} AWAITING APPROVAL</strong></header>{proposals.slice(0,4).map((proposal) => <article key={proposal.id}><div><strong>{proposal.connector}</strong><p>{proposal.text}</p></div><button className={proposal.approved ? 'approved' : ''} onClick={() => setProposals((current) => current.map((item) => item.id === proposal.id ? {...item, approved: true} : item))}>{proposal.approved ? <><Check size={11}/> APPROVED</> : 'APPROVE'}</button></article>)}</section>
       </section>
 
@@ -1910,10 +1915,8 @@ export function SoftwareEngineeringWorkspace({
                 node.type === 'approval' &&
                 (node.config as { action_type?: string } | undefined)?.action_type === 'system_builder_proposal',
               ) && (
-                <PriorResearchCheck key={workflowInput.trim()} brief={workflowInput.trim()} onOpenRun={(id) => {
-                  if (inspectedRunId === id) runInspector.current?.focus();
-                  else inspectRun(id);
-                }} />
+                <PriorWorkflowCheck kind="research" key={workflowInput.trim()}
+                  query={workflowInput.trim()} onOpenRun={openPriorRun} />
               )}
               <label>Start time (optional, local time)
                 <input type="datetime-local" value={workflowStart}

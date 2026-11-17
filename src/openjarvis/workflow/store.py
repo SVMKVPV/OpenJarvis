@@ -663,6 +663,7 @@ class WorkflowRunStore:
         approval_type: str = "",
         legacy_approval_node: str = "",
         input_contains: str = "",
+        project_task_id: str = "",
     ) -> list[dict[str, Any]]:
         limit = max(1, min(int(limit), 200))
         filters: list[str] = []
@@ -699,6 +700,12 @@ class WorkflowRunStore:
         if input_contains:
             filters.append("instr(lower(initial_input), lower(?)) > 0")
             params.append(input_contains)
+        if project_task_id:
+            filters.append(
+                "json_extract(CASE WHEN json_valid(initial_input) "
+                "THEN initial_input ELSE '{}' END, '$.task_id') = ?"
+            )
+            params.append(project_task_id)
         if before:
             # Runs can share a timestamp. Their rowids preserve insertion order.
             filters.append(

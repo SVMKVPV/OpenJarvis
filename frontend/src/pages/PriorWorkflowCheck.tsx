@@ -1,16 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
-import { fetchSystemBuilderProposals, type WorkflowRunSummary } from '../lib/api';
+import { fetchSystemBuilderProposals, fetchWorkflowReviewRuns, type WorkflowRunSummary } from '../lib/api';
 
 type CheckResult =
   | { status: 'idle' | 'loading' | 'unavailable' }
   | { status: 'checked'; runs: WorkflowRunSummary[] };
 
-export function PriorResearchCheck({ brief, onOpenRun }: {
-  brief: string;
+export function PriorWorkflowCheck({ query, kind, onOpenRun }: {
+  query: string;
+  kind: 'research' | 'project-draft';
   onOpenRun: (id: string) => void;
 }) {
   const [result, setResult] = useState<CheckResult>({ status: 'idle' });
   const pending = useRef<AbortController | null>(null);
+  const projectDraft = kind === 'project-draft';
   useEffect(() => () => pending.current?.abort(), []);
 
   const check = async () => {
@@ -19,7 +21,9 @@ export function PriorResearchCheck({ brief, onOpenRun }: {
     pending.current = request;
     setResult({ status: 'loading' });
     try {
-      const runs = await fetchSystemBuilderProposals(request.signal, brief);
+      const runs = projectDraft
+        ? await fetchWorkflowReviewRuns(request.signal, 'project_contribution_review', { projectTaskId: query })
+        : await fetchSystemBuilderProposals(request.signal, query);
       if (!request.signal.aborted) setResult({ status: 'checked', runs });
     } catch {
       if (!request.signal.aborted) setResult({ status: 'unavailable' });
@@ -27,16 +31,17 @@ export function PriorResearchCheck({ brief, onOpenRun }: {
   };
 
   return <fieldset>
-    <legend>Prior System Builder research</legend>
-    <button type="button" disabled={!brief || brief.length > 200 || result.status === 'loading'}
+    <legend>{projectDraft ? 'AI drafts for this task' : 'Prior System Builder research'}</legend>
+    <button type="button" disabled={!query || query.length > (projectDraft ? 128 : 200) || result.status === 'loading'}
       onClick={() => void check()}>
-      {result.status === 'loading' ? 'Checking prior runs…' : 'Check for prior runs'}
+      {result.status === 'loading' ? 'Checking prior runs…' : projectDraft ? 'Check prior AI drafts' : 'Check for prior runs'}
     </button>
-    {brief.length > 200 && <small>Use a shorter phrase in the System Builder history search.</small>}
+    {!projectDraft && query.length > 200 && <small>Use a shorter phrase in the System Builder history search.</small>}
     {result.status === 'unavailable' && <small role="status">Prior runs are unavailable. Try again.</small>}
     {result.status === 'checked' && (result.runs.length ? (
       <>
-        <small role="status">This brief appears in prior runs. Review them before starting again.</small>
+        <small role="status">{projectDraft ? 'Review existing drafts before starting another run.'
+          : 'This brief appears in prior runs. Review them before starting again.'}</small>
         <ul>
           {result.runs.map((run) => (
             <li key={run.id}>
@@ -48,6 +53,6 @@ export function PriorResearchCheck({ brief, onOpenRun }: {
           ))}
         </ul>
       </>
-    ) : <small role="status">No prior runs contain this brief.</small>)}
+    ) : <small role="status">{projectDraft ? 'No AI drafts found for this task.' : 'No prior runs contain this brief.'}</small>)}
   </fieldset>;
 }

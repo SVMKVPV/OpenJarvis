@@ -75,7 +75,9 @@ export function WorkflowReviewHistory({ kind, onOpenWorkflow }: {
 
   useEffect(() => {
     const request = new AbortController();
-    fetchWorkflowReviewRuns(request.signal, copy.approvalType, search, copy.legacyNode).then(
+    fetchWorkflowReviewRuns(request.signal, copy.approvalType, {
+      inputContains: search, legacyApprovalNode: copy.legacyNode,
+    }).then(
       (runs) => {
         if (!request.signal.aborted) setHistory({ status: 'loaded', runs });
       },

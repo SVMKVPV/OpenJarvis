@@ -1068,6 +1068,26 @@ def test_proposal_history_filters_by_approval_step_type(tmp_path, monkeypatch):
             assert [run["id"] for run in matched["runs"]] == [proposal.json()["id"]]
             params["input_contains"] = "%missing"
             assert client.get(base, params=params).json()["runs"] == []
+
+            payload["nodes"][0]["config"]["action_type"] = "project_contribution_review"
+            payload["initial_input"] = '{"task_id": "task-12", "task": "Draft a brief"}'
+            task_draft = client.post(base, json=payload)
+            assert task_draft.status_code == 202
+            for initial_input in ('{"task_id":"task-123"}', 'text containing task-12'):
+                payload["initial_input"] = initial_input
+                assert client.post(base, json=payload).status_code == 202
+            payload["nodes"][0]["config"]["action_type"] = "finance_review"
+            payload["initial_input"] = '{"task_id":"task-12"}'
+            assert client.post(base, json=payload).status_code == 202
+
+            task_history = client.get(base, params={
+                "approval_type": "project_contribution_review",
+                "project_task_id": "task-12",
+            }).json()
+            assert task_history["project_task_id"] == "task-12"
+            assert [run["id"] for run in task_history["runs"]] == [
+                task_draft.json()["id"]
+            ]
     finally:
         app.state.workflow_runtime.close()
         approvals.close()

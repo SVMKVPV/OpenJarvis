@@ -1665,19 +1665,27 @@ export async function saveWorkspaceTask(
 export async function fetchSystemBuilderProposals(
   signal: AbortSignal, inputContains: string,
 ): Promise<Array<WorkflowRunSummary & { initial_input?: string }>> {
-  return fetchWorkflowReviewRuns(signal, 'system_builder_proposal', inputContains);
+  return fetchWorkflowReviewRuns(signal, 'system_builder_proposal', { inputContains });
 }
 
 export async function fetchWorkflowReviewRuns(
-  signal: AbortSignal, approvalType: string, inputContains: string, legacyApprovalNode = '',
+  signal: AbortSignal,
+  approvalType: string,
+  { inputContains, legacyApprovalNode, projectTaskId }: {
+    inputContains?: string;
+    legacyApprovalNode?: string;
+    projectTaskId?: string;
+  },
 ): Promise<Array<WorkflowRunSummary & { initial_input?: string }>> {
   const query = new URLSearchParams({ limit: '8', approval_type: approvalType });
   if (legacyApprovalNode) query.set('legacy_approval_node', legacyApprovalNode);
   if (inputContains) query.set('input_contains', inputContains);
+  if (projectTaskId) query.set('project_task_id', projectTaskId);
   const response = await apiFetch(`/v1/workflows/runs?${query}`, { signal });
   const page = await response.json().catch(() => null);
   if (!response.ok || page?.approval_type !== approvalType || !Array.isArray(page.runs)
       || (inputContains && page.input_contains !== inputContains)
+      || (projectTaskId && page.project_task_id !== projectTaskId)
       || (legacyApprovalNode && page.legacy_approval_node !== legacyApprovalNode)) {
     throw new Error('Workflow review history is unavailable.');
   }

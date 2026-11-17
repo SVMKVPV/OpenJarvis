@@ -1,11 +1,15 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { fetchWorkspaceTasks, saveWorkspaceTask, type WorkspaceTask } from '../lib/api';
+import { PriorWorkflowCheck } from './PriorWorkflowCheck';
 
-export function WorkspaceProjectTasks({ folder, stations, focusTaskId, onDraftContribution, draftingDisabled }: {
+export function WorkspaceProjectTasks({
+  folder, stations, focusTaskId, onDraftContribution, onOpenRun, draftingDisabled,
+}: {
   folder: string;
   focusTaskId?: string;
   stations: readonly { id: string; name: string }[];
   onDraftContribution: (task: WorkspaceTask) => void;
+  onOpenRun: (id: string) => void;
   draftingDisabled: boolean;
 }) {
   const [tasks, setTasks] = useState<WorkspaceTask[] | null>(null);
@@ -97,6 +101,10 @@ export function WorkspaceProjectTasks({ folder, stations, focusTaskId, onDraftCo
         {!task.completed && <button type="button" disabled={saving || draftingDisabled}
           aria-label={`Prepare AI draft for ${task.title}`}
           onClick={() => onDraftContribution(task)}>Prepare AI draft</button>}
+        <details>
+          <summary>Draft history</summary>
+          <PriorWorkflowCheck kind="project-draft" query={task.id} onOpenRun={onOpenRun} />
+        </details>
       </li>)}
     </ul>}
   </section>;
