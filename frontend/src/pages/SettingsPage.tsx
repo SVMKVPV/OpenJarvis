@@ -23,6 +23,7 @@ import { useAppStore, type ThemeMode } from '../lib/store';
 import { deviceTimeZone, listTimeZones, resolveTimeZone, utcOffsetLabel } from '../lib/timezone';
 import {
   checkHealth,
+  checkBackendConnection,
   checkLocalOmniRoute,
   testLocalOmniRouteModel,
   fetchSpeechHealth,
@@ -43,6 +44,13 @@ import { isAutoUpdateDisabled, setAutoUpdateDisabled } from '../components/Deskt
 
 const CLOUD_KEY_STATUS_CHANGED = 'openjarvis-cloud-key-status-changed';
 const OMNIROUTE_LOCAL_URL = 'http://127.0.0.1:20128/v1';
+
+const BACKEND_CONNECTION_MESSAGES = {
+  connected: 'Backend API access verified.',
+  unauthorized: 'The backend rejected the API key. Check the key and try again.',
+  'unexpected-response': 'The URL did not return OpenJarvis server information.',
+  unreachable: 'Could not reach this backend. Check the URL, HTTPS, and allowed browser origins.',
+};
 
 function OllamaModelList() {
   const [models, setModels] = useState<Array<{ name: string; size: number }>>([]);
@@ -303,6 +311,12 @@ export function SettingsPage() {
   const updateSettings = useAppStore((s) => s.updateSettings);
   const conversations = useAppStore((s) => s.conversations);
   const serverInfo = useAppStore((s) => s.serverInfo);
+  const [backendUrl, setBackendUrl] = useState(settings.apiUrl);
+  const [backendKey, setBackendKey] = useState(settings.apiKey);
+  const [connectionMessage, setConnectionMessage] = useState('');
+  const [connectionChecking, setConnectionChecking] = useState(false);
+  const connectionRequest = useRef<AbortController | null>(null);
+  const connectionDirty = backendUrl !== settings.apiUrl || backendKey !== settings.apiKey;
   const [healthy, setHealthy] = useState<boolean | null>(null);
   const [speechBackendAvailable, setSpeechBackendAvailable] = useState<boolean | null>(null);
   const [ttsBackend, setTtsBackend] = useState<{ available: boolean; backend?: string; voice_id?: string } | null>(null);
@@ -430,7 +444,17 @@ export function SettingsPage() {
   }, [refreshMemoryStatus, settings.apiUrl]);
 
   useEffect(() => {
-    checkHealth().then(setHealthy);
+    let active = true;
+    checkHealth().then((value) => { if (active) setHealthy(value); });
+    return () => { active = false; };
+  }, [settings.apiUrl, settings.apiKey]);
+
+  useEffect(() => () => {
+    connectionRequest.current?.abort();
+    connectionRequest.current = null;
+  }, []);
+
+  useEffect(() => {
     fetchSpeechHealth()
       .then((h) => setSpeechBackendAvailable(h.available))
       .catch(() => setSpeechBackendAvailable(false));
@@ -442,6 +466,42 @@ export function SettingsPage() {
   const showSaved = () => {
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
+  };
+
+  const saveConnection = () => {
+    const input = backendUrl.trim();
+    let url: URL | null = null;
+    if (input) {
+      try { url = new URL(input); } catch {}
+      if (!url || !['https:', 'http:'].includes(url.protocol) ||
+          url.username || url.password || url.hash || url.search) {
+        setConnectionMessage('Enter an HTTP or HTTPS backend URL without credentials, query parameters, or a fragment.');
+        return;
+      }
+    }
+    const apiUrl = url?.href.replace(/\/+$/, '') ?? '';
+    const apiKey = backendKey.trim();
+    updateSettings({ apiUrl, apiKey });
+    setBackendUrl(apiUrl);
+    setBackendKey(apiKey);
+    setConnectionMessage('Connection saved.');
+    showSaved();
+  };
+
+  const testConnection = async () => {
+    if (connectionDirty || connectionChecking) return;
+    const controller = new AbortController();
+    connectionRequest.current = controller;
+    setConnectionChecking(true);
+    setConnectionMessage('');
+    const timer = window.setTimeout(() => controller.abort(), 10000);
+    try {
+      const result = await checkBackendConnection(controller.signal);
+      if (connectionRequest.current === controller) setConnectionMessage(BACKEND_CONNECTION_MESSAGES[result]);
+    } finally {
+      window.clearTimeout(timer);
+      if (connectionRequest.current === controller) setConnectionChecking(false);
+    }
   };
 
   const handleExport = () => {
@@ -598,8 +658,13 @@ export function SettingsPage() {
             <SettingRow label="API URL" description="Set if backend runs on a different port or host">
               <input
                 type="text"
-                value={settings.apiUrl}
-                onChange={(e) => { updateSettings({ apiUrl: e.target.value }); showSaved(); }}
+                value={backendUrl}
+                disabled={connectionChecking}
+                onChange={(e) => {
+                  setBackendUrl(e.target.value);
+                  setBackendKey('');
+                  setConnectionMessage('');
+                }}
                 placeholder="http://localhost:8000"
                 className="text-sm px-3 py-1.5 rounded-lg outline-none w-56"
                 style={{
@@ -609,11 +674,12 @@ export function SettingsPage() {
                 }}
               />
             </SettingRow>
-            <SettingRow label="API key" description="Required only if the server was started with an API key">
+            <SettingRow label="API key" description="Re-enter the key when changing the backend URL">
               <input
                 type="password"
-                value={settings.apiKey}
-                onChange={(e) => { updateSettings({ apiKey: e.target.value }); showSaved(); }}
+                value={backendKey}
+                disabled={connectionChecking}
+                onChange={(e) => { setBackendKey(e.target.value); setConnectionMessage(''); }}
                 placeholder="OPENJARVIS_API_KEY"
                 autoComplete="off"
                 className="text-sm px-3 py-1.5 rounded-lg outline-none w-56"
@@ -624,6 +690,15 @@ export function SettingsPage() {
                 }}
               />
             </SettingRow>
+            <div className="flex flex-wrap items-center gap-3 px-3 py-2">
+              <button type="button" disabled={!connectionDirty || connectionChecking} onClick={saveConnection}>
+                Save connection
+              </button>
+              <button type="button" disabled={connectionDirty || connectionChecking} onClick={() => void testConnection()}>
+                {connectionChecking ? 'Testing connection…' : 'Test saved connection'}
+              </button>
+              {connectionMessage && <span role="status" className="text-xs">{connectionMessage}</span>}
+            </div>
           </Section>
 
           {/* Inference source */}

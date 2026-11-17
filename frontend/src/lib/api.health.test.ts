@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { checkHealth } from './api';
+import { checkBackendConnection, checkHealth } from './api';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -31,5 +31,30 @@ describe('browser backend health', () => {
     vi.stubEnv('VITE_API_URL', '');
     vi.stubGlobal('fetch', fetchMock);
     expect(await checkHealth()).toBe(true);
+  });
+});
+
+describe('saved backend connection', () => {
+  it('checks the saved origin with its key and rejects redirects', async () => {
+    vi.stubGlobal('localStorage', {
+      getItem: () => JSON.stringify({ apiUrl: 'https://backend.example.test', apiKey: 'test-key' }),
+    });
+    const fetchMock = vi.fn(async () => Response.json({ engine: 'ollama', model: 'test-model' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const signal = new AbortController().signal;
+    expect(await checkBackendConnection(signal)).toBe('connected');
+    expect(fetchMock).toHaveBeenCalledWith('https://backend.example.test/v1/info', {
+      cache: 'no-store', signal, redirect: 'error', headers: { Authorization: 'Bearer test-key' },
+    });
+  });
+
+  it('distinguishes rejected credentials from a static frontend response', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(new Response('<!doctype html>'));
+    vi.stubGlobal('fetch', fetchMock);
+    const signal = new AbortController().signal;
+    expect(await checkBackendConnection(signal)).toBe('unauthorized');
+    expect(await checkBackendConnection(signal)).toBe('unexpected-response');
   });
 });

@@ -408,6 +408,21 @@ export async function fetchServerInfo(): Promise<ServerInfo> {
   return res.json();
 }
 
+export async function checkBackendConnection(signal: AbortSignal): Promise<
+  'connected' | 'unauthorized' | 'unexpected-response' | 'unreachable'
+> {
+  try {
+    const response = await apiFetch('/v1/info', { signal, cache: 'no-store', redirect: 'error' });
+    if (response.status === 401 || response.status === 403) return 'unauthorized';
+    if (!response.ok) return 'unexpected-response';
+    const body = await response.json().catch(() => null);
+    return typeof body?.engine === 'string' && typeof body?.model === 'string'
+      ? 'connected' : 'unexpected-response';
+  } catch {
+    return 'unreachable';
+  }
+}
+
 export async function checkInferenceHealth(signal: AbortSignal): Promise<'healthy' | 'unhealthy'> {
   const response = await apiFetch('/health', { signal, cache: 'no-store' });
   const body = await response.json();
