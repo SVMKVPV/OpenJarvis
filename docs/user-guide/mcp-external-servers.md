@@ -79,6 +79,47 @@ When both `include_tools` and `exclude_tools` are specified, the whitelist is ap
 
 ## Examples
 
+### n8n documentation tools for System Builder
+
+[n8n-MCP](https://github.com/czlonkowski/n8n-mcp/blob/main/docs/SELF_HOSTING.md)
+can search node documentation and templates and validate workflow JSON using its
+bundled database. This setup is optional and uses the documentation tools
+without credentials for an n8n instance.
+
+Install the tested package version in a directory dedicated to external tools:
+
+```sh
+npm install --save-exact n8n-mcp@2.96.1
+```
+
+Add this object to the array in `mcp-servers.json` referenced by the backend's
+`[tools.mcp]` configuration. Substitute the absolute Node executable and package
+paths. On Windows, JSON paths can use forward slashes.
+
+```json
+{
+  "name": "n8n-mcp",
+  "command": "/absolute/path/to/node",
+  "args": ["/absolute/path/to/node_modules/n8n-mcp/dist/mcp/stdio-wrapper.js"],
+  "include_tools": [
+    "search_nodes",
+    "get_node",
+    "search_templates",
+    "get_template",
+    "validate_node",
+    "validate_workflow",
+    "tools_documentation"
+  ]
+}
+```
+
+Start the backend with `MCP_MODE=stdio`, `LOG_LEVEL=error`, and
+`DISABLE_CONSOLE_OUTPUT=true` in its environment. Open **Workspace**, expand
+**MCP servers**, and select **Check MCP tools** to verify the seven tool
+names. System Builder can use these tools to cite node documentation and check
+proposed workflow JSON. Running or managing workflows on a live n8n instance
+requires a separate authenticated connection.
+
 ### Home Assistant via Streamable HTTP
 
 Connect to the [ha-mcp](https://github.com/tevonsb/ha-mcp) Home Assistant add-on:
