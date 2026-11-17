@@ -29,6 +29,7 @@ import { GmailReviewList } from './GmailReviewList';
 import { LeadRegister } from './LeadRegister';
 import { Ga4PropertyForm } from './Ga4PropertyForm';
 import { SocialContentStudio } from './SocialContentStudio';
+import { StationProjectTasks } from './StationProjectTasks';
 import { SystemBuilderLab } from './SystemBuilderLab';
 import { WorkstationAgentActivity } from './WorkstationAgentActivity';
 import './command-center.css';
@@ -756,7 +757,7 @@ export function CommandCenterPage() {
             <div><span>{selected.code} // SELECTED STATION</span><h2>{selected.name}</h2><p>{selected.purpose}</p></div>
             <div className="station-now"><span>CURRENT WORK</span><strong>{selected.current}</strong><small>Reports to {selected.reportsTo}</small></div>
           </div>
-          <details className="station-details-editor" key={selected.id}>
+          <details className="station-details-editor" key={`station-details-${selected.id}`}>
             <summary>Edit workstation details</summary>
             <form onSubmit={editStation}>
               <label>Name <input name="station-name" defaultValue={selected.name} maxLength={80} required /></label>
@@ -827,13 +828,16 @@ export function CommandCenterPage() {
           {selected.id === 'system-builder' && (
             <SystemBuilderLab onOpenResearch={() => openWorkspace({ initialStarter: 'builder-research' })} onOpenWorkflow={openWorkflowReview} />
           )}
+          <StationProjectTasks key={`station-tasks-${selected.id}`} stationId={selected.id}
+            onOpenTask={(initialProjectFolder, initialProjectTaskId) =>
+              openWorkspace({ initialProjectFolder, initialProjectTaskId })} />
           {STATION_AGENT_TEMPLATES[selected.id] && (
             <Link to={`/agents?template=${STATION_AGENT_TEMPLATES[selected.id]}`}>
               Configure {selected.name} agent ↗
             </Link>
           )}
           <WorkstationAgentActivity
-            key={selected.id}
+            key={`station-agent-${selected.id}`}
             agentId={stationAgentIds[selected.id] ?? ''}
             stationName={selected.name}
             templateId={STATION_AGENT_TEMPLATES[selected.id]}

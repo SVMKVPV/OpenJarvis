@@ -71,6 +71,10 @@ class ProjectTask(ProjectTaskInput):
     station_id: StationId | None = None
 
 
+class StationProjectTask(ProjectTask):
+    folder: FolderName
+
+
 def _task_db() -> sqlite3.Connection:
     conn = sqlite3.connect(secure_create(get_config_dir() / "workspace.db"))
     conn.row_factory = sqlite3.Row
@@ -88,6 +92,10 @@ def _task_db() -> sqlite3.Connection:
                 conn.execute("BEGIN IMMEDIATE")
                 if not _has_station_column(conn):
                     conn.execute("ALTER TABLE project_tasks ADD COLUMN station_id TEXT")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS project_tasks_station "
+            "ON project_tasks(station_id, completed)"
+        )
     except sqlite3.Error:
         conn.close()
         raise
@@ -151,3 +159,18 @@ def update_task(
         if row is None:
             raise HTTPException(404, "Project task was not found.")
         return ProjectTask(**dict(row))
+
+
+@router.get("/stations/{station_id}/tasks")
+def list_station_tasks(
+    station_id: StationId,
+    response: Response,
+) -> list[StationProjectTask]:
+    response.headers["Cache-Control"] = "no-store"
+    with closing(_task_db()) as conn:
+        rows = conn.execute(
+            "SELECT id, title, completed, station_id, folder FROM project_tasks "
+            "WHERE station_id = ? ORDER BY completed, rowid DESC LIMIT 20",
+            (station_id,),
+        )
+        return [StationProjectTask(**dict(row)) for row in rows]

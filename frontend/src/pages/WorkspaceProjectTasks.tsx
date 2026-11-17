@@ -1,8 +1,9 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { fetchWorkspaceTasks, saveWorkspaceTask, type WorkspaceTask } from '../lib/api';
 
-export function WorkspaceProjectTasks({ folder, stations }: {
+export function WorkspaceProjectTasks({ folder, stations, focusTaskId }: {
   folder: string;
+  focusTaskId?: string;
   stations: readonly { id: string; name: string }[];
 }) {
   const [tasks, setTasks] = useState<WorkspaceTask[] | null>(null);
@@ -10,6 +11,13 @@ export function WorkspaceProjectTasks({ folder, stations }: {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [refresh, setRefresh] = useState(0);
+  const focusedTask = useRef<HTMLInputElement>(null);
+  const taskToFocus = useRef(focusTaskId);
+  useEffect(() => {
+    if (!taskToFocus.current || !focusedTask.current) return;
+    focusedTask.current.focus();
+    taskToFocus.current = undefined;
+  }, [tasks]);
   const draft = useRef<Pick<WorkspaceTask, 'id' | 'title'> | null>(null);
 
   useEffect(() => {
@@ -70,7 +78,8 @@ export function WorkspaceProjectTasks({ folder, stations }: {
     {tasks && tasks.length > 0 && <ul>
       {tasks.map((task) => <li key={task.id}>
         <label>
-          <input type="checkbox" checked={task.completed} disabled={saving}
+          <input ref={task.id === focusTaskId ? focusedTask : undefined}
+            type="checkbox" checked={task.completed} disabled={saving}
             onChange={(event) => void save({ id: task.id, completed: event.target.checked })} />
           {task.title}
         </label>

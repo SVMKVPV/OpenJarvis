@@ -78,11 +78,22 @@ def test_project_task_status_persists_and_retries_keep_one_task(tmp_path, monkey
         assert client.get("/v1/workspace/folders/07-releases/tasks").json() == [
             {**existing, "station_id": None},
         ]
+        station_tasks = "/v1/workspace/stations/operations-manager/tasks"
+        assert client.get(station_tasks).json() == [
+            {
+                **task,
+                "completed": True,
+                "station_id": "operations-manager",
+                "folder": "05-backend",
+            },
+        ]
+        assert client.get("/v1/workspace/stations/research/tasks").json() == []
         assert client.patch(task_path, json={"station_id": None}).json() == {
             **task,
             "completed": True,
             "station_id": None,
         }
+        assert client.get(station_tasks).json() == []
         other_endpoint = "/v1/workspace/folders/06-tests/tasks"
         assert client.get(other_endpoint).json() == []
         assert (

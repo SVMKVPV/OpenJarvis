@@ -361,6 +361,8 @@ const ITEMS: WorkItem[] = [
 
 export type WorkspaceEntry = {
   initialRunId?: string;
+  initialProjectFolder?: string;
+  initialProjectTaskId?: string;
   initialDefinitionId?: string;
   initialRecurrenceId?: string;
   initialGmailReference?: string;
@@ -370,7 +372,7 @@ export type WorkspaceEntry = {
 
 export function SoftwareEngineeringWorkspace({
   initialRunId = '', initialDefinitionId = '', initialGmailReference = '',
-  initialRecurrenceId = '',
+  initialRecurrenceId = '', initialProjectFolder = '04-frontend', initialProjectTaskId,
   initialUploadReference = '', initialStarter,
   recipients = [], projectStations = [], reportingRoutes = [], onOpenStation,
 }: WorkspaceEntry & {
@@ -399,7 +401,7 @@ export function SoftwareEngineeringWorkspace({
     );
     return () => request.abort();
   }, [folderReload]);
-  const [selectedFolder, setSelectedFolder] = useState('04-frontend');
+  const [selectedFolder, setSelectedFolder] = useState(initialProjectFolder);
   const [selectedItemId, setSelectedItemId] = useState('shell');
   const [connectors, setConnectors] = useState(INITIAL_CONNECTORS);
   const [assigned, setAssigned] = useState<string[]>(['openai']);
@@ -1167,7 +1169,9 @@ export function SoftwareEngineeringWorkspace({
             <div className="assignment"><span>ASSIGN COLLABORATORS</span><div>{connectors.filter((connector) => connector.enabled).map((connector) => <label key={connector.id}><input type="checkbox" checked={assigned.includes(connector.id)} onChange={() => setAssigned((current) => current.includes(connector.id) ? current.filter((id) => id !== connector.id) : [...current, connector.id])}/><b>{connector.code}</b></label>)}</div><button onClick={contribute} disabled={!assigned.length}><Plus size={12}/> CREATE SIMULATED CONTRIBUTION</button>{warning && <p className="brain-warning">{warning}</p>}</div>
           </article>}
         </div>
-        <WorkspaceProjectTasks key={selectedFolder} folder={selectedFolder} stations={projectStations.filter((station) => station.id !== 'brain')} />
+        <WorkspaceProjectTasks key={selectedFolder} folder={selectedFolder}
+          focusTaskId={selectedFolder === initialProjectFolder ? initialProjectTaskId : undefined}
+          stations={projectStations.filter((station) => station.id !== 'brain')} />
         <section className="proposal-feed"><header><span>PROPOSED CONTRIBUTIONS</span><strong>{proposals.filter((proposal) => !proposal.approved).length} AWAITING APPROVAL</strong></header>{proposals.slice(0,4).map((proposal) => <article key={proposal.id}><div><strong>{proposal.connector}</strong><p>{proposal.text}</p></div><button className={proposal.approved ? 'approved' : ''} onClick={() => setProposals((current) => current.map((item) => item.id === proposal.id ? {...item, approved: true} : item))}>{proposal.approved ? <><Check size={11}/> APPROVED</> : 'APPROVE'}</button></article>)}</section>
       </section>
 

@@ -1522,6 +1522,16 @@ export async function fetchWorkspaceTasks(folder: string, signal: AbortSignal): 
   return tasks;
 }
 
+export async function fetchStationProjectTasks(
+  stationId: string, signal: AbortSignal,
+): Promise<Array<WorkspaceTask & { folder: string }>> {
+  const response = await apiFetch(`/v1/workspace/stations/${encodeURIComponent(stationId)}/tasks`, { signal });
+  if (!response.ok) throw new Error('Assigned project tasks are unavailable.');
+  const tasks = await response.json();
+  if (!Array.isArray(tasks)) throw new Error('Assigned project tasks are unavailable.');
+  return tasks;
+}
+
 export async function saveWorkspaceTask(
   folder: string, task: Pick<WorkspaceTask, 'id' | 'title'> | Pick<WorkspaceTask, 'id' | 'completed'> | { id: string; station_id: string | null },
 ): Promise<WorkspaceTask> {
