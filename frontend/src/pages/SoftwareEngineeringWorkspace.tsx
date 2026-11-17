@@ -166,6 +166,14 @@ const LEAD_DISCOVERY = {
       action_type: 'lead_discovery_review',
       description: 'Verify each candidate and its source before saving it in the Growth lead register.',
       tier: 'high',
+      payload: {
+        require_review_checklist: true,
+        review_checklist: [
+          'Match each organization and source reference to the indexed evidence.',
+          'Verify the source shows customer interest or a referral.',
+          'Remove duplicates and organizations mentioned only as vendors.',
+        ],
+      },
     } },
   ],
   edges: [
@@ -193,6 +201,15 @@ const COMPETITOR_AD_REVIEW = {
       action_type: 'competitor_ad_review',
       description: 'Check the cited ads, dates and evidence for each pattern before sharing the brief or acting on the proposal.',
       tier: 'high',
+      payload: {
+        require_review_checklist: true,
+        review_checklist: [
+          'Verify the advertiser, offer, and cited ad against the source.',
+          'Distinguish observed dates from a confirmed continuous campaign.',
+          'Check that profitability, spend, and sales are only stated when supported.',
+          'Keep the proposed experiment and its metric separate from observations.',
+        ],
+      },
     } },
   ],
   edges: [
@@ -260,6 +277,14 @@ const BUILDER_RESEARCH_REVIEW = {
       action_type: 'system_builder_proposal',
       description: 'Review the proposal, source excerpts, and overlap with current work before assigning a prototype.',
       tier: 'high',
+      payload: {
+        require_review_checklist: true,
+        review_checklist: [
+          'Verify that the cited source supports the proposed capability.',
+          'Check Shared Brain for overlapping work and confirm the owner.',
+          'Review the proposed prototype, measurable test, and integration dependencies.',
+        ],
+      },
     } },
   ],
   edges: [
