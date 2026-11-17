@@ -453,11 +453,34 @@ export function SoftwareEngineeringWorkspace({
     }
   };
   const [pluginRefresh, setPluginRefresh] = useState(0);
+  const [connectorListRefresh, setConnectorListRefresh] = useState(0);
+  const connectorStatusDetails = useRef<HTMLDetailsElement>(null);
   const [syncConnectorId, setSyncConnectorId] = useState('');
   const [connectorSync, setConnectorSync] = useState<SyncStatus | 'unavailable' | null>(null);
   const [syncStarting, setSyncStarting] = useState(false);
   const [syncMessage, setSyncMessage] = useState('');
   const [syncRefresh, setSyncRefresh] = useState(0);
+  const chooseSyncConnector = (id: string) => {
+    if (syncStarting || id === syncConnectorId) return;
+    setConnectorSync(null);
+    setSyncMessage('');
+    setSyncConnectorId(id);
+  };
+  const indexSyncActions = (value: unknown) => {
+    if (typeof value !== 'string' || !value.trim() || pluginCatalogState !== 'online') return null;
+    const source = value.trim();
+    return liveConnectors?.filter((connector) => connector.connected && (
+      connector.connector_id === source || Object.prototype.hasOwnProperty.call(connector.indexed_sources ?? {}, source)
+    )).map((connector) => (
+      <button key={connector.connector_id} type="button" disabled={syncStarting} onClick={() => {
+        chooseSyncConnector(connector.connector_id);
+        const details = connectorStatusDetails.current;
+        if (!details) return;
+        details.open = true;
+        details.querySelector('summary')?.focus();
+      }}>View {connector.display_name} sync</button>
+    ));
+  };
   const syncConnectorConfigured = liveConnectors?.some(
     (source) => source.connector_id === syncConnectorId && source.connected,
   ) ?? false;
@@ -1005,7 +1028,7 @@ export function SoftwareEngineeringWorkspace({
         if (!cancelled) setLiveConnectors(null);
       });
     return () => { cancelled = true; };
-  }, [pluginRefresh]);
+  }, [pluginRefresh, connectorListRefresh]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1032,6 +1055,8 @@ export function SoftwareEngineeringWorkspace({
         setConnectorSync(status);
         if (status.state === 'syncing' || status.state === 'stopping') {
           timer = window.setTimeout(refresh, 2500);
+        } else {
+          setConnectorListRefresh((value) => value + 1);
         }
       } catch {
         if (active) setConnectorSync('unavailable');
@@ -1270,7 +1295,7 @@ export function SoftwareEngineeringWorkspace({
               )}
               {mcpMessage && <p role="status">{mcpMessage}</p>}
             </details>
-            <details>
+            <details ref={connectorStatusDetails}>
               <summary>Connector status</summary>
               <div className="plugin-sample">
                 {runtimePlugins.filter((plugin) => plugin.kind === 'connector').map((plugin) => {
@@ -1281,11 +1306,8 @@ export function SoftwareEngineeringWorkspace({
                 })}
               </div>
               <label>Connector sync history
-                <select value={syncConnectorConfigured ? syncConnectorId : ''} disabled={syncStarting} onChange={(event) => {
-                  setConnectorSync(null);
-                  setSyncMessage('');
-                  setSyncConnectorId(event.target.value);
-                }}>
+                <select value={syncConnectorConfigured ? syncConnectorId : ''} disabled={syncStarting}
+                  onChange={(event) => chooseSyncConnector(event.target.value)}>
                   <option value="">Choose a configured connector</option>
                   {liveConnectors?.filter((source) => source.connected).map((source) => (
                     <option key={source.connector_id} value={source.connector_id}>
@@ -1422,6 +1444,7 @@ export function SoftwareEngineeringWorkspace({
                                 onChange={(event) => setStepConfig(node, 'source', event.target.value)} />
                               <small>{indexHint(node.config.source)}</small>
                             </label>
+                            {indexSyncActions(node.config.source)}
                             {typeof node.config.source === 'string' && node.config.source.trim() && (
                               <WorkflowIndexPreview key={node.config.source}
                                 source={node.config.source}
