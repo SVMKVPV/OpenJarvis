@@ -1071,10 +1071,12 @@ export function SoftwareEngineeringWorkspace({
   };
 
   const importDraft = async (file: File) => {
+    if (savingDefinition || loadingDefinitions) return;
     if (file.size > 1024 * 1024) {
       setDefinitionMessage('Workflow JSON must be under 1 MB.');
       return;
     }
+    setSavingDefinition(true);
     try {
       const source = await file.text();
       const graph = readDraftGraph(source);
@@ -1087,6 +1089,8 @@ export function SoftwareEngineeringWorkspace({
       setDefinitionMessage('Draft loaded. Review its steps before saving.');
     } catch (error) {
       setDefinitionMessage(error instanceof Error ? error.message : 'Could not read workflow JSON.');
+    } finally {
+      setSavingDefinition(false);
     }
   };
 
@@ -1487,17 +1491,18 @@ export function SoftwareEngineeringWorkspace({
                 Save as copy
               </button>
             )}
+            <label>Import OpenJarvis workflow JSON
+              <input type="file" accept=".json,application/json" disabled={savingDefinition || loadingDefinitions}
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  event.currentTarget.value = '';
+                  if (file) void importDraft(file);
+                }} />
+              <small>Replaces the editor draft. Save to add it as a new workflow.</small>
+            </label>
             <details className="workflow-graph-editor"
               onToggle={(event) => setGraphEditorOpen(event.currentTarget.open)}>
               <summary>Edit workflow definition</summary>
-              <label>Replace draft from OpenJarvis JSON
-                <input type="file" accept=".json,application/json" disabled={savingDefinition}
-                  onChange={(event) => {
-                    const file = event.currentTarget.files?.[0];
-                    event.currentTarget.value = '';
-                    if (file) void importDraft(file);
-                  }} />
-              </label>
               {draftGraph && (
                 <fieldset>
                   <legend>Workflow steps</legend>
