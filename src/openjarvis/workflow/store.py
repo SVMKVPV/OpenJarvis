@@ -618,6 +618,7 @@ class WorkflowRunStore:
         before: str = "",
         recent: bool = False,
         recurrence_id: str = "",
+        approval_type: str = "",
     ) -> list[dict[str, Any]]:
         limit = max(1, min(int(limit), 200))
         filters: list[str] = []
@@ -636,6 +637,13 @@ class WorkflowRunStore:
         if status:
             filters.append("status = ?")
             params.append(status)
+        if approval_type:
+            filters.append(
+                "EXISTS (SELECT 1 FROM json_each(graph_json, '$.nodes') AS node "
+                "WHERE json_extract(node.value, '$.type') = 'approval' "
+                "AND json_extract(node.value, '$.config.action_type') = ?)"
+            )
+            params.append(approval_type)
         if before:
             filters.append(
                 "(created_at, id) < "

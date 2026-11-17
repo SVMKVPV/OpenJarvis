@@ -825,7 +825,7 @@ export function CommandCenterPage() {
           {selected.id === 'email' && <GmailReviewList onOpenWorkflow={openGmailReplyWorkflow} />}
           {selected.id === 'marketing' && <><Ga4PropertyForm /><SocialContentStudio /></>}
           {selected.id === 'system-builder' && (
-            <SystemBuilderLab onOpenResearch={() => openWorkspace({ initialStarter: 'builder-research' })} />
+            <SystemBuilderLab onOpenResearch={() => openWorkspace({ initialStarter: 'builder-research' })} onOpenWorkflow={openWorkflowReview} />
           )}
           {STATION_AGENT_TEMPLATES[selected.id] && (
             <Link to={`/agents?template=${STATION_AGENT_TEMPLATES[selected.id]}`}>

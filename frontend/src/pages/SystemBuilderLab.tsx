@@ -1,14 +1,38 @@
+import { useEffect, useState } from 'react';
 import { GitBranch, Play, ShieldCheck, Wrench } from 'lucide-react';
 import { Link } from 'react-router';
+import { fetchSystemBuilderProposals, type WorkflowRunSummary } from '../lib/api';
 import './system-builder-lab.css';
 
-const IDEAS = [
-  { id:'widget', title:'Adaptive dashboard layouts', source:'GitHub research', evidence:'Compared 6 open-source grid and dashboard systems', stage:'PROPOSAL', impact:'HIGH' },
-  { id:'social', title:'Cross-channel content adapter', source:'YouTube + GitHub research', evidence:'Mapped public platform workflow patterns and approval gates', stage:'PROTOTYPE', impact:'HIGH' },
-  { id:'memory', title:'Shared Brain ownership index', source:'GitHub research', evidence:'Reviewed agent-memory and event-ledger approaches', stage:'TESTING', impact:'MEDIUM' },
-];
+type ProposalHistory =
+  | { status: 'loading' | 'unavailable' }
+  | { status: 'loaded'; runs: WorkflowRunSummary[] };
 
-export function SystemBuilderLab({ onOpenResearch }: { onOpenResearch: () => void }) {
+export function SystemBuilderLab({ onOpenResearch, onOpenWorkflow }: {
+  onOpenResearch: () => void;
+  onOpenWorkflow: (runId: string) => void;
+}) {
+  const [history, setHistory] = useState<ProposalHistory>({ status: 'loading' });
+  const [refresh, setRefresh] = useState(0);
+
+  useEffect(() => {
+    const request = new AbortController();
+    fetchSystemBuilderProposals(request.signal).then(
+      (runs) => {
+        if (!request.signal.aborted) setHistory({ status: 'loaded', runs });
+      },
+      () => {
+        if (!request.signal.aborted) setHistory({ status: 'unavailable' });
+      },
+    );
+    return () => request.abort();
+  }, [refresh]);
+
+  const reload = () => {
+    setHistory({ status: 'loading' });
+    setRefresh((value) => value + 1);
+  };
+
   return <section className="builder-lab"><header><div><span>SYSTEM BUILDER WORKSTATION</span><strong>Research and review improvement proposals</strong></div><button type="button" onClick={onOpenResearch}><Play size={11}/>Open research workflow</button></header>
     <div className="builder-sources">
       <article><GitBranch/><div><strong>GitHub release research</strong><small>Search indexed entries from configured public release feeds</small></div><em>RSS / ATOM</em></article>
@@ -19,14 +43,28 @@ export function SystemBuilderLab({ onOpenResearch }: { onOpenResearch: () => voi
     <div className="builder-flow"><div><b>01</b><span>RESEARCH</span></div><i/><div><b>02</b><span>PROPOSE</span></div><i/><div><b>03</b><span>PROTOTYPE</span></div><i/><div><b>04</b><span>TEST</span></div><i/><div><b>05</b><span>HUMAN APPROVAL</span></div></div>
     <p className="research-banner">The research workflow searches synced public feeds and sends citations
       and a proposal to the approval queue. <Link to="/data-sources">Configure News / RSS feeds</Link></p>
-    <p>Example proposals</p>
-    <div className="builder-ideas">
-      {IDEAS.map((idea) => (
-        <article key={idea.id}>
-          <div><span>{idea.source}</span><h3>{idea.title}</h3><p>{idea.evidence}</p></div>
-          <aside><em data-stage={idea.stage}>{idea.stage}</em><small>{idea.impact} IMPACT</small></aside>
-        </article>
-      ))}
-    </div>
+    <header>
+      <strong>Recent proposal runs</strong>
+      <button type="button" onClick={reload} disabled={history.status === 'loading'}>Refresh</button>
+    </header>
+    {history.status === 'loading' && <p role="status">Loading proposal history.</p>}
+    {history.status === 'unavailable' && <p role="status">Proposal history is unavailable. Check the backend and refresh.</p>}
+    {history.status === 'loaded' && (
+      history.runs.length ? (
+        <div className="builder-ideas">
+          {history.runs.map((run) => (
+            <article key={run.id}>
+              <div>
+                <span>{new Date(run.created_at * 1000).toLocaleString()}</span>
+                <h3>{run.workflow_name}</h3>
+                <p>Run {run.id.slice(0, 8)} · {run.status.replace(/_/g, ' ')}</p>
+              </div>
+              <button type="button" onClick={() => onOpenWorkflow(run.id)}
+                aria-label={`Open ${run.workflow_name} run ${run.id.slice(0, 8)}`}>Open run</button>
+            </article>
+          ))}
+        </div>
+      ) : <p role="status">No System Builder proposal runs yet.</p>
+    )}
   </section>;
 }

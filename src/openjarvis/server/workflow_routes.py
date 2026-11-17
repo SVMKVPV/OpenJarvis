@@ -145,6 +145,7 @@ def create_workflow_runs_router() -> APIRouter:
         before: str = Query(default="", max_length=128),
         recent: bool = False,
         recurrence_id: str = Query(default="", max_length=128),
+        approval_type: str = Query(default="", max_length=128),
     ) -> dict:
         if before and run_status == "scheduled" and not recent:
             raise HTTPException(
@@ -152,11 +153,12 @@ def create_workflow_runs_router() -> APIRouter:
             )
         runs = _runtime(request).store.list_runs(
             status=run_status, limit=limit, before=before, recent=recent,
-            recurrence_id=recurrence_id,
+            recurrence_id=recurrence_id, approval_type=approval_type,
         )
         return {
             "runs": runs, "count": len(runs), "before": before, "recent": recent,
             "recurrence_id": recurrence_id,
+            "approval_type": approval_type,
         }
 
     @router.get("/{run_id}")

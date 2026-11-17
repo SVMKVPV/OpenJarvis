@@ -852,3 +852,47 @@ def test_workflow_history_cursor_is_stable_when_new_runs_arrive(tmp_path, monkey
     finally:
         app.state.workflow_runtime.close()
         approvals.close()
+
+def test_proposal_history_filters_by_approval_step_type(tmp_path, monkeypatch):
+    from openjarvis.server import approval_routes
+    from openjarvis.tools.approval_store import ApprovalStore
+
+    monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(tmp_path / "workflow.db"))
+    approvals = ApprovalStore(str(tmp_path / "approvals.db"))
+    monkeypatch.setattr(approval_routes, "_store", approvals)
+    app = FastAPI()
+    app.state.workflow_system = None
+    app.include_router(create_workflow_runs_router())
+    base = "/v1/workflows/runs"
+
+    try:
+        with TestClient(app) as client:
+            payload = {
+                "name": "Renamed research workflow",
+                "nodes": [
+                    {
+                        "id": "review",
+                        "type": "approval",
+                        "config": {"action_type": "system_builder_proposal"},
+                    }
+                ],
+            }
+            proposal = client.post(base, json=payload)
+            assert proposal.status_code == 202
+            payload["nodes"][0]["config"]["action_type"] = "finance_review"
+            assert client.post(base, json=payload).status_code == 202
+
+            response = client.get(
+                base,
+                params={
+                    "approval_type": "system_builder_proposal",
+                    "limit": 1,
+                },
+            )
+            assert response.status_code == 200
+            history = response.json()
+            assert history["approval_type"] == "system_builder_proposal"
+            assert [run["id"] for run in history["runs"]] == [proposal.json()["id"]]
+    finally:
+        app.state.workflow_runtime.close()
+        approvals.close()
