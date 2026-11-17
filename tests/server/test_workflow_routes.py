@@ -992,3 +992,47 @@ def test_transform_preview_applies_runtime_json_extraction(tmp_path, monkeypatch
         }).json()
         assert not failed["success"]
         assert not workflow_db.exists()
+
+
+def test_run_details_explain_skipped_branches(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(tmp_path / "workflows.db"))
+    app = FastAPI()
+    app.state.workflow_system = None
+    app.include_router(create_workflow_runs_router())
+    endpoint = "/v1/workflows/runs"
+    payload = {
+        "initial_input": "yes",
+        "nodes": [
+            {"id": "choose", "type": "condition", "condition_expr": "True"},
+            {"id": "accepted", "type": "transform"},
+            {"id": "declined", "type": "transform"},
+            {"id": "follow-up", "type": "transform"},
+        ],
+        "edges": [
+            {"source": "choose", "target": "accepted", "condition": "true"},
+            {"source": "choose", "target": "declined", "condition": "false"},
+            {"source": "declined", "target": "follow-up"},
+        ],
+    }
+    try:
+        with TestClient(app) as client:
+            created = client.post(endpoint, json=payload)
+            assert created.status_code == 202
+            path = f"{endpoint}/{created.json()['id']}"
+            for _ in range(100):
+                run = client.get(path).json()
+                if run["status"] == "succeeded":
+                    break
+                time.sleep(0.02)
+            assert run["status"] == "succeeded"
+            assert run["skipped_steps"] == [
+                {"node_id": "declined", "incoming": [
+                    {"source": "choose", "condition": "false",
+                     "reason": "condition_mismatch"},
+                ]},
+                {"node_id": "follow-up", "incoming": [
+                    {"source": "declined", "condition": "", "reason": "source_not_run"},
+                ]},
+            ]
+    finally:
+        app.state.workflow_runtime.close()

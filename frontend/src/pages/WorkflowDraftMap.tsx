@@ -3,7 +3,7 @@ import { Background, Handle, MarkerType, Position, ReactFlow, type Edge, type No
 
 type DraftStep = { id: string; type?: string };
 type DraftConnection = { source: string; target: string; condition?: string };
-type StepStatus = 'succeeded' | 'failed' | 'waiting for approval' | 'no result';
+type StepStatus = 'succeeded' | 'failed' | 'waiting for approval' | 'skipped' | 'no result';
 type StepNode = Node<{
   label: string;
   kind: string;

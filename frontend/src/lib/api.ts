@@ -1642,6 +1642,14 @@ export async function fetchWorkflowHistory(
 
 export interface WorkflowRunDetail extends WorkflowRunSummary {
   initial_input: string;
+  skipped_steps?: Array<{
+    node_id: string;
+    incoming: Array<{
+      source: string;
+      condition: string;
+      reason: 'condition_mismatch' | 'source_not_run';
+    }>;
+  }>;
   graph: SavedWorkflowDefinition['graph'];
   review_decisions?: Array<{
     node_id: string;

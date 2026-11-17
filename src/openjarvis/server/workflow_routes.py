@@ -141,6 +141,40 @@ def _workflow_runtime_for_state(state: Any) -> WorkflowRuntime:
         return runtime
 
 
+def _skipped_steps(run: dict) -> list[dict]:
+    # A failed or still-running workflow can have untouched branches without
+    # having reached their routing decisions.
+    if run["status"] != "succeeded":
+        return []
+    outputs = {step["node_id"]: step["output"] for step in run["steps"]}
+    incoming: dict[str, list[dict]] = {}
+    for edge in run["graph"].get("edges", []):
+        incoming.setdefault(edge["target"], []).append(edge)
+
+    skipped = []
+    for node in run["graph"]["nodes"]:
+        node_id = node["id"]
+        edges = incoming.get(node_id, [])
+        if node_id in outputs or not edges:
+            continue
+        if any(
+            edge["source"] in outputs
+            and edge_matches_output(edge.get("condition", ""), outputs[edge["source"]])
+            for edge in edges
+        ):
+            continue
+        skipped.append({
+            "node_id": node_id,
+            "incoming": [{
+                "source": edge["source"],
+                "condition": edge.get("condition", ""),
+                "reason": "condition_mismatch" if edge["source"] in outputs
+                else "source_not_run",
+            } for edge in edges],
+        })
+    return skipped
+
+
 def create_workflow_runs_router() -> APIRouter:
     root = APIRouter(prefix="/v1/workflows", tags=["workflows"])
     router = APIRouter(prefix="/runs")
@@ -270,7 +304,9 @@ def create_workflow_runs_router() -> APIRouter:
                 "note": action.payload.get("decision_note", ""),
                 "checks": action.payload.get("decision_checks", []),
             })
-        return {**run, "review_decisions": decisions}
+        return {
+            **run, "review_decisions": decisions, "skipped_steps": _skipped_steps(run),
+        }
 
     def require_approved_run(run_id: str, request: Request) -> None:
         run = _runtime(request).store.get_run(run_id)

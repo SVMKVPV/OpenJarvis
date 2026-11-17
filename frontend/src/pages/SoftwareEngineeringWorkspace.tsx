@@ -534,15 +534,22 @@ export function SoftwareEngineeringWorkspace({
     () => runDetail?.graph ? readDraftGraph(JSON.stringify(runDetail.graph)) : null,
     [runDetail?.graph],
   );
+  const skippedStepElements = useRef(new Map<string, HTMLLIElement>());
   const runStepElements = useRef(new Map<string, HTMLLIElement>());
   const lastAttempts = new Map((runDetail?.steps ?? []).map((step) => [step.node_id, step]));
-  const runStepStatuses = new Map(Array.from(lastAttempts, ([id, step]) => [
+  const runStepStatuses = new Map<string, 'waiting for approval' | 'succeeded' | 'failed' | 'skipped'>(Array.from(lastAttempts, ([id, step]) => [
     id,
     step.metadata.workflow_status === 'waiting_approval'
       ? 'waiting for approval'
       : step.success ? 'succeeded' : 'failed',
   ] as const));
+  for (const item of runDetail?.skipped_steps ?? []) runStepStatuses.set(item.node_id, 'skipped');
   const openRunStep = (id: string) => {
+    const skipped = skippedStepElements.current.get(id);
+    if (skipped) {
+      skipped.focus();
+      return;
+    }
     const step = lastAttempts.get(id);
     const element = step && runStepElements.current.get(`${id}:${step.attempt}`);
     const evidence = element?.querySelector<HTMLDetailsElement>('details[data-approval-input]');
@@ -1920,6 +1927,24 @@ export function SoftwareEngineeringWorkspace({
                       )}
                     </li>
                   ))}</ol> : <p>No steps recorded yet.</p>}
+                  {!!runDetail.skipped_steps?.length && (
+                    <section aria-label="Skipped workflow steps">
+                      <h5>Skipped workflow steps</h5>
+                      <ul>{runDetail.skipped_steps.map((item) => (
+                        <li key={item.node_id} tabIndex={-1} ref={(element) => {
+                          if (element) skippedStepElements.current.set(item.node_id, element);
+                          else skippedStepElements.current.delete(item.node_id);
+                        }}>
+                          <strong>{item.node_id}</strong>
+                          <ul>{item.incoming.map((edge, index) => (
+                            <li key={index}>{edge.reason === 'source_not_run'
+                              ? `${edge.source} did not run.`
+                              : `${edge.source} did not return the required value ${edge.condition}.`}</li>
+                          ))}</ul>
+                        </li>
+                      ))}</ul>
+                    </section>
+                  )}
                   {runDetail.final_output && <><h5>Final output</h5><pre>{runDetail.final_output}</pre></>}
                   {reviewDecisionsWithoutSteps.length > 0 && (
                     <section aria-label="Recorded review decisions">
