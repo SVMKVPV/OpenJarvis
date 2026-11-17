@@ -217,6 +217,7 @@ const DELIVERY_QUALITY_REVIEW = {
       ].join('\n'),
     } },
     { id: 'handoff-review', type: 'approval', config: {
+      action_type: 'delivery_quality_review',
       description: 'Compare findings with the deliverable and its brief. Confirm corrections and listen to source audio if required before approving the handoff.',
       tier: 'high',
       payload: {
@@ -291,6 +292,7 @@ const EMAIL_REPLY_REVIEW = {
       ].join(' '),
     } },
     { id: 'review-reply', type: 'approval', config: {
+      action_type: 'gmail_reply_review',
       description: 'Read the indexed source, proposed reply, and draft quality check. Approve only if the draft is accurate and ready.',
       tier: 'high',
       payload: {

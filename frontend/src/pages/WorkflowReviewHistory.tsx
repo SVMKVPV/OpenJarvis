@@ -21,6 +21,24 @@ const COPY = {
     noMatches: 'No workpaper runs match that search.',
     empty: 'No Finance workpaper runs yet.',
   },
+  email: {
+    approvalType: 'gmail_reply_review',
+    legacyNode: 'review-reply',
+    title: 'Recent reply reviews',
+    search: 'Search reply inputs',
+    loading: 'Loading reply review history.',
+    noMatches: 'No reply reviews match that search.',
+    empty: 'No Gmail reply reviews yet.',
+  },
+  delivery: {
+    approvalType: 'delivery_quality_review',
+    legacyNode: 'handoff-review',
+    title: 'Recent delivery reviews',
+    search: 'Search delivery inputs',
+    loading: 'Loading delivery review history.',
+    noMatches: 'No delivery reviews match that search.',
+    empty: 'No delivery quality reviews yet.',
+  },
 };
 
 type ReviewHistory =

@@ -815,17 +815,25 @@ export function CommandCenterPage() {
             </section>
           )}
           {selected.id === 'managers' && (
-            <section className="station-widget-options" aria-label="Delivery quality">
-              <div>
-                <strong>Delivery quality review</strong>
-                <button type="button" onClick={() => openWorkspace({ initialStarter: 'delivery-quality' })}>
-                  Open delivery quality workflow
-                </button>
-              </div>
-              <p>Check indexed copy or transcripts against the brief and review the findings before handoff.</p>
-            </section>
+            <>
+              <section className="station-widget-options" aria-label="Delivery quality">
+                <div>
+                  <strong>Delivery quality review</strong>
+                  <button type="button" onClick={() => openWorkspace({ initialStarter: 'delivery-quality' })}>
+                    Open delivery quality workflow
+                  </button>
+                </div>
+                <p>Check indexed copy or transcripts against the brief and review the findings before handoff.</p>
+              </section>
+              <WorkflowReviewHistory kind="delivery" onOpenWorkflow={openWorkflowReview} />
+            </>
           )}
-          {selected.id === 'email' && <GmailReviewList onOpenWorkflow={openGmailReplyWorkflow} />}
+          {selected.id === 'email' && (
+            <>
+              <GmailReviewList onOpenWorkflow={openGmailReplyWorkflow} />
+              <WorkflowReviewHistory kind="email" onOpenWorkflow={openWorkflowReview} />
+            </>
+          )}
           {selected.id === 'marketing' && <><Ga4PropertyForm /><SocialContentStudio /></>}
           {selected.id === 'system-builder' && (
             <SystemBuilderLab onOpenResearch={() => openWorkspace({ initialStarter: 'builder-research' })} onOpenWorkflow={openWorkflowReview} />
