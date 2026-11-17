@@ -1,0 +1,38 @@
+name: Command Center backend image
+
+on:
+  push:
+    branches: [codex/organization-command-center]
+    paths:
+      - '.github/workflows/command-center-backend.yml'
+      - 'deploy/docker/Dockerfile'
+      - 'deploy/windows/**'
+      - 'configs/openjarvis/examples/**'
+      - 'frontend/**'
+      - 'src/**'
+      - 'rust/**'
+      - 'scripts/install/**'
+      - 'README.md'
+      - 'pyproject.toml'
+      - 'uv.lock'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: command-center-backend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build the Render image
+        run: docker build --file deploy/docker/Dockerfile --tag openjarvis-command-center:check .
+      - name: Verify the server CLI and connector imports
+        run: |
+          docker run --rm openjarvis-command-center:check serve --help
+          docker run --rm --entrypoint python openjarvis-command-center:check -c 'import anthropic, fastapi, google.genai, google_auth_oauthlib, googleapiclient, openjarvis_rust'
