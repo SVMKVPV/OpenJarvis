@@ -32,6 +32,7 @@ import { getSyncStatus, listConnectors, triggerSync } from '../lib/connectors-ap
 import { isEmbedOnlyModel } from '../lib/model-capabilities';
 import { useAppStore } from '../lib/store';
 import type { ConnectorInfo, SyncStatus } from '../types/connectors';
+import { ApprovedGmailDraft } from './ApprovedGmailDraft';
 import { ReviewedLeadForm } from './ReviewedLeadForm';
 import { WorkflowDraftMap } from './WorkflowDraftMap';
 import { WorkflowBrainHandoff } from './WorkflowBrainHandoff';
@@ -593,6 +594,17 @@ export function SoftwareEngineeringWorkspace({
   const skippedStepElements = useRef(new Map<string, HTMLLIElement>());
   const runStepElements = useRef(new Map<string, HTMLLIElement>());
   const lastAttempts = new Map((runDetail?.steps ?? []).map((step) => [step.node_id, step]));
+  const gmailDraft = lastAttempts.get('draft-reply');
+  const gmailApproval = lastAttempts.get('review-reply');
+  const reviewedGmailInput = runDetail?.steps.find((step) =>
+    step.node_id === 'review-reply' && step.metadata.workflow_status === 'waiting_approval' &&
+    step.metadata.approval_id === gmailApproval?.metadata.approval_id,
+  )?.metadata.review_input;
+  const approvedGmailDraft = runDetail?.status === 'succeeded' && gmailDraft?.success &&
+    gmailDraft.output.trim() && gmailApproval?.metadata.approval_status === 'approved' &&
+    typeof gmailApproval.metadata.approval_id === 'string' && typeof reviewedGmailInput === 'string' &&
+    reviewedGmailInput.includes(gmailDraft.output)
+    ? gmailDraft.output : null;
   const runStepStatuses = new Map<string, 'waiting for approval' | 'succeeded' | 'failed' | 'skipped'>(Array.from(lastAttempts, ([id, step]) => [
     id,
     step.metadata.workflow_status === 'waiting_approval'
@@ -2002,6 +2014,7 @@ export function SoftwareEngineeringWorkspace({
                       )}
                     </li>
                   ))}</ol> : <p>No steps recorded yet.</p>}
+                  {approvedGmailDraft && <ApprovedGmailDraft key={runDetail.id} draft={approvedGmailDraft} />}
                   {!!runDetail.skipped_steps?.length && (
                     <section aria-label="Skipped workflow steps">
                       <h5>Skipped workflow steps</h5>
