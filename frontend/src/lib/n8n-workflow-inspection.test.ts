@@ -24,10 +24,18 @@ describe('n8n workflow inspection', () => {
     expect(JSON.stringify(preview)).not.toContain('private');
   });
 
-  it('rejects connections to missing nodes', () => {
-    expect(() => inspectN8nWorkflow({
-      nodes: [{ name: 'Start', type: 'n8n-nodes-base.manualTrigger' }],
-      connections: { Start: { main: [[{ node: 'Missing' }]] } },
-    })).toThrow('A connection points to an unknown node.');
+  it('previews valid links and counts links with missing nodes', () => {
+    const preview = inspectN8nWorkflow({
+      nodes: [
+        { name: 'Start', type: 'n8n-nodes-base.manualTrigger' },
+        { name: 'End', type: 'n8n-nodes-base.noOp' },
+      ],
+      connections: {
+        Start: { main: [[{ node: 'Missing' }, { node: 'End' }]] },
+        Missing: { main: [[{ node: 'End' }]] },
+      },
+    });
+    expect(preview.skippedConnections).toBe(2);
+    expect(preview.connections).toEqual([{ source: 'Start', target: 'End', condition: 'main 1' }]);
   });
 });

@@ -32,8 +32,9 @@ export function inspectN8nWorkflow(value: unknown) {
   }
 
   const connections: N8nConnection[] = [];
+  let skippedConnections = 0;
   for (const [source, channels] of Object.entries(object(document.connections) ?? {})) {
-    if (!known.has(source) || !object(channels)) throw new Error('The workflow contains an invalid connection source.');
+    if (!object(channels)) throw new Error('The workflow contains an invalid connection source.');
     for (const [channel, outputs] of Object.entries(object(channels) ?? {})) {
       if (!Array.isArray(outputs)) throw new Error('The workflow contains invalid output connections.');
       outputs.forEach((output, index) => {
@@ -41,13 +42,19 @@ export function inspectN8nWorkflow(value: unknown) {
         if (!Array.isArray(output)) throw new Error('The workflow contains an invalid output connection.');
         for (const link of output) {
           const target = object(link)?.node;
-          if (typeof target !== 'string' || !known.has(target)) throw new Error('A connection points to an unknown node.');
+          if (typeof target !== 'string' || !target.trim()) throw new Error('A connection has an invalid target.');
+          if (connections.length + skippedConnections >= 500) {
+            throw new Error('Select a workflow with up to 500 connections.');
+          }
+          if (!known.has(source) || !known.has(target)) {
+            skippedConnections++;
+            continue;
+          }
           connections.push({ source, target, condition: `${channel} ${index + 1}` });
-          if (connections.length > 500) throw new Error('Select a workflow with up to 500 connections.');
         }
       });
     }
   }
   const name = typeof document.name === 'string' ? document.name.trim() : '';
-  return { name: name || 'Unnamed n8n workflow', nodes, connections };
+  return { name: name || 'Unnamed n8n workflow', nodes, connections, skippedConnections };
 }

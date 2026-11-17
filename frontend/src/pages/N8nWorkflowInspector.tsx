@@ -41,6 +41,9 @@ export function N8nWorkflowInspector() {
     {error && <p role="alert">{error}</p>}
     {workflow && <>
       <h4>{workflow.name}</h4>
+      {workflow.skippedConnections > 0 && <p role="status">
+        Skipped {workflow.skippedConnections} {workflow.skippedConnections === 1 ? 'connection' : 'connections'} with missing nodes.
+      </p>}
       <WorkflowDraftMap label="n8n workflow preview" steps={workflow.nodes}
         connections={workflow.connections} onOpen={(id) => nodes.current.get(id)?.focus()} />
       <table aria-label="Imported node requirements">
