@@ -1511,6 +1511,7 @@ export interface WorkspaceTask {
   id: string;
   title: string;
   completed: boolean;
+  station_id?: string | null;
 }
 
 export async function fetchWorkspaceTasks(folder: string, signal: AbortSignal): Promise<WorkspaceTask[]> {
@@ -1522,17 +1523,21 @@ export async function fetchWorkspaceTasks(folder: string, signal: AbortSignal): 
 }
 
 export async function saveWorkspaceTask(
-  folder: string, task: Pick<WorkspaceTask, 'id' | 'title'> | Pick<WorkspaceTask, 'id' | 'completed'>,
+  folder: string, task: Pick<WorkspaceTask, 'id' | 'title'> | Pick<WorkspaceTask, 'id' | 'completed'> | { id: string; station_id: string | null },
 ): Promise<WorkspaceTask> {
   const endpoint = `/v1/workspace/folders/${encodeURIComponent(folder)}/tasks`;
   const creating = 'title' in task;
   const response = await apiFetch(creating ? endpoint : `${endpoint}/${encodeURIComponent(task.id)}`, {
     method: creating ? 'POST' : 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(creating ? task : { completed: task.completed }),
+    body: JSON.stringify(task),
   });
   if (!response.ok) throw new Error('Project task could not be saved.');
-  return response.json();
+  const saved: WorkspaceTask = await response.json();
+  if ('station_id' in task && saved.station_id !== task.station_id) {
+    throw new Error('The backend did not save the workstation owner.');
+  }
+  return saved;
 }
 
 export async function fetchSystemBuilderProposals(

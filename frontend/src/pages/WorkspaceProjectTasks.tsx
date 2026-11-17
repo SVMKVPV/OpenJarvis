@@ -1,7 +1,10 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { fetchWorkspaceTasks, saveWorkspaceTask, type WorkspaceTask } from '../lib/api';
 
-export function WorkspaceProjectTasks({ folder }: { folder: string }) {
+export function WorkspaceProjectTasks({ folder, stations }: {
+  folder: string;
+  stations: readonly { id: string; name: string }[];
+}) {
   const [tasks, setTasks] = useState<WorkspaceTask[] | null>(null);
   const [title, setTitle] = useState('');
   const [error, setError] = useState('');
@@ -70,6 +73,15 @@ export function WorkspaceProjectTasks({ folder }: { folder: string }) {
           <input type="checkbox" checked={task.completed} disabled={saving}
             onChange={(event) => void save({ id: task.id, completed: event.target.checked })} />
           {task.title}
+        </label>
+        <label>Owner
+          <select aria-label={`Owner for ${task.title}`} disabled={saving} value={task.station_id ?? ''}
+            onChange={(event) => void save({ id: task.id, station_id: event.target.value || null })}>
+            <option value="">Unassigned</option>
+            {task.station_id && !stations.some((station) => station.id === task.station_id) &&
+              <option value={task.station_id}>Unavailable workstation ({task.station_id})</option>}
+            {stations.map((station) => <option key={station.id} value={station.id}>{station.name}</option>)}
+          </select>
         </label>
       </li>)}
     </ul>}

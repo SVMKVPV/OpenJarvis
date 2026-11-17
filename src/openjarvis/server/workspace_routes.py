@@ -58,12 +58,17 @@ class ProjectTaskInput(BaseModel):
     title: TaskTitle
 
 
-class ProjectTaskStatus(BaseModel):
+StationId = Annotated[str, StringConstraints(min_length=1, max_length=128)]
+
+
+class ProjectTaskUpdate(BaseModel):
+    completed: bool | None = None
+    station_id: StationId | None = None
+
+
+class ProjectTask(ProjectTaskInput):
     completed: bool
-
-
-class ProjectTask(ProjectTaskInput, ProjectTaskStatus):
-    pass
+    station_id: StationId | None = None
 
 
 def _task_db() -> sqlite3.Connection:
@@ -73,15 +78,27 @@ def _task_db() -> sqlite3.Connection:
         conn.execute(
             "CREATE TABLE IF NOT EXISTS project_tasks ("
             "id TEXT PRIMARY KEY, folder TEXT NOT NULL, title TEXT NOT NULL, "
-            "completed INTEGER NOT NULL DEFAULT 0)"
+            "completed INTEGER NOT NULL DEFAULT 0, station_id TEXT)"
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS project_tasks_folder ON project_tasks(folder)"
         )
+        if not _has_station_column(conn):
+            with conn:
+                conn.execute("BEGIN IMMEDIATE")
+                if not _has_station_column(conn):
+                    conn.execute("ALTER TABLE project_tasks ADD COLUMN station_id TEXT")
     except sqlite3.Error:
         conn.close()
         raise
     return conn
+
+
+def _has_station_column(conn: sqlite3.Connection) -> bool:
+    return any(
+        row["name"] == "station_id"
+        for row in conn.execute("PRAGMA table_info(project_tasks)")
+    )
 
 
 @router.get("/folders/{folder}/tasks")
@@ -89,7 +106,7 @@ def list_tasks(folder: FolderName, response: Response) -> list[ProjectTask]:
     response.headers["Cache-Control"] = "no-store"
     with closing(_task_db()) as conn:
         rows = conn.execute(
-            "SELECT id, title, completed FROM project_tasks "
+            "SELECT id, title, completed, station_id FROM project_tasks "
             "WHERE folder = ? ORDER BY completed, rowid DESC",
             (folder,),
         )
@@ -105,24 +122,32 @@ def add_task(folder: FolderName, task: ProjectTaskInput) -> ProjectTask:
             (str(task.id), folder, task.title),
         )
         row = conn.execute(
-            "SELECT folder, title, completed FROM project_tasks WHERE id = ?",
+            "SELECT folder, id, title, completed, station_id "
+            "FROM project_tasks WHERE id = ?",
             (str(task.id),),
         ).fetchone()
         if row["folder"] != folder or row["title"] != task.title:
             raise HTTPException(409, "This task ID is already in use.")
-        return ProjectTask(id=task.id, title=row["title"], completed=row["completed"])
+        return ProjectTask(**dict(row))
 
 
 @router.patch("/folders/{folder}/tasks/{task_id}")
 def update_task(
-    folder: FolderName, task_id: UUID, status: ProjectTaskStatus
+    folder: FolderName, task_id: UUID, changes: ProjectTaskUpdate
 ) -> ProjectTask:
     with closing(_task_db()) as conn, conn:
         row = conn.execute(
-            "UPDATE project_tasks SET completed = ? WHERE id = ? AND folder = ? "
-            "RETURNING title",
-            (status.completed, str(task_id), folder),
+            "UPDATE project_tasks SET completed = COALESCE(?, completed), "
+            "station_id = CASE WHEN ? THEN ? ELSE station_id END "
+            "WHERE id = ? AND folder = ? RETURNING id, title, completed, station_id",
+            (
+                changes.completed,
+                "station_id" in changes.model_fields_set,
+                changes.station_id,
+                str(task_id),
+                folder,
+            ),
         ).fetchone()
         if row is None:
             raise HTTPException(404, "Project task was not found.")
-        return ProjectTask(id=task_id, title=row["title"], completed=status.completed)
+        return ProjectTask(**dict(row))

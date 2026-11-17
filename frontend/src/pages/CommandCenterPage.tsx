@@ -727,7 +727,7 @@ export function CommandCenterPage() {
         </nav>
         <div className="header-telemetry"><span><i /> SYSTEM ONLINE</span><span>{stations.length} STATIONS</span><span>LOCAL FIRST</span></div>
       </header>
-      {view === 'overview' ? <OrganizationOverview stations={stations} onOpen={openStation} accent={accent} /> : view === 'workspace' ? <SoftwareEngineeringWorkspace {...workspaceEntry} recipients={workflowRecipients} reportingRoutes={workflowReportingRoutes} onOpenStation={openStation} /> : view === 'dashboard' ? <CustomDashboard widgetIds={dashboardWidgetIds} setWidgetIds={setDashboardWidgetIds} onOpenStation={openStation} onOpenWorkflow={openWorkflowReview}
+      {view === 'overview' ? <OrganizationOverview stations={stations} onOpen={openStation} accent={accent} /> : view === 'workspace' ? <SoftwareEngineeringWorkspace {...workspaceEntry} recipients={workflowRecipients} projectStations={stations} reportingRoutes={workflowReportingRoutes} onOpenStation={openStation} /> : view === 'dashboard' ? <CustomDashboard widgetIds={dashboardWidgetIds} setWidgetIds={setDashboardWidgetIds} onOpenStation={openStation} onOpenWorkflow={openWorkflowReview}
         onOpenRecurringWorkflow={(initialDefinitionId, initialRecurrenceId) =>
           openWorkspace({ initialDefinitionId, initialRecurrenceId })} /> : <div className="command-grid">
         <aside className="station-rail">
