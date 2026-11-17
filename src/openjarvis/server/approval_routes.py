@@ -93,6 +93,12 @@ def _decide(
                 status_code=422, detail="Invalid reviewer checklist item"
             )
         checks = [items[index] for index in sorted(set(checked_items))]
+        if (
+            decision == STATUS_APPROVED
+            and action.payload.get("require_review_checklist") is True
+            and len(checks) != len(items)
+        ):
+            raise HTTPException(422, "Complete every reviewer check before approving.")
         runtime = _workflow_runtime(request)
         decided = runtime is not None and runtime.decide_approval(
             action, decision, note=note, checks=checks

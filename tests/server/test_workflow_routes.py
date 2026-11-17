@@ -265,6 +265,7 @@ def test_parallel_approvals_survive_runtime_restart(
                     {"id": "first", "type": "approval"},
                     {"id": "second", "type": "approval", "config": {"payload": {
                         "review_checklist": ["Check source", "", "Verify amount"],
+                        "require_review_checklist": True,
                         "decision_checks": ["Untrusted imported assertion"],
                     }}},
                 ],
@@ -310,9 +311,14 @@ def test_parallel_approvals_survive_runtime_restart(
         path = f"/v1/approvals/{second_id}/decide-with-note"
         invalid = client.post(path, json={"decision": "approve", "checked_items": [2]})
         assert invalid.status_code == 422
+        assert client.post(f"/v1/approvals/{second_id}/approve").status_code == 422
+        partial = client.post(path, json={"decision": "approve", "checked_items": [1]})
+        assert partial.status_code == 422
+        assert "Complete every reviewer check" in partial.json()["detail"]
+        assert wait_status(client, run_id, "waiting_approval")
         note = {
             "decision": "approve", "note": "Evidence checked against the source.",
-            "checked_items": [1],
+            "checked_items": [1, 0],
         }
         assert client.post(path, json=note).status_code == 200
         repeat = client.post(path, json={**note, "note": "Replacement"})
@@ -321,7 +327,8 @@ def test_parallel_approvals_survive_runtime_restart(
         assert any(
             step["node_id"] == "second"
             and step["metadata"].get("decision_note") == note["note"]
-            and step["metadata"].get("decision_checks") == ["Verify amount"]
+            and step["metadata"].get("decision_checks")
+            == ["Check source", "Verify amount"]
             for step in completed["steps"]
         )
     restarted.state.workflow_runtime.close()

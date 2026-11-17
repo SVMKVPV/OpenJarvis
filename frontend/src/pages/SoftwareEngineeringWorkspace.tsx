@@ -126,6 +126,7 @@ const FINANCE_EVIDENCE_REVIEW = {
       description: 'Compare the source documents, proposed workpaper, and advisory workpaper check. Verify figures, currencies, duplicates, and missing evidence before approving.',
       tier: 'high',
       payload: {
+        require_review_checklist: true,
         review_checklist: [
           'Match the vendor, document date, and reference to the original source.',
           'Verify the currency, total, and any explicitly stated GST or tax against the source.',
@@ -1149,9 +1150,13 @@ export function SoftwareEngineeringWorkspace({
     }
   };
 
+  const missingRequiredChecks = (approval: PendingApproval) =>
+    approval.payload.require_review_checklist === true && workflowReviewChecklist(approval)
+      .some((_, index) => !approvalChecks[approval.id]?.includes(index));
+
   const approvalButtons = (approval: PendingApproval) => (
     <>
-      <button type="button" disabled={!!decidingApprovalId}
+      <button type="button" disabled={!!decidingApprovalId || missingRequiredChecks(approval)}
         onClick={() => void decideWorkflow(approval, 'approve')}>Approve</button>
       <button type="button" disabled={!!decidingApprovalId}
         onClick={() => void decideWorkflow(approval, 'deny')}>Deny</button>
@@ -1538,6 +1543,17 @@ export function SoftwareEngineeringWorkspace({
                                 setStepConfig(node, 'payload', nextPayload);
                               }} />
                             <small>Enter one check per line.</small>
+                          </label>
+                          <label>
+                            <input type="checkbox" checked={payload.require_review_checklist === true}
+                              disabled={savingDefinition}
+                              onChange={(event) => {
+                                const nextPayload = { ...payload };
+                                if (event.target.checked) nextPayload.require_review_checklist = true;
+                                else delete nextPayload.require_review_checklist;
+                                setStepConfig(node, 'payload', nextPayload);
+                              }} />
+                            Require all checklist items before approval
                           </label>
                         </>;
                       })()}{' '}
@@ -2003,6 +2019,9 @@ export function SoftwareEngineeringWorkspace({
                                     </li>
                                   ))}
                                 </ul>
+                              )}
+                              {missingRequiredChecks(approval) && (
+                                <small>Complete every reviewer check before approving.</small>
                               )}
                               <label>Reviewer note (optional)
                                 <textarea rows={2} maxLength={2000} value={approvalNotes[approval.id] ?? ''}
