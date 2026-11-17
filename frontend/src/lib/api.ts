@@ -80,7 +80,7 @@ export const getBase = (): string => {
 // Resolve the local server API key (OPENJARVIS_API_KEY). When `jarvis serve`
 // is started with a key, AuthMiddleware 401s every /v1 and /api request that
 // lacks a Bearer token — so the frontend must send it (#266). Sourced from the
-// same settings blob as the API URL, with an optional build-time env override.
+// same settings blob as the API URL. Build-time variables are public.
 // Returns '' when unset, so a keyless local server keeps working unchanged.
 export const getApiKey = (): string => {
   try {
@@ -90,9 +90,6 @@ export const getApiKey = (): string => {
       if (parsed.apiKey) return String(parsed.apiKey);
     }
   } catch {}
-  if (import.meta.env.VITE_OPENJARVIS_API_KEY) {
-    return import.meta.env.VITE_OPENJARVIS_API_KEY as string;
-  }
   return '';
 };
 

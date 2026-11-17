@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { checkBackendConnection, checkHealth } from './api';
+import { authHeaders, checkBackendConnection, checkHealth } from './api';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -35,6 +35,15 @@ describe('browser backend health', () => {
 });
 
 describe('saved backend connection', () => {
+  it('only sends the API key entered in settings', () => {
+    vi.stubEnv('VITE_OPENJARVIS_API_KEY', 'build-time-key');
+    const getItem = vi.fn().mockReturnValue(null);
+    vi.stubGlobal('localStorage', { getItem });
+    expect(authHeaders()).toEqual({});
+    getItem.mockReturnValue(JSON.stringify({ apiKey: 'settings-key' }));
+    expect(authHeaders()).toEqual({ Authorization: 'Bearer settings-key' });
+  });
+
   it('checks the saved origin with its key and rejects redirects', async () => {
     vi.stubGlobal('localStorage', {
       getItem: () => JSON.stringify({ apiUrl: 'https://backend.example.test', apiKey: 'test-key' }),
