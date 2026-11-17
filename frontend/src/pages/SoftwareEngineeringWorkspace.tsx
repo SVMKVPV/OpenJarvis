@@ -705,6 +705,7 @@ export function SoftwareEngineeringWorkspace({
   const selectedDefinition = definitions.find((item) => item.id === definitionId);
   const [workflowInput, setWorkflowInput] = useState(initialUploadReference || initialGmailReference);
   const [workflowStart, setWorkflowStart] = useState('');
+  const [exportingDefinition, setExportingDefinition] = useState(false);
   const [definitionMessage, setDefinitionMessage] = useState('Loading saved workflows…');
   const [launchingSaved, setLaunchingSaved] = useState(false);
   const savedLaunch = useRef<{
@@ -1022,11 +1023,19 @@ export function SoftwareEngineeringWorkspace({
     }
   };
 
-  const exportSaved = () => {
-    if (!selectedDefinition) return;
-    const { graph } = selectedDefinition;
-    const safeName = graph.name.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '');
-    downloadWorkflowJson(`${safeName || 'workflow'}.openjarvis.json`, graph);
+  const exportSaved = async () => {
+    if (!selectedDefinition || savingDefinition || exportingDefinition) return;
+    setExportingDefinition(true);
+    try {
+      const { graph } = await fetchWorkflowDefinition(selectedDefinition.id);
+      const safeName = graph.name.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '');
+      downloadWorkflowJson(`${safeName || 'workflow'}.openjarvis.json`, graph);
+      setDefinitionMessage('Saved workflow JSON downloaded.');
+    } catch (error) {
+      setDefinitionMessage(error instanceof Error ? error.message : 'Could not download workflow JSON.');
+    } finally {
+      setExportingDefinition(false);
+    }
   };
 
   const exportRun = async (run: WorkflowRunDetail) => {
@@ -1813,8 +1822,9 @@ export function SoftwareEngineeringWorkspace({
                 onClick={editSaved} title="Replaces the current editor draft">
                 Load saved workflow into editor
               </button>
-              <button type="button" disabled={!selectedDefinition} onClick={exportSaved}>
-                Download saved workflow JSON
+              <button type="button" disabled={!selectedDefinition || savingDefinition || exportingDefinition}
+                onClick={() => void exportSaved()}>
+                {exportingDefinition ? 'Downloading…' : 'Download saved workflow JSON'}
               </button>
             </form>
           )}
