@@ -1,4 +1,5 @@
 import path from 'path';
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
@@ -13,6 +14,8 @@ const apiTarget = process.env.OPENJARVIS_VITE_PROXY_TARGET
   || process.env.VITE_API_URL
   || 'http://localhost:8000';
 
+const hostedBuild = process.env.npm_lifecycle_event === 'build:hosted';
+
 export default defineConfig({
   resolve: {
     alias: {
@@ -22,10 +25,21 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    hostedBuild && {
+      name: 'openjarvis-hosted-assets',
+      generateBundle() {
+        for (const fileName of ['sw.js', '_headers', '_redirects']) {
+          this.emitFile({
+            type: 'asset', fileName,
+            source: readFileSync(new URL(`./netlify/${fileName}`, import.meta.url)),
+          });
+        }
+      },
+    },
     VitePWA({
       // Native WebView releases bundle their assets and must never be held
       // back by a service worker from an older installed version.
-      disable: process.env.npm_lifecycle_event === 'build:tauri',
+      disable: hostedBuild || process.env.npm_lifecycle_event === 'build:tauri',
       registerType: 'autoUpdate',
       manifest: {
         name: 'OpenJarvis',
