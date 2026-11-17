@@ -77,6 +77,9 @@ export function WorkstationAgentInbox({ agentId, brainContext, onShare, onOpenWo
               <small>{message.status === 'pending' ? 'Waiting for agent' : 'Picked up by agent'}</small>
             )}
             <p>{message.content}</p>
+            {message.reporting_route && (
+              <small>{message.reporting_route.source_workstation} → {message.reporting_route.manager_workstation}</small>
+            )}
             {message.workflow_run_id && (
               <button type="button" onClick={() => onOpenWorkflow(message.workflow_run_id!)}>
                 Open approved workflow

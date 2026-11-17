@@ -687,7 +687,12 @@ class AgentExecutor:
             for message in pending:
                 is_handoff = message.get("mode") == "handoff"
                 prefix = "Handoff" if is_handoff else "User"
-                instructions.append(f"{prefix}: {message['content']}")
+                route = message.get("reporting_route") if is_handoff else None
+                provenance = (
+                    f"\nReporting route (background): {json.dumps(route)}"
+                    if route else ""
+                )
+                instructions.append(f"{prefix}: {message['content']}{provenance}")
                 if defer_delivery or is_handoff:
                     deferred_message_ids.append(message["id"])
                 else:

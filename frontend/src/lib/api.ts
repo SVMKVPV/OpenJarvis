@@ -164,9 +164,11 @@ export async function shareWorkflowWithBrain(runId: string, summary: string): Pr
   return result.added;
 }
 
+type WorkflowHandoffRoute = { source_workstation: string; manager_workstation: string };
+
 export async function assignWorkflowFollowUp(
   runId: string, agentId: string, instruction: string,
-  reportingRoute?: WorkflowFollowUp['reporting_route'],
+  reportingRoute?: WorkflowHandoffRoute,
 ): Promise<boolean> {
   const response = await apiFetch(`/v1/workflows/runs/${encodeURIComponent(runId)}/assign-workstation`, {
     method: 'POST',
@@ -187,7 +189,7 @@ export type WorkflowFollowUp = {
   agent_name: string;
   status: AgentMessage['status'];
   created_at: number;
-  reporting_route?: { source_workstation: string; manager_workstation: string };
+  reporting_route?: WorkflowHandoffRoute;
 };
 
 export async function fetchWorkflowFollowUps(
@@ -636,6 +638,7 @@ export interface AgentMessage {
   created_at: number;
   tool_calls?: PersistedToolCall[] | null;
   workflow_run_id?: string;
+  reporting_route?: WorkflowHandoffRoute;
 }
 
 export async function fetchManagedAgents(): Promise<ManagedAgent[]> {

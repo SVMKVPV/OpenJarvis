@@ -845,6 +845,8 @@ class AgentManager:
         if row["mode"] == "handoff" and row["id"].startswith("workflow:"):
             _, run_id, _ = row["id"].split(":", 2)
             workflow_reference["workflow_run_id"] = run_id
+            if row["handoff_route"]:
+                workflow_reference["reporting_route"] = json.loads(row["handoff_route"])
         return {
             "id": row["id"],
             "agent_id": row["agent_id"],

@@ -317,7 +317,15 @@ def test_error_exhaustion(scenario_harness: ScenarioHarness, mode: str) -> None:
         else h.manager.create_agent("Handoff recipient", agent_type="simple")
     )
     aid = agent["id"]
-    queued = h.manager.send_message(aid, "Keep this instruction", mode=mode)
+    route = {"source_workstation": "Finance", "manager_workstation": "Operations"}
+    if mode == "handoff":
+        assert h.manager.queue_workflow_handoff(
+            aid, "approved-run", "Keep this instruction", route=route,
+        )
+        queued, = h.manager.get_pending_messages(aid)
+        assert queued["reporting_route"] == route
+    else:
+        queued = h.manager.send_message(aid, "Keep this instruction", mode=mode)
 
     with patch("openjarvis.agents.executor.time.sleep"):
         h.executor.execute_tick(aid)
@@ -339,6 +347,12 @@ def test_error_exhaustion(scenario_harness: ScenarioHarness, mode: str) -> None:
     assert any(item["id"] == queued["id"] and item["status"] == "delivered"
                for item in history)
     assert any("Keep this instruction" in msg.content for msg in h.engine.last_messages)
+    if mode == "handoff":
+        assert any(
+            '"source_workstation": "Finance"' in msg.content
+            and '"manager_workstation": "Operations"' in msg.content
+            for msg in h.engine.last_messages
+        )
 
 
 # ---------------------------------------------------------------------------
