@@ -163,6 +163,40 @@ def test_recurrence_records_older_starts_skipped_during_catchup(tmp_path) -> Non
         reopened.close()
 
 
+def test_schedule_history_includes_retries_with_legacy_parent_links(tmp_path) -> None:
+    store = WorkflowRunStore(str(tmp_path / "workflow.db"))
+    graph = WorkflowBuilder("Recurring review").add_transform("format").build()
+    definition = store.save_definition(graph_to_dict(graph))
+    schedule = store.save_recurrence(definition["id"], "", 1000, 60)
+    try:
+        store.enqueue_due_recurrences(1000)
+        original, = store.list_runs()
+        store.finish(original["id"], status="failed")
+        parent = original
+        for status in ("failed", "succeeded"):
+            parent = store.create_run(
+                workflow_name=graph.name, graph=definition["graph"],
+                initial_input="", context={}, parent_run_id=parent["id"],
+            )
+            store.finish(parent["id"], status=status)
+        unrelated = store.create_run(
+            workflow_name=graph.name, graph=definition["graph"],
+            initial_input="", context={},
+        )
+        store.finish(unrelated["id"], status="succeeded")
+        scope = schedule["id"]
+        page = store.list_runs(recurrence_id=scope, limit=1)
+        assert [run["id"] for run in page] == [parent["id"]]
+        remaining = store.list_runs(recurrence_id=scope, before=parent["id"])
+        assert [run["id"] for run in remaining] == [
+            parent["parent_run_id"], original["id"],
+        ]
+        matches = store.list_runs(recurrence_id=scope, status="succeeded")
+        assert [run["id"] for run in matches] == [parent["id"]]
+    finally:
+        store.close()
+
+
 def test_store_persists_run_and_step_history(tmp_path) -> None:
     path = tmp_path / "workflow.db"
     graph = WorkflowBuilder("persisted").add_transform("format").build()

@@ -385,10 +385,9 @@ export function SoftwareEngineeringWorkspace({
   const historyBefore = historyCursors[historyCursors.length - 1];
   const [historyPaging, setHistoryPaging] = useState(false);
   const [historyLoadedFor, setHistoryLoadedFor] = useState<string | null>(null);
+  const [historyRefresh, setHistoryRefresh] = useState(0);
   const historyKey = JSON.stringify([historyStatus, historyBefore, historyRecurrence]);
-  const currentHistory = historyLoadedFor === historyKey ? workflowRuns.filter(
-    (run) => !historyRecurrence || run.recurrence_id === historyRecurrence,
-  ) : [];
+  const currentHistory = historyLoadedFor === historyKey ? workflowRuns : [];
   const showScheduleHistory = (id: string) => {
     setHistoryError('');
     setHistoryRecurrence(id);
@@ -474,7 +473,7 @@ export function SoftwareEngineeringWorkspace({
       if (retry) {
         setHistoryStatus('');
         setHistoryCursors(['']);
-        setWorkflowRuns((current) => [retry, ...current.filter((run) => run.id !== retry.id)]);
+        setHistoryRefresh((version) => version + 1);
         inspectRun(retry.id);
       }
       const messages = {
@@ -780,7 +779,7 @@ export function SoftwareEngineeringWorkspace({
       savedLaunch.current = null;
       setHistoryStatus('');
       setHistoryCursors(['']);
-      setWorkflowRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
+      setHistoryRefresh((version) => version + 1);
       setDefinitionMessage(repeated ? 'Workflow run confirmed.' : run.status === 'scheduled' ? 'Workflow scheduled.' : 'Workflow queued.');
     } catch (error) {
       setDefinitionMessage(error instanceof Error ? error.message : 'Could not start workflow.');
@@ -926,7 +925,7 @@ export function SoftwareEngineeringWorkspace({
     void refresh();
     const timer = window.setInterval(refresh, 2500);
     return () => { cancelled = true; window.clearInterval(timer); };
-  }, [historyBefore, historyKey, historyStatus, historyRecurrence]);
+  }, [historyBefore, historyKey, historyStatus, historyRecurrence, historyRefresh]);
 
   const launchGuardedWorkflow = async () => {
     if (launchingGuarded) return;
@@ -940,7 +939,7 @@ export function SoftwareEngineeringWorkspace({
       });
       setHistoryStatus('');
       setHistoryCursors(['']);
-      setWorkflowRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
+      setHistoryRefresh((version) => version + 1);
       inspectRun(run.id);
     } catch (error) {
       setGuardedLaunchError(error instanceof Error ? error.message : 'Could not start guarded delivery.');

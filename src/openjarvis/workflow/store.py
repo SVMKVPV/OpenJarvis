@@ -76,6 +76,8 @@ class WorkflowRunStore:
                     ON workflow_runs(created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_workflow_runs_status
                     ON workflow_runs(status);
+                CREATE INDEX IF NOT EXISTS idx_workflow_runs_parent
+                    ON workflow_runs(parent_run_id) WHERE parent_run_id IS NOT NULL;
 
                 CREATE TABLE IF NOT EXISTS workflow_launch_keys (
                     definition_id TEXT NOT NULL,
@@ -620,19 +622,27 @@ class WorkflowRunStore:
         limit = max(1, min(int(limit), 200))
         filters: list[str] = []
         params: list[Any] = []
+        query = ""
+        if recurrence_id:
+            query = (
+                "WITH RECURSIVE schedule_runs(id) AS ("
+                "SELECT id FROM workflow_runs WHERE recurrence_id = ? UNION "
+                "SELECT child.id FROM workflow_runs AS child "
+                "JOIN schedule_runs AS parent ON child.parent_run_id = parent.id"
+                ") "
+            )
+            filters.append("id IN (SELECT id FROM schedule_runs)")
+            params.append(recurrence_id)
         if status:
             filters.append("status = ?")
             params.append(status)
-        if recurrence_id:
-            filters.append("recurrence_id = ?")
-            params.append(recurrence_id)
         if before:
             filters.append(
                 "(created_at, id) < "
                 "(SELECT created_at, id FROM workflow_runs WHERE id = ?)"
             )
             params.append(before)
-        query = "SELECT * FROM workflow_runs"
+        query += "SELECT * FROM workflow_runs"
         if filters:
             query += " WHERE " + " AND ".join(filters)
         if status == "scheduled" and not recent:
