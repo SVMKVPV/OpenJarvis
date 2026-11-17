@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import sqlite3
 import time
+from contextlib import closing
 from threading import Event
 
 import pytest
@@ -99,6 +101,44 @@ def test_recurrence_skips_an_active_review_after_restart(tmp_path) -> None:
         } == {(other["id"], start + 60), (recurrence["id"], start + 120)}
     finally:
         reopened.close()
+
+
+def test_recurrence_catchup_counter_migrates_existing_schedules(tmp_path) -> None:
+    path = str(tmp_path / "workflow.db")
+    with closing(sqlite3.connect(path)) as conn, conn:
+        conn.execute(
+            """
+            CREATE TABLE workflow_recurrences (
+                id TEXT PRIMARY KEY, definition_id TEXT NOT NULL,
+                initial_input TEXT NOT NULL, next_due_at REAL NOT NULL,
+                interval_seconds INTEGER NOT NULL,
+                skipped_while_active INTEGER NOT NULL DEFAULT 0,
+                paused INTEGER NOT NULL DEFAULT 0,
+                revision INTEGER NOT NULL DEFAULT 0
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO workflow_recurrences VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("existing", "saved", "original input", 1000, 60, 4, 1, 3),
+        )
+
+    store = WorkflowRunStore(path)
+    try:
+        schedule, = store.list_recurrences("saved")
+        assert schedule == {
+            "id": "existing",
+            "definition_id": "saved",
+            "initial_input": "original input",
+            "next_due_at": 1000,
+            "interval_seconds": 60,
+            "skipped_while_active": 4,
+            "skipped_during_catchup": 0,
+            "paused": True,
+            "revision": 3,
+        }
+    finally:
+        store.close()
 
 
 def test_recurrence_records_older_starts_skipped_during_catchup(tmp_path) -> None:
