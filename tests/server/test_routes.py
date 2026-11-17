@@ -1768,7 +1768,7 @@ class TestHealthEndpoint:
         assert resp.status_code == 200
         assert resp.json()["status"] == "ok"
         assert resp.headers["x-openjarvis-command-center-api"] == "1"
-        assert resp.headers["x-openjarvis-command-center-api-revision"] == "2"
+        assert resp.headers["x-openjarvis-command-center-api-revision"] == "3"
 
     def test_unhealthy(self):
         engine = _make_engine()
