@@ -25,7 +25,7 @@ import {
   type WorkflowRunDetail,
   type WorkflowRunAction,
 } from '../lib/api';
-import { getSyncStatus, listConnectors } from '../lib/connectors-api';
+import { getSyncStatus, listConnectors, triggerSync } from '../lib/connectors-api';
 import { isEmbedOnlyModel } from '../lib/model-capabilities';
 import { useAppStore } from '../lib/store';
 import type { ConnectorInfo, SyncStatus } from '../types/connectors';
@@ -373,9 +373,31 @@ export function SoftwareEngineeringWorkspace({
   const [pluginRefresh, setPluginRefresh] = useState(0);
   const [syncConnectorId, setSyncConnectorId] = useState('');
   const [connectorSync, setConnectorSync] = useState<SyncStatus | 'unavailable' | null>(null);
+  const [syncStarting, setSyncStarting] = useState(false);
+  const [syncMessage, setSyncMessage] = useState('');
+  const [syncRefresh, setSyncRefresh] = useState(0);
   const syncConnectorConfigured = liveConnectors?.some(
     (source) => source.connector_id === syncConnectorId && source.connected,
   ) ?? false;
+  const syncBusy = connectorSync !== 'unavailable' &&
+    (connectorSync?.state === 'syncing' || connectorSync?.state === 'stopping');
+  const startConnectorSync = async () => {
+    if (!syncConnectorConfigured || syncStarting || syncBusy) return;
+    setSyncStarting(true);
+    setSyncMessage('');
+    try {
+      const result = await triggerSync(syncConnectorId);
+      if (result.status === 'cancelled') {
+        setSyncMessage('Sync request was cancelled. Check the connection before retrying.');
+      }
+      setConnectorSync(null);
+      setSyncRefresh((version) => version + 1);
+    } catch (error) {
+      setSyncMessage(error instanceof Error ? error.message : 'Could not start sync.');
+    } finally {
+      setSyncStarting(false);
+    }
+  };
   const [workflowRuns, setWorkflowRuns] = useState<WorkflowRunSummary[]>([]);
   const [historyStatus, setHistoryStatus] = useState<WorkflowRunStatus | ''>('');
   const [historyRecurrence, setHistoryRecurrence] = useState('');
@@ -893,13 +915,25 @@ export function SoftwareEngineeringWorkspace({
   useEffect(() => {
     if (!syncConnectorConfigured) return;
     let active = true;
-    getSyncStatus(syncConnectorId).then((status) => {
-      if (active) setConnectorSync(status);
-    }).catch(() => {
-      if (active) setConnectorSync('unavailable');
-    });
-    return () => { active = false; };
-  }, [syncConnectorId, syncConnectorConfigured, pluginRefresh]);
+    let timer: number | undefined;
+    const refresh = async () => {
+      try {
+        const status = await getSyncStatus(syncConnectorId);
+        if (!active) return;
+        setConnectorSync(status);
+        if (status.state === 'syncing' || status.state === 'stopping') {
+          timer = window.setTimeout(refresh, 2500);
+        }
+      } catch {
+        if (active) setConnectorSync('unavailable');
+      }
+    };
+    void refresh();
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [syncConnectorId, syncConnectorConfigured, pluginRefresh, syncRefresh]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1059,8 +1093,9 @@ export function SoftwareEngineeringWorkspace({
                 })}
               </div>
               <label>Connector sync history
-                <select value={syncConnectorConfigured ? syncConnectorId : ''} onChange={(event) => {
+                <select value={syncConnectorConfigured ? syncConnectorId : ''} disabled={syncStarting} onChange={(event) => {
                   setConnectorSync(null);
+                  setSyncMessage('');
                   setSyncConnectorId(event.target.value);
                 }}>
                   <option value="">Choose a configured connector</option>
@@ -1072,22 +1107,31 @@ export function SoftwareEngineeringWorkspace({
                 </select>
               </label>
               {syncConnectorConfigured && (
-                <p role="status">
-                  {connectorSync === 'unavailable' ? 'Sync history unavailable.' : connectorSync
-                    ? `Sync status: ${connectorSync.state}. ${connectorSync.last_sync
-                      ? `Last successful sync: ${new Date(connectorSync.last_sync).toLocaleString()}.`
-                      : 'No successful sync recorded.'} ${connectorSync.error ?? ''}`
-                    : 'Loading sync history…'}
-                </p>
+                <>
+                  <p role="status">
+                    {connectorSync === 'unavailable' ? 'Sync history unavailable.' : connectorSync
+                      ? `Sync status: ${connectorSync.state}. ${connectorSync.last_sync
+                        ? `Last successful sync: ${new Date(connectorSync.last_sync).toLocaleString()}.`
+                        : 'No successful sync recorded.'} ${connectorSync.error ?? ''}`
+                      : 'Loading sync history…'}
+                  </p>
+                  <button type="button" disabled={syncStarting || syncBusy || connectorSync === null}
+                    onClick={() => void startConnectorSync()}>
+                    {syncStarting ? 'Starting sync…' : connectorSync !== 'unavailable' && connectorSync?.state === 'error'
+                      ? 'Retry sync' : 'Sync now'}
+                  </button>
+                  {syncMessage && <p role="status">{syncMessage}</p>}
+                </>
               )}
             </details>
           </> : <p>{pluginCatalogState === 'loading' ? 'READING LOCAL PLUGIN CATALOG…' : 'START LOCAL AI OR CONNECT A BACKEND TO LOAD OPERATIONAL PLUGINS.'}</p>}
-          <button type="button" className="workflow-launch" disabled={pluginCatalogState === 'loading'}
+          <button type="button" className="workflow-launch" disabled={pluginCatalogState === 'loading' || syncStarting}
             onClick={() => {
               setPluginCatalogState('loading');
               setLiveConnectors(null);
               setMcpMessage('');
               setConnectorSync(null);
+              setSyncMessage('');
               setPluginRefresh((version) => version + 1);
             }}>
             Refresh plugins
