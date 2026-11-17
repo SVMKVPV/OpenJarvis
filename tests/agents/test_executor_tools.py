@@ -60,6 +60,42 @@ class _NonToolAgent:
         raise AssertionError("non-tool agent should use the managed tool loop")
 
 
+def test_immediate_tick_leaves_older_message_queued(tmp_path, monkeypatch):
+    AgentRegistry.register_value("capturing", _CapturingToolAgent)
+    prompts = []
+
+    def capture(self, input_text, context=None):
+        prompts.append(input_text)
+        return AgentResult(content="saved reply")
+
+    monkeypatch.setattr(_CapturingToolAgent, "run", capture)
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        agent = manager.create_agent("station", agent_type="capturing")
+        agent_id = agent["id"]
+        earlier = manager.send_message(agent_id, "Previously queued", mode="queued")
+        latest = manager.send_message(agent_id, "Reply to this now", mode="immediate")
+        system = FakeSystem(engine=FakeEngine([{"content": "unused"}]))
+        executor = AgentExecutor(manager, EventBus(), system=system)
+
+        executor.execute_tick(agent_id, message_id=latest["id"])
+        assert len(prompts) == 1
+        assert "Reply to this now" in prompts[0]
+        assert "Previously queued" not in prompts[0]
+        assert [m["id"] for m in manager.get_pending_messages(agent_id)] == [
+            earlier["id"]
+        ]
+
+        executor.execute_tick(agent_id, message_id=latest["id"])
+        assert len(prompts) == 1
+        executor.execute_tick(agent_id)
+        assert "Previously queued" in prompts[1]
+        assert "Reply to this now" not in prompts[1]
+        assert manager.get_pending_messages(agent_id) == []
+    finally:
+        manager.close()
+
+
 class _SpecializedNonToolAgent:
     """Non-tool agent that must retain its specialized execution path."""
 

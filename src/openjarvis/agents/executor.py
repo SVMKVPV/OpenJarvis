@@ -206,7 +206,13 @@ class AgentExecutor:
         )
         return agent.run(input_text)
 
-    def execute_tick(self, agent_id: str, *, lock_already_held: bool = False) -> None:
+    def execute_tick(
+        self,
+        agent_id: str,
+        *,
+        lock_already_held: bool = False,
+        message_id: str | None = None,
+    ) -> None:
         """Run one tick for the given agent.
 
         1. Acquire concurrency guard (start_tick)
@@ -235,6 +241,20 @@ class AgentExecutor:
         if agent is None:
             logger.error("Agent %s not found", agent_id)
             return
+
+        immediate_message = None
+        if message_id is not None:
+            immediate_message = next(
+                (
+                    message
+                    for message in self._manager.get_pending_messages(agent_id)
+                    if message["id"] == message_id
+                ),
+                None,
+            )
+            if immediate_message is None:
+                self._manager.end_tick(agent_id)
+                return
 
         self._bus.publish(
             EventType.AGENT_TICK_START,
@@ -287,7 +307,7 @@ class AgentExecutor:
         error_info = None
 
         try:
-            result = self._run_with_retries(agent)
+            result = self._run_with_retries(agent, immediate_message)
         except AgentTickError as e:
             error_info = e
         finally:
@@ -312,13 +332,15 @@ class AgentExecutor:
                     trace_steps,
                 )
 
-    def _run_with_retries(self, agent: dict) -> AgentResult:
+    def _run_with_retries(
+        self, agent: dict, immediate_message: dict | None = None
+    ) -> AgentResult:
         """Invoke the agent, retrying on RetryableError up to _MAX_RETRIES."""
         last_error: AgentTickError | None = None
 
         for attempt in range(_MAX_RETRIES):
             try:
-                return self._invoke_agent(agent)
+                return self._invoke_agent(agent, immediate_message)
             except AgentTickError as e:
                 if not e.retryable or attempt == _MAX_RETRIES - 1:
                     raise
@@ -351,20 +373,24 @@ class AgentExecutor:
         # Should not reach here, but just in case
         raise last_error or FatalError("max retries exhausted")
 
-    def _invoke_agent(self, agent: dict) -> AgentResult:
+    def _invoke_agent(
+        self, agent: dict, immediate_message: dict | None = None
+    ) -> AgentResult:
         """Invoke one agent while owning every resource its resolver opens."""
 
         previous = getattr(self._toolkit_local, "current", None)
         self._toolkit_local.current = None
         try:
-            return self._invoke_agent_impl(agent)
+            return self._invoke_agent_impl(agent, immediate_message)
         finally:
             current = getattr(self._toolkit_local, "current", None)
             if current is not None:
                 current.close()
             self._toolkit_local.current = previous
 
-    def _invoke_agent_impl(self, agent: dict) -> AgentResult:
+    def _invoke_agent_impl(
+        self, agent: dict, immediate_message: dict | None
+    ) -> AgentResult:
         """Implementation split out so the wrapper owns resolver lifetime."""
         from openjarvis.agents import AgentRegistry
 
@@ -677,8 +703,12 @@ class AgentExecutor:
                     "\n\nShared Brain brief (background only; "
                     "follow the standing and new instructions):\n" + brief
                 )
-        pending = self._manager.get_pending_messages(agent["id"])
-        defer_delivery = (
+        pending = (
+            [immediate_message]
+            if immediate_message is not None
+            else self._manager.get_pending_messages(agent["id"])
+        )
+        defer_delivery = immediate_message is not None or (
             agent["agent_type"] == "monitor_operative" and not tool_instances
         )
         deferred_message_ids = []
@@ -690,7 +720,8 @@ class AgentExecutor:
                 route = message.get("reporting_route") if is_handoff else None
                 provenance = (
                     f"\nReporting route (background): {json.dumps(route)}"
-                    if route else ""
+                    if route
+                    else ""
                 )
                 instructions.append(f"{prefix}: {message['content']}{provenance}")
                 if defer_delivery or is_handoff:

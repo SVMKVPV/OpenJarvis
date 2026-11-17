@@ -793,11 +793,13 @@ def _get_mcp_tools_locked(
                 _unregister_mcp_client(app_state, client)
             client = None
 
-            outcomes.append({
-                "name": name,
-                "status": "available" if staged else "no_tools",
-                "tool_count": len(staged),
-            })
+            outcomes.append(
+                {
+                    "name": name,
+                    "status": "available" if staged else "no_tools",
+                    "tool_count": len(staged),
+                }
+            )
             logger.info(
                 "Discovered %d MCP tools from server '%s'",
                 len(staged),
@@ -1777,7 +1779,9 @@ def create_agent_manager_router(
         try:
             return manager.refresh_template_prompt(agent_id, template_id)
         except (KeyError, AgentTemplateNotFound) as exc:
-            raise HTTPException(status_code=404, detail="Agent or role template not found.") from exc
+            raise HTTPException(
+                status_code=404, detail="Agent or role template not found."
+            ) from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -2254,7 +2258,7 @@ def create_agent_manager_router(
                         _time.time() - _start,
                         agent_id,
                     )
-                    executor.execute_tick(agent_id)
+                    executor.execute_tick(agent_id, message_id=msg["id"])
                     logger.info(
                         "Immediate tick completed for agent %s in %.1fs",
                         agent_id,

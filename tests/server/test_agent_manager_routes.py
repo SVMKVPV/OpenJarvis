@@ -51,12 +51,16 @@ class TestAgentManagerRoutes:
         assert resp.json()["agents"] == []
 
     def test_refresh_role_prompt_preserves_config_and_inbox(self, client, manager):
-        agent = manager.create_agent("Email", "monitor_operative", config={
-            "system_prompt": "Old prompt",
-            "instruction": "Use our approved wording.",
-            "model": "test-model",
-            "schedule_type": "manual",
-        })
+        agent = manager.create_agent(
+            "Email",
+            "monitor_operative",
+            config={
+                "system_prompt": "Old prompt",
+                "instruction": "Use our approved wording.",
+                "model": "test-model",
+                "schedule_type": "manual",
+            },
+        )
         agent_id = agent["id"]
         message = manager.send_message(agent_id, "Draft a reply.")
         url = f"/v1/managed-agents/{agent_id}/refresh-template-prompt/email_briefing"
@@ -402,6 +406,7 @@ class TestAgentManagerRoutes:
         from openjarvis.agents import executor as executor_module
 
         captured = []
+        ticks = []
 
         class _CapturingExecutor:
             def __init__(self, **kwargs):
@@ -411,7 +416,7 @@ class TestAgentManagerRoutes:
                 captured.append(system)
 
             def execute_tick(self, *args, **kwargs):
-                pass
+                ticks.append((args, kwargs))
 
         policy = object()
         limiter = object()
@@ -439,6 +444,12 @@ class TestAgentManagerRoutes:
         assert len(captured) == 1
         assert captured[0].capability_policy is policy
         assert captured[0].rate_limiter is limiter
+        expected = (
+            {"message_id": response.json()["id"]}
+            if route_kind == "immediate"
+            else {"lock_already_held": True}
+        )
+        assert ticks == [((agent["id"],), expected)]
 
 
 def test_run_agent_concurrent_returns_409(tmp_path):
