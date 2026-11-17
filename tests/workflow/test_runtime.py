@@ -4,6 +4,7 @@ import sqlite3
 import time
 from contextlib import closing
 from threading import Event, Thread
+from types import SimpleNamespace
 
 import pytest
 
@@ -164,7 +165,9 @@ def test_recurrence_records_older_starts_skipped_during_catchup(tmp_path) -> Non
         reopened.close()
 
 
-def test_schedule_history_includes_retries_with_legacy_parent_links(tmp_path) -> None:
+def test_schedule_history_includes_retries_with_legacy_parent_links(
+    tmp_path, monkeypatch
+) -> None:
     store = WorkflowRunStore(str(tmp_path / "workflow.db"))
     graph = WorkflowBuilder("Recurring review").add_transform("format").build()
     definition = store.save_definition(graph_to_dict(graph))
@@ -172,6 +175,15 @@ def test_schedule_history_includes_retries_with_legacy_parent_links(tmp_path) ->
     try:
         store.enqueue_due_recurrences(1000)
         original, = store.list_runs()
+        # Force the two retries to share a timestamp and have reverse UUID order.
+        ids = iter(("f" * 32, "0" * 32, "a" * 32))
+        monkeypatch.setattr(
+            "openjarvis.workflow.store.uuid",
+            SimpleNamespace(uuid4=lambda: SimpleNamespace(hex=next(ids))),
+        )
+        monkeypatch.setattr(
+            "openjarvis.workflow.store.time", SimpleNamespace(time=lambda: 1001)
+        )
         store.finish(original["id"], status="failed")
         parent = original
         for status in ("failed", "succeeded"):

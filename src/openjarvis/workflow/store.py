@@ -226,13 +226,13 @@ class WorkflowRunStore:
             params.append(search)
         if before:
             filters.append(
-                "(created_at, id) < "
-                "(SELECT created_at, id FROM workflow_definitions WHERE id = ?)"
+                "(created_at, rowid) < "
+                "(SELECT created_at, rowid FROM workflow_definitions WHERE id = ?)"
             )
             params.append(before)
         if filters:
             query += " WHERE " + " AND ".join(filters)
-        query += " ORDER BY created_at DESC, id DESC LIMIT ?"
+        query += " ORDER BY created_at DESC, rowid DESC LIMIT ?"
         params.append(limit)
         with self._lock:
             rows = self._conn.execute(query, params).fetchall()
@@ -700,18 +700,19 @@ class WorkflowRunStore:
             filters.append("instr(lower(initial_input), lower(?)) > 0")
             params.append(input_contains)
         if before:
+            # Runs can share a timestamp. Their rowids preserve insertion order.
             filters.append(
-                "(created_at, id) < "
-                "(SELECT created_at, id FROM workflow_runs WHERE id = ?)"
+                "(created_at, rowid) < "
+                "(SELECT created_at, rowid FROM workflow_runs WHERE id = ?)"
             )
             params.append(before)
         query += "SELECT * FROM workflow_runs"
         if filters:
             query += " WHERE " + " AND ".join(filters)
         if status == "scheduled" and not recent:
-            query += " ORDER BY scheduled_at, created_at, id LIMIT ?"
+            query += " ORDER BY scheduled_at, created_at, rowid LIMIT ?"
         else:
-            query += " ORDER BY created_at DESC, id DESC LIMIT ?"
+            query += " ORDER BY created_at DESC, rowid DESC LIMIT ?"
         params.append(limit)
         with self._lock:
             rows = self._conn.execute(query, params).fetchall()

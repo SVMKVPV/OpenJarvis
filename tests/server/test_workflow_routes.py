@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 
 import pytest
 
@@ -613,6 +614,14 @@ def test_saved_launch_checks_revision_and_confirms_retries(
 
 def test_saved_workflow_pages_remain_stable_with_new_definitions(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(tmp_path / "workflow.db"))
+    ids = iter(digit * 32 for digit in "fca0")
+    monkeypatch.setattr(
+        "openjarvis.workflow.store.uuid",
+        SimpleNamespace(uuid4=lambda: SimpleNamespace(hex=next(ids))),
+    )
+    monkeypatch.setattr(
+        "openjarvis.workflow.store.time", SimpleNamespace(time=lambda: 1000)
+    )
     app = FastAPI()
     app.state.workflow_system = None
     app.include_router(create_workflow_runs_router())
