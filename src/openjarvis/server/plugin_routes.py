@@ -24,7 +24,7 @@ def discover_mcp_tools(request: Request) -> dict:
     from openjarvis.server.agent_manager_routes import _get_mcp_tools
 
     state = request.app.state
-    _, tools = _get_mcp_tools(state)
+    _, tools = _get_mcp_tools(state, retry_unavailable=True)
     return {
         "tool_count": len(tools),
         "tool_names": sorted(tools),

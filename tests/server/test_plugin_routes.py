@@ -78,7 +78,7 @@ def test_mcp_discovery_is_explicit_and_returns_tool_names(monkeypatch) -> None:
     assert result.json() == {
         "tool_count": 2, "tool_names": ["get_node", "search_nodes"], "servers": [],
     }
-    discover.assert_called_once()
+    discover.assert_called_once_with(client.app.state, retry_unavailable=True)
 
 
 def test_mcp_discovery_reports_partial_failure_without_connection_details(
@@ -99,18 +99,22 @@ def test_mcp_discovery_reports_partial_failure_without_connection_details(
     ])
     monkeypatch.setattr("openjarvis.core.config.load_config", lambda: config)
     unavailable, empty, docs = (MagicMock() for _ in range(3))
+    recovered, still_empty = MagicMock(), MagicMock()
     unavailable.initialize.side_effect = RuntimeError("private connection details")
     monkeypatch.setattr("openjarvis.mcp.transport.StdioTransport", MagicMock())
-    monkeypatch.setattr(
-        "openjarvis.mcp.client.MCPClient",
-        MagicMock(side_effect=[unavailable, empty, docs]),
-    )
+    clients = MagicMock(side_effect=[unavailable, empty, docs, recovered, still_empty])
+    monkeypatch.setattr("openjarvis.mcp.client.MCPClient", clients)
     tool = MagicMock()
     tool.spec.name = "search_nodes"
+    recovered_tool = MagicMock()
+    recovered_tool.spec.name = "get_node"
 
     def provider(client, *, server_name):
         instance = MagicMock()
-        instance.discover.return_value = [tool] if client is docs else []
+        instance.discover.return_value = {
+            docs: [tool],
+            recovered: [recovered_tool],
+        }.get(client, [])
         return instance
 
     monkeypatch.setattr("openjarvis.tools.mcp_adapter.MCPToolProvider", provider)
@@ -126,3 +130,18 @@ def test_mcp_discovery_reports_partial_failure_without_connection_details(
                 {"name": "Documentation", "status": "available", "tool_count": 1},
             ],
         }
+        retried = client.post("/v1/plugins/mcp/discover")
+        assert retried.json() == {
+            "tool_count": 2,
+            "tool_names": ["get_node", "search_nodes"],
+            "servers": [
+                {"name": "Unavailable", "status": "available", "tool_count": 1},
+                {"name": "Empty", "status": "no_tools", "tool_count": 0},
+                {"name": "Documentation", "status": "available", "tool_count": 1},
+            ],
+        }
+        assert clients.call_count == 5
+        docs.initialize.assert_called_once()
+        docs.close.assert_not_called()
+        unavailable.close.assert_called_once()
+        still_empty.close.assert_called_once()

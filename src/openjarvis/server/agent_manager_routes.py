@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import contextvars
+import hashlib
+import json
 import logging
 import re as _re
 import threading
@@ -653,19 +655,22 @@ def _merge_tool_call_fragments(
             entry["function"]["arguments"] += fn["arguments"]
 
 
-def _get_mcp_tools(app_state: Any) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+def _get_mcp_tools(
+    app_state: Any, *, retry_unavailable: bool = False
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Return (openai_tools_list, mcp_adapters_by_name).
 
     Lazily discovers MCP tools from config and caches them on ``app_state``
-    so that subsequent requests reuse the same connections.
+    so that subsequent requests reuse the same connections. An explicit
+    discovery check can retry unavailable servers in the cached configuration.
     """
     lock = _mcp_state_lock(app_state, "_mcp_discovery_lock")
     with lock:
-        return _get_mcp_tools_locked(app_state)
+        return _get_mcp_tools_locked(app_state, retry_unavailable=retry_unavailable)
 
 
 def _get_mcp_tools_locked(
-    app_state: Any,
+    app_state: Any, *, retry_unavailable: bool = False
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Discover MCP tools while the runtime's discovery lock is held."""
 
@@ -673,7 +678,11 @@ def _get_mcp_tools_locked(
         return [], {}
 
     cached = getattr(app_state, "_mcp_tools_cache", None)
-    if cached is not None:
+    previous_outcomes = getattr(app_state, "_mcp_discovery_outcomes", [])
+    if cached is not None and (
+        not retry_unavailable
+        or all(outcome["status"] == "available" for outcome in previous_outcomes)
+    ):
         return cached
 
     preloaded = list(getattr(app_state, "mcp_tools", []) or [])
@@ -699,7 +708,6 @@ def _get_mcp_tools_locked(
 
     from openjarvis.core.config import load_config, resolve_mcp_servers
 
-    app_state._mcp_discovery_outcomes = []
     openai_tools: List[Dict[str, Any]] = []
     adapters_by_name: Dict[str, Any] = {}
 
@@ -707,10 +715,10 @@ def _get_mcp_tools_locked(
         app_config = load_config()
     except Exception as exc:
         logger.warning("Failed to load config for MCP discovery: %s", exc)
-        return openai_tools, adapters_by_name
+        return cached or (openai_tools, adapters_by_name)
 
     if not app_config.tools.mcp.enabled or not app_config.tools.mcp.servers:
-        return openai_tools, adapters_by_name
+        return cached or (openai_tools, adapters_by_name)
 
     from openjarvis.mcp.client import MCPClient
     from openjarvis.mcp.transport import StdioTransport, StreamableHTTPTransport
@@ -723,10 +731,22 @@ def _get_mcp_tools_locked(
         )
     except (OSError, UnicodeError, ValueError, TypeError) as exc:
         logger.warning("Failed to parse MCP server config: %s", exc)
-        return openai_tools, adapters_by_name
+        return cached or (openai_tools, adapters_by_name)
+
+    fingerprint = hashlib.sha256(
+        json.dumps(server_list, sort_keys=True).encode()
+    ).digest()
+    if cached is not None:
+        # Keep active adapters intact. Retry only entries from the same config.
+        if fingerprint != getattr(app_state, "_mcp_discovery_config", None):
+            return cached
+        openai_tools, adapters_by_name = list(cached[0]), dict(cached[1])
 
     outcomes: list[dict[str, str | int]] = []
     for index, cfg in enumerate(server_list, start=1):
+        if cached is not None and previous_outcomes[index - 1]["status"] == "available":
+            outcomes.append(previous_outcomes[index - 1])
+            continue
         name = str(cfg.get("name") or f"MCP server {index}")
         url = cfg.get("url")
         # Bearer token from config — mirrors the builder.py fix for #461.
@@ -821,6 +841,7 @@ def _get_mcp_tools_locked(
             )
 
     app_state._mcp_discovery_outcomes = outcomes
+    app_state._mcp_discovery_config = fingerprint
     if openai_tools:
         clients_lock = _mcp_state_lock(app_state, "_mcp_clients_lock")
         with clients_lock:
