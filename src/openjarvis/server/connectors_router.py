@@ -143,19 +143,19 @@ def create_connectors_router():
 
     def _connector_summary(connector_id: str, instance: Any) -> Dict[str, Any]:
         """Build the dict returned by GET /connectors."""
-        chunks = 0
+        sources = _knowledge_sources(connector_id, instance)
+        indexed_sources = dict.fromkeys(sources, 0)
         try:
             from openjarvis.connectors.store import KnowledgeStore
 
-            sources = _knowledge_sources(connector_id, instance)
             placeholders = ", ".join("?" for _ in sources)
             with KnowledgeStore() as store:
                 rows = store._conn.execute(
-                    f"SELECT COUNT(*) FROM knowledge_chunks "
-                    f"WHERE source IN ({placeholders})",
+                    f"SELECT source, COUNT(*) FROM knowledge_chunks "
+                    f"WHERE source IN ({placeholders}) GROUP BY source",
                     sources,
-                ).fetchone()
-                chunks = rows[0] if rows else 0
+                )
+                indexed_sources.update(rows)
         except Exception:
             pass
 
@@ -164,7 +164,8 @@ def create_connectors_router():
             "display_name": getattr(instance, "display_name", connector_id),
             "auth_type": getattr(instance, "auth_type", "unknown"),
             "connected": instance.is_connected(),
-            "chunks": chunks,
+            "chunks": sum(indexed_sources.values()),
+            "indexed_sources": indexed_sources,
         }
 
     def _maybe_oauth_client_pair(

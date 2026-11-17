@@ -449,6 +449,11 @@ def test_disconnect_preserves_source_owned_by_connected_peer(app) -> None:
                 doc_id="gmail:shared-owner",
             )
 
+        listing = app.get("/v1/connectors").json()["connectors"]
+        imap = next(item for item in listing if item["connector_id"] == "gmail_imap")
+        assert imap["indexed_sources"] == {"gmail": imap["chunks"]}
+        assert imap["chunks"] >= 1
+
         response = app.post("/v1/connectors/gmail_imap/disconnect")
         assert response.status_code == 200
 

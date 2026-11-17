@@ -412,6 +412,29 @@ export function SoftwareEngineeringWorkspace({
   const [warning, setWarning] = useState('');
   const [runtimePlugins, setRuntimePlugins] = useState<RuntimePlugin[]>([]);
   const [liveConnectors, setLiveConnectors] = useState<ConnectorInfo[] | null>(null);
+  const indexOptions = useMemo(() => {
+    const items = new Map<string, { names: string[]; chunks?: number }>();
+    for (const connector of liveConnectors ?? []) {
+      const entries = Object.entries(connector.indexed_sources ?? {
+        [connector.connector_id]: connector.chunks,
+      });
+      for (const [source, chunks] of entries) {
+        const current = items.get(source);
+        items.set(source, {
+          names: [...new Set([...(current?.names ?? []), connector.display_name])],
+          chunks: chunks ?? current?.chunks,
+        });
+      }
+    }
+    return items;
+  }, [liveConnectors]);
+  const indexHint = (source: unknown) => {
+    if (typeof source !== 'string' || !source) return null;
+    const connector = liveConnectors?.find((item) => item.connector_id === source);
+    const count = indexOptions.get(source)?.chunks ?? connector?.chunks;
+    if (count === undefined) return null;
+    return count ? `${count.toLocaleString()} indexed chunks` : 'No indexed chunks yet. Check Data Sources.';
+  };
   const [pluginCatalogState, setPluginCatalogState] = useState<'loading' | 'online' | 'offline'>('loading');
   const [checkingMcp, setCheckingMcp] = useState(false);
   const [mcpMessage, setMcpMessage] = useState('');
@@ -1309,9 +1332,11 @@ export function SoftwareEngineeringWorkspace({
           </button>
           {guardedLaunchError && <p role="status">{guardedLaunchError}</p>}
           <datalist id="indexed-workflow-sources">
-            <option value="upload" />
-            {liveConnectors?.filter((source) => source.connector_id !== 'upload')
-              .map((source) => <option key={source.connector_id} value={source.connector_id} />)}
+            <option value="upload" label="Uploaded documents" />
+            {[...indexOptions].filter(([source]) => source !== 'upload').map(([source, item]) => (
+              <option key={source} value={source}
+                label={`${item.names.join(' / ')}${item.chunks === undefined ? '' : ` · ${item.chunks} indexed chunks`}`} />
+            ))}
           </datalist>
           <form className="connector-editor" onSubmit={saveDefinition}>
             <button type="button" disabled={savingDefinition} onClick={() => {
@@ -1394,6 +1419,7 @@ export function SoftwareEngineeringWorkspace({
                               <input value={typeof node.config.source === 'string' ? node.config.source : ''}
                                 disabled={savingDefinition} list="indexed-workflow-sources"
                                 onChange={(event) => setStepConfig(node, 'source', event.target.value)} />
+                              <small>{indexHint(node.config.source)}</small>
                             </label>
                             <label>
                               <input type="checkbox" checked={node.config.require_match === true}
@@ -1506,7 +1532,8 @@ export function SoftwareEngineeringWorkspace({
                     <label>Indexed source
                       <input list="indexed-workflow-sources" value={stepSetting}
                         onChange={(event) => setStepSetting(event.target.value)} placeholder="gmail" />
-                      <small>Uses the incoming text as a query against the local index.</small>
+                      <small>{indexHint(stepSetting) ?? 'Searches the local index with incoming text.'}</small>
+                      <Link to="/data-sources">Manage data sources</Link>
                     </label>
                   ) : stepType === 'agent' ? (
                     <label>Model instructions (optional)
