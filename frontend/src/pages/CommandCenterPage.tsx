@@ -622,6 +622,13 @@ export function CommandCenterPage() {
     const agentId = stationAgentIds[station.id];
     return agentId ? [{ stationId: station.id, name: station.name, agentId }] : [];
   });
+  const workflowReportingRoutes = stations.flatMap((station) => {
+    const manager = reportingManager(station, stations);
+    return manager ? [{
+      stationId: station.id, stationName: station.name,
+      managerId: manager.id, managerName: manager.name,
+    }] : [];
+  });
   const [dashboardWidgetIds, setDashboardWidgetIds] = useLocalPreference(
     'openjarvis.command-center.widget-order.v1',
     () => DEFAULT_WIDGET_IDS,
@@ -720,7 +727,7 @@ export function CommandCenterPage() {
         </nav>
         <div className="header-telemetry"><span><i /> SYSTEM ONLINE</span><span>{stations.length} STATIONS</span><span>LOCAL FIRST</span></div>
       </header>
-      {view === 'overview' ? <OrganizationOverview stations={stations} onOpen={openStation} accent={accent} /> : view === 'workspace' ? <SoftwareEngineeringWorkspace {...workspaceEntry} recipients={workflowRecipients} onOpenStation={openStation} /> : view === 'dashboard' ? <CustomDashboard widgetIds={dashboardWidgetIds} setWidgetIds={setDashboardWidgetIds} onOpenStation={openStation} onOpenWorkflow={openWorkflowReview}
+      {view === 'overview' ? <OrganizationOverview stations={stations} onOpen={openStation} accent={accent} /> : view === 'workspace' ? <SoftwareEngineeringWorkspace {...workspaceEntry} recipients={workflowRecipients} reportingRoutes={workflowReportingRoutes} onOpenStation={openStation} /> : view === 'dashboard' ? <CustomDashboard widgetIds={dashboardWidgetIds} setWidgetIds={setDashboardWidgetIds} onOpenStation={openStation} onOpenWorkflow={openWorkflowReview}
         onOpenRecurringWorkflow={(initialDefinitionId, initialRecurrenceId) =>
           openWorkspace({ initialDefinitionId, initialRecurrenceId })} /> : <div className="command-grid">
         <aside className="station-rail">

@@ -2,10 +2,17 @@ import { type FormEvent, useEffect, useState } from 'react';
 import { assignWorkflowFollowUp, fetchWorkflowFollowUps, type WorkflowFollowUp } from '../lib/api';
 
 export type WorkflowRecipient = { stationId: string; name: string; agentId: string };
+export type WorkflowReportingRoute = {
+  stationId: string;
+  stationName: string;
+  managerId: string;
+  managerName: string;
+};
 
-export function WorkflowWorkstationAssignment({ runId, recipients, onOpenStation }: {
+export function WorkflowWorkstationAssignment({ runId, recipients, reportingRoutes, onOpenStation }: {
   runId: string;
   recipients: WorkflowRecipient[];
+  reportingRoutes: WorkflowReportingRoute[];
   onOpenStation?: (stationId: string) => void;
 }) {
   const [stationId, setStationId] = useState('');
@@ -66,8 +73,28 @@ export function WorkflowWorkstationAssignment({ runId, recipients, onOpenStation
       <summary>Assign approved follow-up</summary>
       {recipients.length === 0 ? <p>Link a managed agent to a workstation to assign follow-ups.</p> : (
         <form className="connector-editor" onSubmit={assign}>
+          {reportingRoutes.length > 0 && (
+            <label>Use a workstation’s reporting manager
+              <select aria-label="Use a workstation’s reporting manager" value="" disabled={pending}
+                onChange={(event) => {
+                  const route = reportingRoutes.find((entry) => entry.stationId === event.target.value);
+                  if (!route) return;
+                  const manager = recipients.find((entry) => entry.stationId === route.managerId);
+                  setStationId(manager?.stationId ?? '');
+                  setConfirmedStation('');
+                  setMessage(manager ? '' : `Link an agent to ${route.managerName} before assigning a follow-up.`);
+                }}>
+                <option value="">Choose the source workstation</option>
+                {reportingRoutes.map((route) => (
+                  <option key={route.stationId} value={route.stationId}>
+                    {route.stationName} → {route.managerName}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label>Recipient workstation
-            <select value={stationId} disabled={pending} required
+            <select aria-label="Recipient workstation" value={stationId} disabled={pending} required
               onChange={(event) => setStationId(event.target.value)}>
               <option value="">Choose a workstation</option>
               {recipients.map((entry) => (

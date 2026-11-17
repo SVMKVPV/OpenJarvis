@@ -32,7 +32,7 @@ import type { ConnectorInfo, SyncStatus } from '../types/connectors';
 import { ReviewedLeadForm } from './ReviewedLeadForm';
 import { WorkflowDraftMap } from './WorkflowDraftMap';
 import { WorkflowBrainHandoff } from './WorkflowBrainHandoff';
-import { WorkflowWorkstationAssignment, type WorkflowRecipient } from './WorkflowWorkstationAssignment';
+import { WorkflowWorkstationAssignment, type WorkflowRecipient, type WorkflowReportingRoute } from './WorkflowWorkstationAssignment';
 import { WorkflowEvidenceUpload } from './WorkflowEvidenceUpload';
 import { WorkflowRecurrenceEditor } from './WorkflowRecurrenceEditor';
 import './software-workspace.css';
@@ -337,9 +337,10 @@ export function SoftwareEngineeringWorkspace({
   initialRunId = '', initialDefinitionId = '', initialGmailReference = '',
   initialRecurrenceId = '',
   initialUploadReference = '', initialStarter,
-  recipients = [], onOpenStation,
+  recipients = [], reportingRoutes = [], onOpenStation,
 }: WorkspaceEntry & {
   recipients?: WorkflowRecipient[];
+  reportingRoutes?: WorkflowReportingRoute[];
   onOpenStation?: (stationId: string) => void;
 } = {}) {
   const [folders, setFolders] = useState(INITIAL_FOLDERS);
@@ -1645,7 +1646,7 @@ export function SoftwareEngineeringWorkspace({
                     <div key={runDetail.id}>
                       <WorkflowBrainHandoff runId={runDetail.id} />
                       <WorkflowWorkstationAssignment runId={runDetail.id} recipients={recipients}
-                        onOpenStation={onOpenStation} />
+                        reportingRoutes={reportingRoutes} onOpenStation={onOpenStation} />
                     </div>
                   )}
                   {runDetail.status === 'succeeded' && runDetail.steps.some((step) =>
