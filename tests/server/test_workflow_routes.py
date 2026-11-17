@@ -207,6 +207,14 @@ def test_recurring_workflow_catches_up_once_after_restart(tmp_path, monkeypatch)
                 pytest.fail("Recurring run did not reach its approval checkpoint")
             assert len(runs) == 1
             assert runs[0]["scheduled_at"] == overdue["next_due_at"] + 180
+            scoped = client.get("/v1/workflows/runs", params={
+                "recurrence_id": overdue["id"], "status": "waiting_approval",
+            }).json()
+            assert scoped["runs"] == runs
+            assert scoped["recurrence_id"] == overdue["id"]
+            assert client.get("/v1/workflows/runs", params={
+                "recurrence_id": updated["id"],
+            }).json()["runs"] == []
             schedule = client.get(url).json()["recurrences"][0]
             assert schedule["next_due_at"] == overdue["next_due_at"] + 240
             upcoming = client.get(upcoming_url).json()["recurrences"][0]

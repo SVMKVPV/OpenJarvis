@@ -1479,16 +1479,22 @@ export async function fetchWorkflowRuns(status?: WorkflowRunStatus): Promise<Wor
   return data.runs || [];
 }
 
-export async function fetchWorkflowHistory(before: string, status: WorkflowRunStatus | ''): Promise<{
+export async function fetchWorkflowHistory(
+  before: string, status: WorkflowRunStatus | '', recurrenceId = '',
+): Promise<{
   runs: WorkflowRunSummary[];
   supportsPaging: boolean;
 }> {
   const query = new URLSearchParams({ limit: '6', recent: 'true' });
   if (status) query.set('status', status);
   if (before) query.set('before', before);
+  if (recurrenceId) query.set('recurrence_id', recurrenceId);
   const response = await apiFetch(`/v1/workflows/runs?${query}`);
   if (!response.ok) throw new Error('Workflow history unavailable.');
   const page = await response.json();
+  if (recurrenceId && page.recurrence_id !== recurrenceId) {
+    throw new Error('Schedule-specific history is unavailable on this backend.');
+  }
   if (!Array.isArray(page.runs) || (before && page.before !== before)) {
     throw new Error('Workflow history paging is unavailable on this backend.');
   }

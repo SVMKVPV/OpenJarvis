@@ -615,6 +615,7 @@ class WorkflowRunStore:
         limit: int = 50,
         before: str = "",
         recent: bool = False,
+        recurrence_id: str = "",
     ) -> list[dict[str, Any]]:
         limit = max(1, min(int(limit), 200))
         filters: list[str] = []
@@ -622,6 +623,9 @@ class WorkflowRunStore:
         if status:
             filters.append("status = ?")
             params.append(status)
+        if recurrence_id:
+            filters.append("recurrence_id = ?")
+            params.append(recurrence_id)
         if before:
             filters.append(
                 "(created_at, id) < "

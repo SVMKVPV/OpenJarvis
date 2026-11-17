@@ -378,12 +378,23 @@ export function SoftwareEngineeringWorkspace({
   ) ?? false;
   const [workflowRuns, setWorkflowRuns] = useState<WorkflowRunSummary[]>([]);
   const [historyStatus, setHistoryStatus] = useState<WorkflowRunStatus | ''>('');
+  const [historyRecurrence, setHistoryRecurrence] = useState('');
+  const [historyError, setHistoryError] = useState('');
+  const historySection = useRef<HTMLHeadingElement>(null);
   const [historyCursors, setHistoryCursors] = useState<string[]>(['']);
   const historyBefore = historyCursors[historyCursors.length - 1];
   const [historyPaging, setHistoryPaging] = useState(false);
   const [historyLoadedFor, setHistoryLoadedFor] = useState<string | null>(null);
-  const historyKey = JSON.stringify([historyStatus, historyBefore]);
-  const currentHistory = historyLoadedFor === historyKey ? workflowRuns : [];
+  const historyKey = JSON.stringify([historyStatus, historyBefore, historyRecurrence]);
+  const currentHistory = historyLoadedFor === historyKey ? workflowRuns.filter(
+    (run) => !historyRecurrence || run.recurrence_id === historyRecurrence,
+  ) : [];
+  const showScheduleHistory = (id: string) => {
+    setHistoryError('');
+    setHistoryRecurrence(id);
+    setHistoryCursors(['']);
+    historySection.current?.focus();
+  };
   const [inspectedRunId, setInspectedRunId] = useState(initialRunId);
   const runInspector = useRef<HTMLElement>(null);
   const [runDetail, setRunDetail] = useState<WorkflowRunDetail | null>(null);
@@ -894,23 +905,28 @@ export function SoftwareEngineeringWorkspace({
   useEffect(() => {
     let cancelled = false;
     const refresh = async () => {
-      try {
-        const [history, approvals] = await Promise.all([fetchWorkflowHistory(historyBefore, historyStatus), fetchPendingApprovals()]);
-        if (!cancelled) {
-          setWorkflowRuns(history.runs);
-          setHistoryPaging(history.supportsPaging);
-          setHistoryLoadedFor(historyKey);
-          setWorkflowApprovals(approvals.filter((item) => typeof item.payload.workflow_run_id === 'string'));
-          setWorkflowState('online');
-        }
-      } catch {
-        if (!cancelled) setWorkflowState('offline');
+      const [history, approvals] = await Promise.allSettled([
+        fetchWorkflowHistory(historyBefore, historyStatus, historyRecurrence),
+        fetchPendingApprovals(),
+      ]);
+      if (cancelled) return;
+      if (history.status === 'fulfilled') {
+        setWorkflowRuns(history.value.runs);
+        setHistoryPaging(history.value.supportsPaging);
+        setHistoryLoadedFor(historyKey);
+        setHistoryError('');
+      } else {
+        setHistoryError(history.reason instanceof Error ? history.reason.message : 'Workflow history unavailable.');
       }
+      if (approvals.status === 'fulfilled') {
+        setWorkflowApprovals(approvals.value.filter((item) => typeof item.payload.workflow_run_id === 'string'));
+      }
+      setWorkflowState(history.status === 'fulfilled' || approvals.status === 'fulfilled' ? 'online' : 'offline');
     };
     void refresh();
     const timer = window.setInterval(refresh, 2500);
     return () => { cancelled = true; window.clearInterval(timer); };
-  }, [historyBefore, historyKey, historyStatus]);
+  }, [historyBefore, historyKey, historyStatus, historyRecurrence]);
 
   const launchGuardedWorkflow = async () => {
     if (launchingGuarded) return;
@@ -1394,6 +1410,7 @@ export function SoftwareEngineeringWorkspace({
           {selectedDefinition && (
             <WorkflowRecurrenceEditor key={selectedDefinition.id}
               definitionId={selectedDefinition.id} initialInput={workflowInput}
+              onShowHistory={showScheduleHistory}
               initiallyOpen={selectedDefinition.id === initialDefinitionId}
               initialRecurrenceId={selectedDefinition.id === initialDefinitionId ? initialRecurrenceId : undefined} />
           )}
@@ -1416,6 +1433,12 @@ export function SoftwareEngineeringWorkspace({
             );
           })}
           {approvalMessage && <p role="status">{approvalMessage}</p>}
+          <h3 ref={historySection} tabIndex={-1}>
+            {historyRecurrence ? 'Schedule run history' : 'Workflow run history'}
+          </h3>
+          {historyRecurrence && (
+            <button type="button" onClick={() => showScheduleHistory('')}>Show all workflows</button>
+          )}
           <label>Run status filter
             <select value={historyStatus} onChange={(event) => {
               setHistoryStatus(event.target.value as WorkflowRunStatus | '');
@@ -1427,6 +1450,7 @@ export function SoftwareEngineeringWorkspace({
               ))}
             </select>
           </label>
+          {historyError && <p role="status">{historyError}</p>}
           {historyLoadedFor === historyKey && currentHistory.length === 0 && <p>No matching runs.</p>}
           <div className="workflow-runs">
             {currentHistory.slice(0, 5).map((run) => (

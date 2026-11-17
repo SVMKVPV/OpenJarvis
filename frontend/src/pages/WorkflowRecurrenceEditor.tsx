@@ -2,12 +2,13 @@ import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { type WorkflowRecurrence, workflowRecurrences } from '../lib/api';
 
 export function WorkflowRecurrenceEditor({
-  definitionId, initialInput, initiallyOpen, initialRecurrenceId,
+  definitionId, initialInput, initiallyOpen, initialRecurrenceId, onShowHistory,
 }: {
   definitionId: string;
   initialInput: string;
   initiallyOpen?: boolean;
   initialRecurrenceId?: string;
+  onShowHistory: (recurrenceId: string) => void;
 }) {
   const [schedules, setSchedules] = useState<WorkflowRecurrence[]>([]);
   const [firstRun, setFirstRun] = useState('');
@@ -127,6 +128,7 @@ export function WorkflowRecurrenceEditor({
               {!!schedule.skipped_during_catchup && (
                 <span>Skipped during catch-up {schedule.skipped_during_catchup}{' '}</span>
               )}
+              <button type="button" onClick={() => onShowHistory(schedule.id)}>View run history</button>{' '}
               {typeof schedule.paused === 'boolean' && (
                 <button type="button" disabled={pending} onClick={() => void changeSchedule(
                   { id: schedule.id, paused: !schedule.paused },
