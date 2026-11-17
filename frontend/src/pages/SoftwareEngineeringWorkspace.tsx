@@ -163,6 +163,7 @@ const LEAD_DISCOVERY = {
       ].join(' '),
     } },
     { id: 'lead-review', type: 'approval', config: {
+      action_type: 'lead_discovery_review',
       description: 'Verify each candidate and its source before saving it in the Growth lead register.',
       tier: 'high',
     } },
@@ -189,6 +190,7 @@ const COMPETITOR_AD_REVIEW = {
       ].join('\n'),
     } },
     { id: 'ad-review', type: 'approval', config: {
+      action_type: 'competitor_ad_review',
       description: 'Check the cited ads, dates and evidence for each pattern before sharing the brief or acting on the proposal.',
       tier: 'high',
     } },

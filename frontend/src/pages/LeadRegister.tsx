@@ -1,7 +1,10 @@
 import { type FormEvent, useEffect, useState } from 'react';
 import { fetchSavedLeads, saveLead, type SavedLead } from '../lib/api';
 
-export function LeadRegister({ onOpenDiscovery }: { onOpenDiscovery: () => void }) {
+export function LeadRegister({ onOpenDiscovery, onOpenWorkflow }: {
+  onOpenDiscovery: () => void;
+  onOpenWorkflow: (runId: string) => void;
+}) {
   const [leads, setLeads] = useState<SavedLead[] | null>(null);
   const [organization, setOrganization] = useState('');
   const [source, setSource] = useState('');
@@ -58,13 +61,17 @@ export function LeadRegister({ onOpenDiscovery }: { onOpenDiscovery: () => void 
       {leads?.length === 0 && <p>No saved leads yet.</p>}
       {!!leads?.length && (
         <ul aria-label="Latest saved leads">
-          {leads.map((lead) => (
-            <li key={lead.id} className="py-2 break-all">
+          {leads.map((lead) => {
+            const runId = lead.workflow_run_id;
+            return <li key={lead.id} className="py-2 break-all">
               <strong>{lead.organization}</strong>
               <div>{lead.source_reference}</div>
-              {lead.workflow_run_id && <small>Reviewed workflow {lead.workflow_run_id.slice(0, 8)}</small>}
-            </li>
-          ))}
+              {runId && <button type="button" onClick={() => onOpenWorkflow(runId)}
+                aria-label={`Open lead review for ${lead.organization} run ${runId.slice(0, 8)}`}>
+                Open reviewed workflow
+              </button>}
+            </li>;
+          })}
         </ul>
       )}
     </section>

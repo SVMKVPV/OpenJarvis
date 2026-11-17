@@ -39,6 +39,24 @@ const COPY = {
     noMatches: 'No delivery reviews match that search.',
     empty: 'No delivery quality reviews yet.',
   },
+  growth: {
+    approvalType: 'lead_discovery_review',
+    legacyNode: 'lead-review',
+    title: 'Recent lead reviews',
+    search: 'Search lead inputs',
+    loading: 'Loading lead review history.',
+    noMatches: 'No lead reviews match that search.',
+    empty: 'No lead discovery reviews yet.',
+  },
+  research: {
+    approvalType: 'competitor_ad_review',
+    legacyNode: 'ad-review',
+    title: 'Recent competitor ad reviews',
+    search: 'Search competitor ad inputs',
+    loading: 'Loading competitor ad review history.',
+    noMatches: 'No competitor ad reviews match that search.',
+    empty: 'No competitor ad reviews yet.',
+  },
 };
 
 type ReviewHistory =
