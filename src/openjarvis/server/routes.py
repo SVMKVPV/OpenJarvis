@@ -1461,7 +1461,9 @@ async def health(request: Request, response: Response):
     healthy = engine.health()
     if not healthy:
         raise HTTPException(status_code=503, detail="Engine unhealthy")
+    # Keep the legacy marker for desktop builds that still test it verbatim.
     response.headers["X-OpenJarvis-Command-Center-API"] = "1"
+    response.headers["X-OpenJarvis-Command-Center-API-Revision"] = "2"
     return {"status": "ok"}
 
 

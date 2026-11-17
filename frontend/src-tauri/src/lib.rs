@@ -789,7 +789,7 @@ async fn wait_for_jarvis_health(
             Ok(resp) => {
                 let status = resp.status();
                 if status.is_success() {
-                    return if !require_command_center_api || supports_command_center_api(&resp) {
+                    return if !require_command_center_api || supports_command_center_api(resp.headers()) {
                         JarvisStartResult::Ready
                     } else {
                         JarvisStartResult::Incompatible
@@ -818,17 +818,22 @@ async fn wait_for_jarvis_health(
     }
 }
 
-fn supports_command_center_api(response: &reqwest::Response) -> bool {
-    response
-        .headers()
-        .get("x-openjarvis-command-center-api")
-        .is_some_and(|version| version == "1")
+// Revision 2 adds approval-type filtering for System Builder proposal history.
+const MIN_COMMAND_CENTER_API_REVISION: u32 = 2;
+
+fn supports_command_center_api(headers: &reqwest::header::HeaderMap) -> bool {
+    headers
+        .get("x-openjarvis-command-center-api-revision")
+        .and_then(|revision| revision.to_str().ok())
+        .and_then(|revision| revision.parse::<u32>().ok())
+        .is_some_and(|revision| revision >= MIN_COMMAND_CENTER_API_REVISION)
 }
 
 fn incompatible_command_center_api_message() -> String {
     format!(
-        "The service on port {} does not report the Command Center API needed by +         this desktop build. Stop that service, then relaunch so OpenJarvis can +         start its bundled backend.",
-        JARVIS_PORT,
+        "The service on port {} does not report Command Center API revision {} or later. \
+         Stop that service, then relaunch so OpenJarvis can start its bundled backend.",
+        JARVIS_PORT, MIN_COMMAND_CENTER_API_REVISION,
     )
 }
 
@@ -1546,7 +1551,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
                     .ok()
                     .filter(|response| response.status().is_success());
                 if let Some(response) = confirmation {
-                    if require_command_center_api && !supports_command_center_api(&response) {
+                    if require_command_center_api && !supports_command_center_api(response.headers()) {
                         status.lock().await.error = Some(incompatible_command_center_api_message());
                         return;
                     }
@@ -3646,6 +3651,23 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn command_center_backend_must_report_supported_revision() {
+        use reqwest::header::{HeaderMap, HeaderValue};
+
+        let mut headers = HeaderMap::new();
+        headers.insert("x-openjarvis-command-center-api", HeaderValue::from_static("1"));
+        assert!(!super::supports_command_center_api(&headers));
+
+        for (value, compatible) in [("1", false), ("invalid", false), ("2", true), ("3", true)] {
+            headers.insert(
+                "x-openjarvis-command-center-api-revision",
+                HeaderValue::from_static(value),
+            );
+            assert_eq!(super::supports_command_center_api(&headers), compatible);
+        }
+    }
+
     use super::{
         boot_plan, default_local_model, discard_pending_inference_setup_at,
         format_extension_import_failure, format_missing_rust_toolchain, format_port_unavailable,
