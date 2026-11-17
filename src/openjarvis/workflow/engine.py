@@ -680,6 +680,19 @@ class WorkflowEngine:
                 output=combined.split("\n")[0] if combined else "",
             )
         operation, separator, field_names = expr.partition(":")
+        if separator and operation == "json_literal":
+            try:
+                value = json.loads(field_names)
+                if not isinstance(value, dict):
+                    raise ValueError("Expected a JSON object")
+                output = json.dumps(value, allow_nan=False)
+            except (ValueError, RecursionError):
+                return WorkflowStepResult(
+                    node_id=node.id,
+                    success=False,
+                    output="Expected a valid JSON object.",
+                )
+            return WorkflowStepResult(node_id=node.id, output=output)
         if separator and operation in {"json_field", "json_select"}:
             try:
                 data = json.loads(combined)

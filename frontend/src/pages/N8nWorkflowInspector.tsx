@@ -1,8 +1,11 @@
 import { useRef, useState } from 'react';
 import { inspectN8nWorkflow } from '../lib/n8n-workflow-inspection';
+import type { SavedWorkflowDefinition } from '../lib/api';
 import { WorkflowDraftMap } from './WorkflowDraftMap';
 
-export function N8nWorkflowInspector() {
+export function N8nWorkflowInspector({ onLoadDraft }: {
+  onLoadDraft: (graph: SavedWorkflowDefinition['graph']) => void;
+}) {
   const [workflow, setWorkflow] = useState<ReturnType<typeof inspectN8nWorkflow> | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -36,11 +39,17 @@ export function N8nWorkflowInspector() {
           if (file) void inspect(file);
         }} />
     </label>
-    <small>Review the graph and connection requirements before rebuilding it in OpenJarvis.</small>
+    <small>Linear workflows with a Manual Trigger, No Operation, and fixed JSON output can be loaded into the editor.</small>
     {loading && <p role="status">Reading workflow…</p>}
     {error && <p role="alert">{error}</p>}
     {workflow && <>
       <h4>{workflow.name}</h4>
+      {workflow.draft ? <>
+        <button type="button" onClick={() => workflow.draft && onLoadDraft(workflow.draft)}>
+          Load as OpenJarvis draft
+        </button>
+        <small>Replaces the editor draft. Review literal values before saving or running.</small>
+      </> : <p>{workflow.conversionIssue}</p>}
       {workflow.skippedConnections > 0 && <p role="status">
         Skipped {workflow.skippedConnections} {workflow.skippedConnections === 1 ? 'connection' : 'connections'} with missing nodes.
       </p>}

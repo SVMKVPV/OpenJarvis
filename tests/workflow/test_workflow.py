@@ -464,6 +464,23 @@ class TestWorkflowEngine:
         assert result.status == "failed"
         assert result.steps[0].metadata["iterations"] == 0
 
+    @pytest.mark.parametrize(
+        ("literal", "expected_status"),
+        [('{"status":"ready"}', "succeeded"), ("[1, 2]", "failed")],
+    )
+    def test_fixed_json_transform_ignores_prior_input(self, literal, expected_status):
+        graph = (
+            WorkflowBuilder("Fixed output")
+            .add_transform("data", transform=f"json_literal:{literal}")
+            .add_transform("finish", transform="concatenate")
+            .connect("data", "finish")
+            .build()
+        )
+        result = WorkflowEngine().run(graph, None, initial_input="Unrelated input")
+        assert result.status == expected_status
+        if expected_status == "succeeded":
+            assert result.final_output == '{"status": "ready"}'
+
     def test_keep_selected_json_fields(self):
         graph = (
             WorkflowBuilder("select")

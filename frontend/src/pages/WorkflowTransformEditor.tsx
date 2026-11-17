@@ -6,6 +6,7 @@ const MODES = [
   ['first_line', 'Keep first line'],
   ['json_field', 'Extract JSON field'],
   ['json_select', 'Keep selected JSON fields'],
+  ['json_literal', 'Output fixed JSON'],
 ] as const;
 
 export function WorkflowTransformEditor({ stepId, expression, disabled, onChange }: {
@@ -16,7 +17,7 @@ export function WorkflowTransformEditor({ stepId, expression, disabled, onChange
 }) {
   const [operation, ...fields] = expression.split(':');
   const knownMode = MODES.some(([value]) => value === expression)
-    || (operation === 'json_field' || operation === 'json_select') && fields.length > 0;
+    || (operation === 'json_field' || operation === 'json_select' || operation === 'json_literal') && fields.length > 0;
   const mode = !expression ? 'concatenate' : knownMode ? operation : 'custom';
   const needsFields = mode === 'json_field' || mode === 'json_select';
   const [sample, setSample] = useState('');
@@ -47,7 +48,8 @@ export function WorkflowTransformEditor({ stepId, expression, disabled, onChange
     <label>Transform for {stepId}
       <select value={mode} disabled={disabled} onChange={(event) => {
         const next = event.target.value;
-        onChange(next === 'json_field' || next === 'json_select' ? `${next}:` : next);
+        if (next === 'json_literal') onChange('json_literal:{}');
+        else onChange(next === 'json_field' || next === 'json_select' ? `${next}:` : next);
       }}>
         {mode === 'custom' && <option value="custom">{expression} (configured)</option>}
         {MODES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -57,6 +59,10 @@ export function WorkflowTransformEditor({ stepId, expression, disabled, onChange
       <input value={fields.join(':')} disabled={disabled} maxLength={980}
         onChange={(event) => onChange(`${mode}:${event.target.value}`)} />
       {mode === 'json_select' && <small>Separate field names with commas.</small>}
+    </label>}
+    {mode === 'json_literal' && <label>Fixed JSON for {stepId}
+      <textarea value={fields.join(':')} disabled={disabled} rows={4} maxLength={987}
+        onChange={(event) => onChange(`json_literal:${event.target.value}`)} />
     </label>}
     <details>
       <summary>Preview transform for {stepId}</summary>

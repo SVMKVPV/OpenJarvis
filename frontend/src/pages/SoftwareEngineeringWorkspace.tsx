@@ -1890,7 +1890,13 @@ export function SoftwareEngineeringWorkspace({
                 selectedDefinition?.graph.nodes.some((node) => node.id === 'delivery-evidence')} />
           )}
           <p><a href="https://zie619.github.io/n8n-workflows/" target="_blank" rel="noopener noreferrer">Browse optional n8n templates ↗</a><br />Download JSON for manual import into n8n.</p>
-          <N8nWorkflowInspector />
+          <N8nWorkflowInspector onLoadDraft={(graph) => {
+            loadWorkflowEditor(graph);
+            setDefinitionId('');
+            setWorkflowStart('');
+            setWorkflowInput('');
+            setDefinitionMessage('n8n workflow loaded. Review, save, and run it from the editor.');
+          }} />
           <form className="connector-editor" onSubmit={(event) => {
             event.preventDefault();
             void loadDefinitionPage(definitionSearch.trim());
