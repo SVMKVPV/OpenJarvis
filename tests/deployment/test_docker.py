@@ -130,8 +130,11 @@ class TestDockerFiles:
             "Dockerfile.gpu.rocm",
             "Dockerfile.sandbox",
         ]
+        toolchain = tomllib.loads((ROOT / "rust" / "rust-toolchain.toml").read_text())
+        channel = toolchain["toolchain"]["channel"]
         required_markers = [
-            "rustup toolchain install 1.88",
+            f"rustup toolchain install {channel} ",
+            f"rustup default {channel}",
             "maturin build --release",
             "rust/crates/openjarvis-python/Cargo.toml",
             "/tmp/openjarvis-rust-wheel/*.whl",
