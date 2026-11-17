@@ -1608,6 +1608,7 @@ export type WorkflowRecurrence = {
   next_due_at: number;
   interval_seconds: number;
   skipped_while_active?: number;
+  skipped_during_catchup?: number;
   paused?: boolean;
   initial_input?: string;
   revision?: number;

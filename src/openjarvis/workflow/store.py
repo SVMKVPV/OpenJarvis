@@ -66,6 +66,7 @@ class WorkflowRunStore:
                     next_due_at REAL NOT NULL,
                     interval_seconds INTEGER NOT NULL,
                     skipped_while_active INTEGER NOT NULL DEFAULT 0,
+                    skipped_during_catchup INTEGER NOT NULL DEFAULT 0,
                     paused INTEGER NOT NULL DEFAULT 0,
                     revision INTEGER NOT NULL DEFAULT 0
                 );
@@ -118,6 +119,11 @@ class WorkflowRunStore:
                 self._conn.execute(
                     "ALTER TABLE workflow_recurrences ADD COLUMN "
                     "skipped_while_active INTEGER NOT NULL DEFAULT 0"
+                )
+            if "skipped_during_catchup" not in recurrence_columns:
+                self._conn.execute(
+                    "ALTER TABLE workflow_recurrences ADD COLUMN "
+                    "skipped_during_catchup INTEGER NOT NULL DEFAULT 0"
                 )
             if "paused" not in recurrence_columns:
                 self._conn.execute(
@@ -320,6 +326,7 @@ class WorkflowRunStore:
             "next_due_at": next_due_at,
             "interval_seconds": interval_seconds,
             "skipped_while_active": 0,
+            "skipped_during_catchup": 0,
             "paused": False,
             "revision": 0,
         }
@@ -451,8 +458,12 @@ class WorkflowRunStore:
                 due_at = row["next_due_at"] + elapsed_intervals * interval
                 self._conn.execute(
                     "UPDATE workflow_recurrences SET next_due_at = ?, "
-                    "skipped_while_active = skipped_while_active + ? WHERE id = ?",
-                    (due_at + interval, row["has_active_run"], row["id"]),
+                    "skipped_while_active = skipped_while_active + ?, "
+                    "skipped_during_catchup = skipped_during_catchup + ? WHERE id = ?",
+                    (
+                        due_at + interval, row["has_active_run"],
+                        elapsed_intervals, row["id"],
+                    ),
                 )
                 if row["has_active_run"]:
                     continue

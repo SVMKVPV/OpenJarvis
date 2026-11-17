@@ -101,6 +101,28 @@ def test_recurrence_skips_an_active_review_after_restart(tmp_path) -> None:
         reopened.close()
 
 
+def test_recurrence_records_older_starts_skipped_during_catchup(tmp_path) -> None:
+    path = str(tmp_path / "workflow.db")
+    store = WorkflowRunStore(path)
+    graph = WorkflowBuilder("Recurring review").add_transform("format").build()
+    definition_id = store.save_definition(graph_to_dict(graph))["id"]
+    store.save_recurrence(definition_id, "saved input", 1000, 60)
+    store.close()
+
+    reopened = WorkflowRunStore(path)
+    try:
+        reopened.enqueue_due_recurrences(1185)
+        reopened.enqueue_due_recurrences(1185)
+        run, = reopened.list_runs()
+        assert run["scheduled_at"] == 1180
+        schedule, = reopened.list_recurrences(definition_id)
+        assert schedule["next_due_at"] == 1240
+        assert schedule["skipped_during_catchup"] == 3
+        assert schedule["skipped_while_active"] == 0
+    finally:
+        reopened.close()
+
+
 def test_store_persists_run_and_step_history(tmp_path) -> None:
     path = tmp_path / "workflow.db"
     graph = WorkflowBuilder("persisted").add_transform("format").build()

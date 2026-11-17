@@ -113,6 +113,9 @@ export function WorkflowRecurrenceEditor({ definitionId, initialInput, initially
               {!!schedule.skipped_while_active && (
                 <span>Skipped while active {schedule.skipped_while_active}{' '}</span>
               )}
+              {!!schedule.skipped_during_catchup && (
+                <span>Skipped during catch-up {schedule.skipped_during_catchup}{' '}</span>
+              )}
               {typeof schedule.paused === 'boolean' && (
                 <button type="button" disabled={pending} onClick={() => void changeSchedule(
                   { id: schedule.id, paused: !schedule.paused },
