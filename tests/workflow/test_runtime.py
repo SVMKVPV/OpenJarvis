@@ -3,13 +3,13 @@ from __future__ import annotations
 import sqlite3
 import time
 from contextlib import closing
-from threading import Event
+from threading import Event, Thread
 
 import pytest
 
 from openjarvis.tools.approval_store import STATUS_APPROVED, ApprovalStore
 from openjarvis.workflow.builder import WorkflowBuilder
-from openjarvis.workflow.runtime import WorkflowRuntime
+from openjarvis.workflow.runtime import WorkflowRuntime, WorkflowRuntimeStopping
 from openjarvis.workflow.serialization import graph_from_dict, graph_to_dict
 from openjarvis.workflow.store import WorkflowRunStore
 from openjarvis.workflow.types import WorkflowStepResult
@@ -248,7 +248,40 @@ def test_runtime_executes_and_checkpoints_steps(tmp_path) -> None:
     approvals.close()
 
 
-def test_runtime_pauses_for_approval_and_resumes_without_replay(tmp_path) -> None:
+def _refuse_thread_start(self):
+    raise RuntimeError("cannot start a new thread")
+
+
+def test_worker_start_failure_leaves_retryable_run(tmp_path, monkeypatch) -> None:
+    store = WorkflowRunStore(str(tmp_path / "workflow.db"))
+    approvals = ApprovalStore(str(tmp_path / "approvals.db"))
+    runtime = WorkflowRuntime(system=None, store=store, approval_store=approvals)
+    graph = WorkflowBuilder("recoverable").add_transform("prepare").build()
+
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(Thread, "start", _refuse_thread_start)
+            failed = runtime.submit(
+                graph, initial_input="draft", launch=("test", "one")
+            )
+            assert failed["status"] == "failed"
+            assert failed["error"] == "Workflow worker could not start"
+            same = runtime.submit(graph, initial_input="draft", launch=("test", "one"))
+            assert same["id"] == failed["id"]
+            assert same["status"] == "failed"
+
+        retry = runtime.retry(failed["id"])
+        completed = _wait_for_terminal(store, retry["id"])
+        assert completed["status"] == "succeeded"
+        assert completed["final_output"] == "draft"
+    finally:
+        runtime.close()
+        approvals.close()
+
+
+def test_runtime_pauses_for_approval_and_resumes_without_replay(
+    tmp_path, monkeypatch
+) -> None:
     store = WorkflowRunStore(str(tmp_path / "workflow.db"))
     approvals = ApprovalStore(str(tmp_path / "approvals.db"))
     runtime = WorkflowRuntime(system=None, store=store, approval_store=approvals)
@@ -273,8 +306,18 @@ def test_runtime_pauses_for_approval_and_resumes_without_replay(tmp_path) -> Non
     ]
     approval_id = paused["context"]["_workflow_approvals"]["approve"]
     assert paused["steps"][1]["metadata"]["review_input"] == "campaign"
-    assert "review_input" not in approvals.get_action(approval_id).payload
-    approvals.update_status(approval_id, STATUS_APPROVED)
+    action = approvals.get_action(approval_id)
+    assert "review_input" not in action.payload
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Thread, "start", _refuse_thread_start)
+        assert runtime.decide_approval(action, STATUS_APPROVED)
+        assert approvals.get_action(approval_id).status == STATUS_APPROVED
+        with pytest.raises(WorkflowRuntimeStopping, match="could not start"):
+            runtime.resume(submitted["id"])
+        still_paused = _wait_for_status(store, submitted["id"], "waiting_approval")
+        assert still_paused["context"] == paused["context"]
+        assert still_paused["steps"] == paused["steps"]
 
     runtime.resume(submitted["id"])
     completed = _wait_for_terminal(store, submitted["id"])

@@ -80,7 +80,13 @@ class WorkflowRuntime:
             if not created:
                 return run
             if scheduled_at is None:
-                self._start_worker(run["id"], graph, initial_input, context)
+                try:
+                    self._start_worker(run["id"], graph, initial_input, context)
+                except WorkflowRuntimeStopping as exc:
+                    self.store.finish(run["id"], status="failed", error=str(exc))
+                    failed = self.store.get_run(run["id"], include_graph=True)
+                    assert failed is not None
+                    return failed
             else:
                 self.start_scheduling()
         return run
@@ -95,7 +101,12 @@ class WorkflowRuntime:
             daemon=True,
         )
         self._threads[run_id] = worker
-        worker.start()
+        try:
+            worker.start()
+        except RuntimeError as exc:
+            self._threads.pop(run_id, None)
+            logger.exception("Could not start worker for workflow run %s", run_id)
+            raise WorkflowRuntimeStopping("Workflow worker could not start") from exc
 
     def start_scheduling(self) -> None:
         with self._lock:
@@ -125,7 +136,6 @@ class WorkflowRuntime:
                                 run["initial_input"], run["context"],
                             )
                         except Exception as exc:
-                            self._threads.pop(run_id, None)
                             self.store.finish(run_id, status="failed", error=str(exc))
             except Exception:
                 logger.exception("Could not launch scheduled workflow runs")
@@ -260,20 +270,18 @@ class WorkflowRuntime:
                 raise KeyError(run_id)
             if run["status"] != "waiting_approval" or run_id in self._threads:
                 raise ValueError("Only workflows waiting for approval can be resumed")
-            worker = threading.Thread(
-                target=self._execute,
-                args=(
+            graph = graph_from_dict(run["graph"])
+            self.store.mark_running(run_id)
+            try:
+                self._start_worker(
                     run_id,
-                    graph_from_dict(run["graph"]),
+                    graph,
                     run["initial_input"],
                     dict(run["context"]),
-                ),
-                name=f"workflow-{run_id[:8]}",
-                daemon=True,
-            )
-            self._threads[run_id] = worker
-            self.store.mark_running(run_id)
-            worker.start()
+                )
+            except WorkflowRuntimeStopping:
+                self.store.pause(run_id, context=run["context"])
+                raise
         return run
 
     def is_waiting_for(self, action: PendingAction) -> bool:
@@ -314,7 +322,11 @@ class WorkflowRuntime:
                     and statuses <= {STATUS_PENDING, STATUS_APPROVED}
                 ):
                     return True
-            self.resume(run_id)
+            try:
+                self.resume(run_id)
+            except WorkflowRuntimeStopping:
+                # The decision is already durable and the run can resume later.
+                pass
             return True
 
     def reschedule(
