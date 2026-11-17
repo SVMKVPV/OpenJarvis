@@ -25,6 +25,22 @@ for all of them. To use another provider, install its corresponding OpenJarvis
 inference extra in the image, change `--model` to a model that provider serves,
 and replace the secret in your own Blueprint.
 
+## Connect the Netlify frontend
+
+1. In the Render service's environment settings, set
+   `OPENJARVIS_CORS_ORIGINS` to the frontend's exact HTTPS origin, for example
+   `https://blvck-oak-command-center.netlify.app`. Leave off the trailing slash.
+   Use a comma-separated list if you also have a custom domain.
+2. After Render applies the environment change, sign in to the Netlify site.
+   In Command Center **Settings**, enter the Render HTTPS service URL as the
+   **API URL** and the Render-generated `OPENJARVIS_API_KEY` as the **API key**.
+3. Select **Save connection**, then **Test saved connection**. The connection
+   test calls the authenticated backend and reports whether it can reach it.
+
+Keep `OPENAI_API_KEY` in Render. The frontend uses the separate
+`OPENJARVIS_API_KEY` entered in Settings. Netlify visitor sign-in continues
+to protect access to the frontend.
+
 ## Storage and free-instance limits
 
 !!! warning "Free instances do not preserve OpenJarvis data"
