@@ -10,6 +10,7 @@ import {
   fetchRuntimePlugins,
   fetchWorkflowDefinition,
   fetchWorkflowDefinitions,
+  fetchWorkflowFollowUps,
   fetchWorkflowRun,
   fetchWorkflowHistory,
   requestWorkflowRunAction,
@@ -440,6 +441,8 @@ export function SoftwareEngineeringWorkspace({
     element?.focus();
   };
   const [runDetailError, setRunDetailError] = useState('');
+  const [exportingRun, setExportingRun] = useState(false);
+  const [runExportNotice, setRunExportNotice] = useState<{ id: string; text: string } | null>(null);
   const [runActionPending, setRunActionPending] = useState(false);
   const [runActionMessage, setRunActionMessage] = useState<{ id: string; text: string } | null>(null);
   const runIsActive = runDetail !== null && ACTIVE_WORKFLOW_STATES.has(runDetail.status);
@@ -846,26 +849,45 @@ export function SoftwareEngineeringWorkspace({
     downloadWorkflowJson(`${safeName || 'workflow'}.openjarvis.json`, graph);
   };
 
-  const exportRun = (run: WorkflowRunDetail) => downloadWorkflowJson(
-    `workflow-run-${run.id}.json`,
-    {
-      id: run.id,
-      workflow_name: run.workflow_name,
-      status: run.status,
-      initial_input: run.initial_input,
-      final_output: run.final_output,
-      error: run.error,
-      parent_run_id: run.parent_run_id,
-      cancel_requested: run.cancel_requested,
-      created_at: run.created_at,
-      scheduled_at: run.scheduled_at,
-      recurrence_id: run.recurrence_id,
-      started_at: run.started_at,
-      finished_at: run.finished_at,
-      graph: run.graph,
-      steps: run.steps,
-    },
-  );
+  const exportRun = async (run: WorkflowRunDetail) => {
+    if (exportingRun) return;
+    setExportingRun(true);
+    setRunExportNotice(null);
+    try {
+      const approved = run.status === 'succeeded' && run.steps.some(
+        (step) => step.metadata.approval_status === 'approved',
+      );
+      const followUps = approved
+        ? await fetchWorkflowFollowUps(run.id, AbortSignal.timeout(8000)).catch(() => null)
+        : undefined;
+      downloadWorkflowJson(`workflow-run-${run.id}.json`, {
+        id: run.id,
+        workflow_name: run.workflow_name,
+        status: run.status,
+        initial_input: run.initial_input,
+        final_output: run.final_output,
+        error: run.error,
+        parent_run_id: run.parent_run_id,
+        cancel_requested: run.cancel_requested,
+        created_at: run.created_at,
+        scheduled_at: run.scheduled_at,
+        recurrence_id: run.recurrence_id,
+        started_at: run.started_at,
+        finished_at: run.finished_at,
+        graph: run.graph,
+        steps: run.steps,
+        ...(followUps === null ? { workstation_follow_ups_status: 'unavailable' }
+          : followUps ? { workstation_follow_ups: followUps } : {}),
+      });
+      if (followUps === null) {
+        setRunExportNotice({ id: run.id, text: 'Run evidence downloaded. Follow-up history was unavailable.' });
+      }
+    } catch {
+      setRunExportNotice({ id: run.id, text: 'Could not download the run evidence.' });
+    } finally {
+      setExportingRun(false);
+    }
+  };
 
   const importDraft = async (file: File) => {
     if (file.size > 1024 * 1024) {
@@ -1550,10 +1572,11 @@ export function SoftwareEngineeringWorkspace({
                       <button type="submit" disabled={runActionPending || !newRunTime}>Reschedule run</button>
                     </form>
                   )}
-                  <button type="button" onClick={() => exportRun(runDetail)}
-                    title="Includes the original input, workflow definition, and step evidence">
-                    Download run evidence
+                  <button type="button" disabled={exportingRun} onClick={() => void exportRun(runDetail)}
+                    title="Includes run inputs, step evidence, and approved follow-ups when available">
+                    {exportingRun ? 'Preparing run evidence…' : 'Download run evidence'}
                   </button>
+                  {runExportNotice?.id === runDetail.id && <p role="status">{runExportNotice.text}</p>}
                   {runDetail.initial_input && (
                     <details>
                       <summary>Original run input</summary>
