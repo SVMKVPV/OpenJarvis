@@ -1506,9 +1506,11 @@ export async function fetchIndexedCalendarEvents(localDay: string): Promise<Inde
   return data.events ?? [];
 }
 
-export async function fetchWorkflowRuns(status?: WorkflowRunStatus): Promise<WorkflowRunSummary[]> {
+export async function fetchWorkflowRuns(
+  status?: WorkflowRunStatus, signal?: AbortSignal,
+): Promise<WorkflowRunSummary[]> {
   const query = status ? `&status=${encodeURIComponent(status)}` : '';
-  const res = await apiFetch(`/v1/workflows/runs?limit=8${query}`);
+  const res = await apiFetch(`/v1/workflows/runs?limit=8${query}`, { signal });
   if (!res.ok) throw new Error(`Failed: ${res.status}`);
   const data = await res.json();
   return data.runs || [];
