@@ -182,6 +182,23 @@ function makeGraph(station: Station): WorkflowGraph {
   };
 }
 
+function updateDefaultStationSteps(graph: WorkflowGraph, previous: Station, next: Station): WorkflowGraph {
+  const oldNodes = makeGraph(previous).nodes;
+  const newNodes = makeGraph(next).nodes;
+  return {
+    ...graph,
+    nodes: graph.nodes.map((node) => {
+      const oldStep = oldNodes.find((step) => step.id === node.id);
+      const newStep = newNodes.find((step) => step.id === node.id);
+      if (!oldStep || !newStep) return node;
+      const label = node.data.label === oldStep.data.label ? newStep.data.label : node.data.label;
+      const detail = node.data.detail === oldStep.data.detail ? newStep.data.detail : node.data.detail;
+      if (label === node.data.label && detail === node.data.detail) return node;
+      return { ...node, data: { ...node.data, label, detail } };
+    }),
+  };
+}
+
 type SpeechResultEvent = { results: { [index: number]: { [index: number]: { transcript: string } } } };
 type BrowserRecognition = {
   lang: string;
@@ -661,10 +678,22 @@ export function CommandCenterPage() {
       setStationEditMessage({ id: selected.id, text: 'A workstation with this name already exists.' });
       return;
     }
-    setStations((previous) => previous.map((station) => {
+    const nextStations = stations.map((station) => {
       if (station.id === selected.id) return { ...station, name, purpose, current, reportsTo: manager?.name ?? station.reportsTo };
-      return station.reportsTo === selected.name ? { ...station, reportsTo: name } : station;
-    }));
+      return name !== selected.name && reportingManager(station, stations)?.id === selected.id
+        ? { ...station, reportsTo: name } : station;
+    });
+    setStations(nextStations);
+    setGraphs((previous) => {
+      const nextGraphs = { ...previous };
+      nextStations.forEach((station, index) => {
+        const oldStation = stations[index];
+        if (station !== oldStation && previous[station.id]) {
+          nextGraphs[station.id] = updateDefaultStationSteps(previous[station.id], oldStation, station);
+        }
+      });
+      return nextGraphs;
+    });
     setStationEditMessage({ id: selected.id, text: 'Workstation details saved.' });
   };
 
@@ -796,7 +825,7 @@ export function CommandCenterPage() {
             onOpenWorkflow={openWorkflowReview}
           />
           <WorkflowBlueprint
-            key={selected.id}
+            key={JSON.stringify([selected.id, selected.name, selected.purpose, selected.reportsTo])}
             className="gold-blueprint"
             title={`${selected.name} connection map`}
             initialGraph={graphs[selected.id] ?? makeGraph(selected)}
