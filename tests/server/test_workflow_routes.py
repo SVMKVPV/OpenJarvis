@@ -869,6 +869,7 @@ def test_proposal_history_filters_by_approval_step_type(tmp_path, monkeypatch):
         with TestClient(app) as client:
             payload = {
                 "name": "Renamed research workflow",
+                "initial_input": "Track conversion benchmarks with 10% sample coverage",
                 "nodes": [
                     {
                         "id": "review",
@@ -893,6 +894,19 @@ def test_proposal_history_filters_by_approval_step_type(tmp_path, monkeypatch):
             history = response.json()
             assert history["approval_type"] == "system_builder_proposal"
             assert [run["id"] for run in history["runs"]] == [proposal.json()["id"]]
+            payload["nodes"][0]["config"]["action_type"] = "system_builder_proposal"
+            payload["initial_input"] = "Audit competitor landing pages"
+            assert client.post(base, json=payload).status_code == 202
+            params = {
+                "approval_type": "system_builder_proposal",
+                "input_contains": "  BENCHMARKS with 10%  ",
+                "limit": 1,
+            }
+            matched = client.get(base, params=params).json()
+            assert matched["input_contains"] == "BENCHMARKS with 10%"
+            assert [run["id"] for run in matched["runs"]] == [proposal.json()["id"]]
+            params["input_contains"] = "%missing"
+            assert client.get(base, params=params).json()["runs"] == []
     finally:
         app.state.workflow_runtime.close()
         approvals.close()

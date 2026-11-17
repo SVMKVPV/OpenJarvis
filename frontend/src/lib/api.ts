@@ -1486,12 +1486,16 @@ export async function fetchWorkflowRuns(status?: WorkflowRunStatus): Promise<Wor
   return data.runs || [];
 }
 
-export async function fetchSystemBuilderProposals(signal: AbortSignal): Promise<WorkflowRunSummary[]> {
+export async function fetchSystemBuilderProposals(
+  signal: AbortSignal, inputContains: string,
+): Promise<Array<WorkflowRunSummary & { initial_input?: string }>> {
   const approvalType = 'system_builder_proposal';
   const query = new URLSearchParams({ limit: '8', approval_type: approvalType });
+  if (inputContains) query.set('input_contains', inputContains);
   const response = await apiFetch(`/v1/workflows/runs?${query}`, { signal });
   const page = await response.json().catch(() => null);
-  if (!response.ok || page?.approval_type !== approvalType || !Array.isArray(page.runs)) {
+  if (!response.ok || page?.approval_type !== approvalType || !Array.isArray(page.runs)
+      || (inputContains && page.input_contains !== inputContains)) {
     throw new Error('System Builder proposal history is unavailable.');
   }
   return page.runs;

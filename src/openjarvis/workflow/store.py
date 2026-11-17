@@ -619,6 +619,7 @@ class WorkflowRunStore:
         recent: bool = False,
         recurrence_id: str = "",
         approval_type: str = "",
+        input_contains: str = "",
     ) -> list[dict[str, Any]]:
         limit = max(1, min(int(limit), 200))
         filters: list[str] = []
@@ -644,6 +645,9 @@ class WorkflowRunStore:
                 "AND json_extract(node.value, '$.config.action_type') = ?)"
             )
             params.append(approval_type)
+        if input_contains:
+            filters.append("instr(lower(initial_input), lower(?)) > 0")
+            params.append(input_contains)
         if before:
             filters.append(
                 "(created_at, id) < "
