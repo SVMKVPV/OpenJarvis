@@ -1,6 +1,6 @@
-import { FormEvent, type CSSProperties, useMemo, useRef, useState } from 'react';
+import { FormEvent, type CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useOutletContext } from 'react-router';
-import { Activity, ArrowUp, Mic, MicOff, Plus, Square, Volume2 } from 'lucide-react';
+import { ArrowUp, Mic, MicOff, Plus, Square, Volume2 } from 'lucide-react';
 
 import {
   Background,
@@ -20,6 +20,7 @@ import { OrbLoader } from '../components/ui/orb-loader';
 import { useSpeech } from '../hooks/useSpeech';
 import { useTts } from '../hooks/useTts';
 import { useLocalPreference } from '../hooks/useLocalPreference';
+import { fetchManagedAgents, type ManagedAgent } from '../lib/api';
 import { streamChat } from '../lib/sse';
 import { useAppStore } from '../lib/store';
 import { SoftwareEngineeringWorkspace, type WorkspaceEntry } from './SoftwareEngineeringWorkspace';
@@ -419,7 +420,7 @@ function DotVoice({ station, brainContext, onShare }: {
   );
 }
 
-type OrganizationNode = Node<{ station: Station; onOpen: (id: string) => void }, 'organization'>;
+type OrganizationNode = Node<{ station: Station; agent?: ManagedAgent; onOpen: (id: string) => void }, 'organization'>;
 
 function OrganizationStation({ data }: NodeProps<OrganizationNode>) {
   const station = data.station;
@@ -433,7 +434,9 @@ function OrganizationStation({ data }: NodeProps<OrganizationNode>) {
       {!isBrain && <Handle type="target" position={Position.Bottom} id="reports-in" />}
       {isBrain && <Handle type="target" position={Position.Top} id="brain-in" />}
       {isBrain && <Handle type="target" position={Position.Bottom} id="collaborator-in" />}
-      <div><span>{station.code}</span><i data-status={station.status} /></div>
+      <div><span>{station.code}</span>{data.agent && (
+        <span title="Linked agent status">{data.agent.status.replace(/_/g, ' ')}</span>
+      )}</div>
       <strong>{station.name}</strong>
       <small>{station.current}</small>
       <em>{BRAIN_COLLABORATORS.includes(station) ? 'SHARED BRAIN COLLABORATOR' : isOwner ? 'ORGANIZATION OWNER' : isBrain ? 'SHARED BY EVERY AGENT' : `REPORTS TO ${station.reportsTo.toUpperCase()}`}</em>
@@ -475,8 +478,9 @@ function canReportTo(station: Station, candidate: Station, stations: Station[]):
   return true;
 }
 
-function OrganizationOverview({ stations, onOpen, accent }: {
+function OrganizationOverview({ stations, stationAgents, onOpen, accent }: {
   stations: Station[];
+  stationAgents: ReadonlyMap<string, ManagedAgent>;
   onOpen: (id: string) => void;
   accent: string;
 }) {
@@ -487,12 +491,13 @@ function OrganizationOverview({ stations, onOpen, accent }: {
     position: ORGANIZATION_POSITIONS[station.id] ?? { x: 25 + (index % 5) * 185, y: 520 + Math.floor(index / 5) * 150 },
     data: {
       station,
+      agent: stationAgents.get(station.id),
       onOpen: BRAIN_COLLABORATORS.includes(station) ? () => onOpen('brain') : onOpen,
     },
     ariaLabel: BRAIN_COLLABORATORS.includes(station)
       ? `${station.name}. Shared Brain collaborator. ${station.current}`
       : `${station.name}. Reports to ${station.reportsTo}. ${station.current}`,
-  })), [organizationStations, onOpen]);
+  })), [organizationStations, stationAgents, onOpen]);
   const existing = new Set(organizationStations.map((station) => station.id));
   const links = stations.map((station) => [
     station.id, station.id === 'dot' ? 'ceo' : reportingManager(station, stations)?.id ?? '',
@@ -526,46 +531,6 @@ function OrganizationOverview({ stations, onOpen, accent }: {
         <div><span>YOUR ASSISTANT</span><strong>Dot → CEO / Director</strong><small>Dot is your personal agent, command link, and consolidated briefing layer.</small></div>
         <div><span>SHARED COMMUNICATION</span><strong>Every agent ↔ Shared Brain</strong><small>Common context, ownership tracking, and duplicate-work prevention.</small></div>
       </div>
-    </main>
-  );
-}
-
-const LOAD: Record<string, number> = { brain: 82, dot: 76, marketing: 68, research: 54, managers: 43, email: 61, finance: 72, growth: 64, 'general-manager': 58, 'operations-manager': 71 };
-
-function BasicDashboard({ stations, onOpen }: { stations: Station[]; onOpen: (id: string) => void }) {
-  const working = stations.filter((station) => station.status === 'working').length;
-  const review = stations.filter((station) => station.status === 'review');
-  const averageLoad = Math.round(stations.reduce((total, station) => total + (LOAD[station.id] ?? 20), 0) / stations.length);
-  return (
-    <main className="dashboard-page">
-      <div className="view-heading"><div><span>BASIC DASHBOARD</span><h2>Organization operating picture</h2><p>A concise view of current work, exceptions, capacity, and reporting health.</p></div><button onClick={() => onOpen('dot')}>OPEN DOT COMMAND LINK</button></div>
-      <section className="metric-grid">
-        <div><span>SYSTEM HEALTH</span><strong>98.4<small>%</small></strong><em>ALL CORE SERVICES NOMINAL</em></div>
-        <div><span>ACTIVE STATIONS</span><strong>{working}<small>/{stations.length}</small></strong><em>{review.length} WAITING FOR REVIEW</em></div>
-        <div><span>TASKS COMPLETED</span><strong>284</strong><em>+18 SINCE 09:00</em></div>
-        <div><span>AVERAGE LOAD</span><strong>{averageLoad}<small>%</small></strong><em>WITHIN OPERATING RANGE</em></div>
-      </section>
-      <section className="dashboard-grid">
-        <div className="dashboard-panel workload-panel">
-          <header><div><span>LIVE WORKLOAD</span><strong>Stations by active capacity</strong></div><em>UPDATED NOW</em></header>
-          <div className="workload-list">{stations.map((station) => {
-            const load = LOAD[station.id] ?? 20;
-            return <button key={station.id} onClick={() => onOpen(station.id)}><span>{station.code}</span><div><strong>{station.name}</strong><small>{station.current}</small><i><b style={{ width: `${load}%` }} /></i></div><em>{load}%</em></button>;
-          })}</div>
-        </div>
-        <div className="dashboard-side">
-          <section className="dashboard-panel approval-panel">
-            <header><div><span>NEEDS ATTENTION</span><strong>Approval queue</strong></div><em>{review.length + 1} ITEMS</em></header>
-            <button onClick={() => onOpen('managers')}><span>MGR</span><div><strong>Campaign approval</strong><small>Managers · confidence below 85%</small></div><em>HIGH</em></button>
-            <button onClick={() => onOpen('general-manager')}><span>GM</span><div><strong>Growth investment decision</strong><small>General Manager · financial impact</small></div><em>REVIEW</em></button>
-            <button onClick={() => onOpen('finance')}><span>FIN</span><div><strong>Budget variance</strong><small>Finance · software spend +6%</small></div><em>MED</em></button>
-          </section>
-          <section className="dashboard-panel priority-panel">
-            <header><div><span>TOP PRIORITIES</span><strong>Current operating focus</strong></div><em>THIS WEEK</em></header>
-            <ol><li><b>01</b><span>Complete growth brief and campaign review</span></li><li><b>02</b><span>Resolve delivery blockers across teams</span></li><li><b>03</b><span>Qualify and route the newest inbound leads</span></li></ol>
-          </section>
-        </div>
-      </section>
     </main>
   );
 }
@@ -622,6 +587,39 @@ export function CommandCenterPage() {
     (value) => !!value && typeof value === 'object' && !Array.isArray(value) &&
       Object.values(value).every((id) => typeof id === 'string'),
   );
+  const [liveAgents, setLiveAgents] = useState<ManagedAgent[]>([]);
+  const showStationStatus = (view === 'overview' || view === 'workstations') &&
+    Object.values(stationAgentIds).some(Boolean);
+  useEffect(() => {
+    if (!showStationStatus) return;
+    let active = true;
+    let timer: number | undefined;
+    const refresh = async () => {
+      try {
+        const agents = await fetchManagedAgents();
+        if (active) setLiveAgents(agents);
+      } catch {
+        if (active) setLiveAgents([]);
+      } finally {
+        if (active) timer = window.setTimeout(() => void refresh(), 10000);
+      }
+    };
+    void refresh();
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [showStationStatus]);
+  const stationAgents = useMemo(() => {
+    const byId = new Map(liveAgents.filter((agent) => agent.status !== 'archived')
+      .map((agent) => [agent.id, agent]));
+    const linked = new Map<string, ManagedAgent>();
+    for (const [stationId, agentId] of Object.entries(stationAgentIds)) {
+      const agent = byId.get(agentId);
+      if (agent) linked.set(stationId, agent);
+    }
+    return linked;
+  }, [liveAgents, stationAgentIds]);
   const workflowRecipients = stations.flatMap((station) => {
     const agentId = stationAgentIds[station.id];
     return agentId ? [{ stationId: station.id, name: station.name, agentId }] : [];
@@ -733,7 +731,7 @@ export function CommandCenterPage() {
           <i /> {backendReachable === true ? 'BACKEND REACHABLE' : backendReachable === false ? 'BACKEND UNREACHABLE' : 'CHECKING BACKEND'}
         </span><span>{stations.length} STATIONS</span><span>LOCAL FIRST</span></div>
       </header>
-      {view === 'overview' ? <OrganizationOverview stations={stations} onOpen={openStation} accent={accent} /> : view === 'workspace' ? <SoftwareEngineeringWorkspace {...workspaceEntry} recipients={workflowRecipients} projectStations={stations} reportingRoutes={workflowReportingRoutes} onOpenStation={openStation} /> : view === 'dashboard' ? <CustomDashboard widgetIds={dashboardWidgetIds} setWidgetIds={setDashboardWidgetIds} onOpenStation={openStation} onOpenWorkflow={openWorkflowReview}
+      {view === 'overview' ? <OrganizationOverview stations={stations} stationAgents={stationAgents} onOpen={openStation} accent={accent} /> : view === 'workspace' ? <SoftwareEngineeringWorkspace {...workspaceEntry} recipients={workflowRecipients} projectStations={stations} reportingRoutes={workflowReportingRoutes} onOpenStation={openStation} /> : view === 'dashboard' ? <CustomDashboard widgetIds={dashboardWidgetIds} setWidgetIds={setDashboardWidgetIds} onOpenStation={openStation} onOpenWorkflow={openWorkflowReview}
         onOpenRecurringWorkflow={(initialDefinitionId, initialRecurrenceId) =>
           openWorkspace({ initialDefinitionId, initialRecurrenceId })} /> : <div className="command-grid">
         <aside className="station-rail">
@@ -750,17 +748,18 @@ export function CommandCenterPage() {
               <button key={station.id} className={station.id === selected.id ? 'selected' : ''} onClick={() => setSelectedId(station.id)}>
                 <span className="station-code">{station.code}</span>
                 <span className="station-copy"><strong>{station.name}</strong><small>{station.current}</small></span>
-                <i data-status={station.status} />
+                {stationAgents.has(station.id) && <small>
+                  {stationAgents.get(station.id)?.status.replace(/_/g, ' ')}
+                </small>}
               </button>
             ))}
           </div>
-          <div className="rail-foot"><Activity size={13} /><span>LIVE WORK FEED</span><b>284</b></div>
         </aside>
 
         {selected.id === 'brain' ? <section className="workflow-stage brain-stage"><SharedBrainPanel context={brainContext} onContextChange={setBrainContext} onShare={addBrainUpdate} onOpenDot={() => openStation('dot')} onOpenWorkflow={openWorkflowReview} /></section> : <main className="workflow-stage">
           <div className="station-header">
             <div><span>{selected.code} // SELECTED STATION</span><h2>{selected.name}</h2><p>{selected.purpose}</p></div>
-            <div className="station-now"><span>CURRENT WORK</span><strong>{selected.current}</strong><small>Reports to {selected.reportsTo}</small></div>
+            <div className="station-now"><span>WORKSTATION NOTE</span><strong>{selected.current}</strong><small>Reports to {selected.reportsTo}</small></div>
           </div>
           <details className="station-details-editor" key={`station-details-${selected.id}`}>
             <summary>Edit workstation details</summary>
