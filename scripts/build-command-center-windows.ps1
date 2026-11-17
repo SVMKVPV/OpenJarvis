@@ -1,3 +1,10 @@
+#Requires -Version 7.0
+<#
+.SYNOPSIS
+Build the Command Center Windows x64 installer and reusable source template.
+.EXAMPLE
+pwsh -File scripts/build-command-center-windows.ps1 -OutputDirectory ..
+#>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
@@ -26,7 +33,7 @@ try {
     $version = (Get-Content frontend/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
     if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Unsupported release version $version." }
     $frontendPackage = Get-Content frontend/package.json -Raw | ConvertFrom-Json
-    $frontendLock = Get-Content frontend/package-lock.json -Raw | ConvertFrom-Json
+    $frontendLock = Get-Content frontend/package-lock.json -Raw | ConvertFrom-Json -AsHashtable
     if ($frontendPackage.version -ne $version -or $frontendLock.version -ne $version) {
         throw 'Desktop and frontend versions must match.'
     }
