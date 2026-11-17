@@ -819,7 +819,7 @@ async fn wait_for_jarvis_health(
 }
 
 // Revision 3 enforces required reviewer checklists on the backend.
-const MIN_COMMAND_CENTER_API_REVISION: u32 = 3;
+const MIN_COMMAND_CENTER_API_REVISION: u32 = 4;
 
 fn supports_command_center_api(headers: &reqwest::header::HeaderMap) -> bool {
     headers
@@ -3659,7 +3659,14 @@ mod tests {
         headers.insert("x-openjarvis-command-center-api", HeaderValue::from_static("1"));
         assert!(!super::supports_command_center_api(&headers));
 
-        for (value, compatible) in [("1", false), ("2", false), ("invalid", false), ("3", true), ("4", true)] {
+        for (value, compatible) in [
+            ("1", false),
+            ("2", false),
+            ("3", false),
+            ("4", true),
+            ("5", true),
+            ("invalid", false),
+        ] {
             headers.insert(
                 "x-openjarvis-command-center-api-revision",
                 HeaderValue::from_static(value),
