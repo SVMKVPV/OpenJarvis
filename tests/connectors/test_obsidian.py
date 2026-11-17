@@ -67,6 +67,60 @@ def _sync_all(vault_path: Path) -> List[Document]:
     return list(conn.sync())
 
 
+def test_retry_indexes_unreadable_note_without_touching_its_timestamp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from openjarvis.connectors.obsidian import ObsidianConnector
+    from openjarvis.connectors.pipeline import IngestionPipeline
+    from openjarvis.connectors.store import KnowledgeStore
+    from openjarvis.connectors.sync_engine import SyncEngine
+    from openjarvis.workflow.engine import WorkflowEngine
+    from openjarvis.workflow.serialization import graph_from_dict
+
+    monkeypatch.setattr("openjarvis.core.config.DEFAULT_CONFIG_DIR", tmp_path)
+    vault_path = tmp_path / "vault"
+    vault_path.mkdir()
+    connector = ObsidianConnector(vault_path=str(vault_path))
+    with KnowledgeStore() as store, SyncEngine(
+        IngestionPipeline(store), state_db=str(tmp_path / "sync.db"),
+    ) as sync:
+        sync.sync(connector)
+        original = sync.get_checkpoint("obsidian")
+        assert original is not None
+        note = vault_path / "handoff.md"
+        note.write_text("Handoff evidence confirms the delivery date is Tuesday.")
+        readable = vault_path / "ready.md"
+        readable.write_text("Prepared document remains readable.")
+        read_text = Path.read_text
+
+        def read_with_failure(path, *args, **kwargs):
+            if path == note:
+                raise PermissionError("temporary sharing violation")
+            return read_text(path, *args, **kwargs)
+
+        with monkeypatch.context() as failure:
+            failure.setattr(Path, "read_text", read_with_failure)
+            with pytest.raises(RuntimeError, match="vault is accessible"):
+                sync.sync(connector)
+        checkpoint = sync.get_checkpoint("obsidian")
+        assert checkpoint is not None
+        assert checkpoint["last_sync"] == original["last_sync"]
+        assert checkpoint["items_synced"] == 1
+        sync.sync(connector)
+        recovered = sync.get_checkpoint("obsidian")
+        assert recovered is not None and recovered["error"] is None
+
+    graph = graph_from_dict({"nodes": [{
+        "id": "search", "type": "tool", "config": {
+            "tool_name": "knowledge_search", "query_from_input": True,
+            "source": "obsidian", "require_match": True,
+        },
+    }]})
+    result = WorkflowEngine().run(graph, initial_input="handoff evidence")
+    assert result.status == "succeeded"
+    assert "delivery date is Tuesday" in result.final_output
+
+
 # ---------------------------------------------------------------------------
 # Test 1: is_connected — True for a valid directory
 # ---------------------------------------------------------------------------

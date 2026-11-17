@@ -111,6 +111,7 @@ class ObsidianConnector(BaseConnector):
         self._connected: bool = bool(vault_path) and Path(vault_path).is_dir()
         self._items_synced: int = 0
         self._items_total: int = 0
+        self._sync_error: str | None = None
 
     # ------------------------------------------------------------------
     # BaseConnector interface
@@ -141,11 +142,22 @@ class ObsidianConnector(BaseConnector):
             Not used for this filesystem connector (included for API
             compatibility).
         """
+        self._sync_error = None
+        self._items_synced = 0
+        self._items_total = 0
+        if not self._vault_path:
+            self._sync_error = "No Obsidian vault is configured."
+            return
         vault = Path(self._vault_path)
         vault_name = vault.name
+        failures = 0
+
+        def record_walk_error(_error: OSError) -> None:
+            nonlocal failures
+            failures += 1
 
         collected_paths: List[Path] = []
-        for root, dirs, files in os.walk(vault):
+        for root, dirs, files in os.walk(vault, onerror=record_walk_error):
             # Prune hidden and known-junk directories in-place so os.walk
             # does not descend into them.
             dirs[:] = [d for d in dirs if d not in _SKIP_DIRS and not d.startswith(".")]
@@ -160,14 +172,13 @@ class ObsidianConnector(BaseConnector):
         synced = 0
 
         for fpath in collected_paths:
-            # Apply since filter based on mtime
-            mtime = datetime.fromtimestamp(fpath.stat().st_mtime, tz=timezone.utc)
-            if since is not None and mtime < since:
-                continue
-
             try:
+                mtime = datetime.fromtimestamp(fpath.stat().st_mtime, tz=timezone.utc)
+                if since is not None and mtime < since:
+                    continue
                 text = fpath.read_text(encoding="utf-8", errors="replace")
-            except (OSError, PermissionError):
+            except OSError:
+                failures += 1
                 continue
 
             metadata, _body = _parse_frontmatter(text)
@@ -193,13 +204,19 @@ class ObsidianConnector(BaseConnector):
             yield doc
 
         self._items_synced = synced
+        if failures:
+            self._sync_error = (
+                f"Could not read {failures} Obsidian files or folders. "
+                "Check that the vault is accessible and retry the sync."
+            )
 
     def sync_status(self) -> SyncStatus:
         """Return sync progress from the most recent :meth:`sync` call."""
         return SyncStatus(
-            state="idle",
+            state="error" if self._sync_error else "idle",
             items_synced=self._items_synced,
             items_total=self._items_total,
+            error=self._sync_error,
         )
 
     # ------------------------------------------------------------------
