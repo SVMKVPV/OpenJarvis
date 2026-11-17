@@ -398,6 +398,56 @@ def test_runtime_pauses_for_approval_and_resumes_without_replay(
 @pytest.mark.parametrize(
     ("decision", "expected"), [("approved", "succeeded"), ("denied", "failed")]
 )
+def test_scheduler_recovers_decision_saved_before_workflow_restart(
+    tmp_path, decision, expected,
+) -> None:
+    path = str(tmp_path / "workflow.db")
+    approvals = ApprovalStore(str(tmp_path / "approvals.db"))
+    graph = (
+        WorkflowBuilder("Recover review")
+        .add_transform("prepare", transform="first_line")
+        .add_approval("approve", action_type="review", description="Review preparation")
+        .add_transform("finish")
+        .sequential("prepare", "approve", "finish")
+        .build()
+    )
+    original_store = WorkflowRunStore(path)
+    original = WorkflowRuntime(
+        system=None, store=original_store, approval_store=approvals
+    )
+    try:
+        waiting_id = original.submit(graph, initial_input="Still pending")["id"]
+        _wait_for_status(original_store, waiting_id, "waiting_approval")
+        run_id = original.submit(graph, initial_input="Prepared evidence")["id"]
+        paused = _wait_for_status(original_store, run_id, "waiting_approval")
+        action_id = paused["context"]["_workflow_approvals"]["approve"]
+        # Persist the decision without starting the worker, as after a crash.
+        assert approvals.decide_pending(action_id, decision)
+    finally:
+        original.close()
+
+    restarted_store = WorkflowRunStore(path)
+    restarted = WorkflowRuntime(
+        system=None, store=restarted_store, approval_store=approvals
+    )
+    try:
+        restarted.start_scheduling()
+        completed = _wait_for_terminal(restarted_store, run_id)
+        assert completed["status"] == expected
+        assert [
+            step["attempt"]
+            for step in completed["steps"]
+            if step["node_id"] == "prepare"
+        ] == [1]
+        assert restarted_store.get_run(waiting_id)["status"] == "waiting_approval"
+    finally:
+        restarted.close()
+        approvals.close()
+
+
+@pytest.mark.parametrize(
+    ("decision", "expected"), [("approved", "succeeded"), ("denied", "failed")]
+)
 def test_parallel_approval_keeps_other_checkpoint_available(
     tmp_path, decision, expected
 ) -> None:

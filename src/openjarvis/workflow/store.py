@@ -606,6 +606,24 @@ class WorkflowRunStore:
             error="",
         )
 
+    def waiting_approval_runs(self) -> list[tuple[str, dict[str, Any]]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, context_json FROM workflow_runs "
+                "WHERE status = 'waiting_approval' AND cancel_requested = 0"
+            ).fetchall()
+        return [(row["id"], json.loads(row["context_json"])) for row in rows]
+
+    def claim_approval_resume(self, run_id: str) -> bool:
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                "UPDATE workflow_runs SET status = 'running', started_at = ?, "
+                "finished_at = NULL, error = '' WHERE id = ? "
+                "AND status = 'waiting_approval' AND cancel_requested = 0",
+                (time.time(), run_id),
+            )
+            return cursor.rowcount == 1
+
     def pause(self, run_id: str, *, context: Mapping[str, Any]) -> None:
         """Persist resumable state while a run waits for human approval."""
         self._update(

@@ -10,6 +10,7 @@ from typing import Any, Mapping
 from openjarvis.core.events import EventBus
 from openjarvis.tools.approval_store import (
     STATUS_APPROVED,
+    STATUS_DENIED,
     STATUS_PENDING,
     ApprovalStore,
     PendingAction,
@@ -123,6 +124,7 @@ class WorkflowRuntime:
                 with self._lock:
                     if self._stopping:
                         return
+                    self._resume_decided_runs()
                     now = time.time()
                     self.store.enqueue_due_recurrences(now)
                     for run_id in self.store.due_runs(now):
@@ -140,6 +142,33 @@ class WorkflowRuntime:
             except Exception:
                 logger.exception("Could not launch scheduled workflow runs")
             self._schedule_stop.wait(1)
+
+    def _approval_decision_ready(self, run_id: str, context: dict[str, Any]) -> bool:
+        statuses: set[str | None] = set()
+        for node_id, action_id in context.get("_workflow_approvals", {}).items():
+            action = self.approval_store.get_action(action_id)
+            statuses.add(
+                action.status
+                if action is not None
+                and action.payload.get("workflow_run_id") == run_id
+                and action.payload.get("workflow_node_id") == node_id
+                else None
+            )
+        if STATUS_PENDING in statuses and statuses <= {STATUS_PENDING, STATUS_APPROVED}:
+            return False
+        return STATUS_APPROVED in statuses or STATUS_DENIED in statuses
+
+    def _resume_decided_runs(self) -> None:
+        for run_id, context in self.store.waiting_approval_runs():
+            if run_id in self._threads or not self._approval_decision_ready(
+                run_id, context
+            ):
+                continue
+            try:
+                self.resume(run_id)
+            except (WorkflowRuntimeStopping, ValueError, KeyError):
+                # A worker may be unavailable or another runtime may claim the run.
+                continue
 
     def _execute(
         self,
@@ -271,7 +300,8 @@ class WorkflowRuntime:
             if run["status"] != "waiting_approval" or run_id in self._threads:
                 raise ValueError("Only workflows waiting for approval can be resumed")
             graph = graph_from_dict(run["graph"])
-            self.store.mark_running(run_id)
+            if not self.store.claim_approval_resume(run_id):
+                raise ValueError("Workflow resume was already claimed or cancelled")
             try:
                 self._start_worker(
                     run_id,
@@ -311,20 +341,13 @@ class WorkflowRuntime:
             if decision == STATUS_APPROVED:
                 run = self.store.get_run(run_id)
                 self.approval_store.expire_stale()
-                checkpoint_ids = run["context"].get("_workflow_approvals", {}).values()
-                checkpoints = [
-                    self.approval_store.get_action(action_id)
-                    for action_id in checkpoint_ids
-                ]
-                statuses = {item.status if item else None for item in checkpoints}
-                if (
-                    STATUS_PENDING in statuses
-                    and statuses <= {STATUS_PENDING, STATUS_APPROVED}
+                if run is None or not self._approval_decision_ready(
+                    run_id, run["context"]
                 ):
                     return True
             try:
                 self.resume(run_id)
-            except WorkflowRuntimeStopping:
+            except (WorkflowRuntimeStopping, ValueError, KeyError):
                 # The decision is already durable and the run can resume later.
                 pass
             return True
