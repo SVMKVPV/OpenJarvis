@@ -425,20 +425,14 @@ export async function checkHealth(): Promise<boolean> {
       return false;
     }
   }
-  // In the browser, hit /health relative to the page origin so the request
-  // flows through whatever path is already serving the SPA — the Vite
-  // proxy in dev, FastAPI's static mount in prod. This avoids the
-  // false-negative "Cannot reach backend" banner when getBase() points at
-  // an absolute URL the browser can't reach directly.
-  //
-  // If /health itself fails for any reason (proxy quirk, stale service
-  // worker, etc.) fall back to an arbitrary API endpoint we know the rest
-  // of the app polls successfully. If THAT also fails we genuinely can't
-  // reach the backend.
-  const probe = async (url: string): Promise<boolean> => {
+  // Static SPA hosts can return index.html for an unmatched API route.
+  // Confirm the response shape before treating either endpoint as reachable.
+  const probe = async (base: string, endpoint: '/health' | '/v1/connectors'): Promise<boolean> => {
     try {
-      const res = await fetch(url, { cache: 'no-store' });
-      return res.ok;
+      const res = await fetch(`${base}${endpoint}`, { cache: 'no-store' });
+      if (!res.ok) return false;
+      const data = await res.json();
+      return endpoint === '/health' ? data?.status === 'ok' : Array.isArray(data?.connectors);
     } catch {
       return false;
     }
@@ -447,10 +441,10 @@ export async function checkHealth(): Promise<boolean> {
   // Probe the configured API base first; the relative fallback supports
   // production deployments where both are served from one origin.
   const base = getBase().replace(/\/+$/, '');
-  if (base && await probe(`${base}/health`)) return true;
-  if (await probe('/health')) return true;
-  if (base && await probe(`${base}/v1/connectors`)) return true;
-  return probe('/v1/connectors');
+  if (base && await probe(base, '/health')) return true;
+  if (await probe('', '/health')) return true;
+  if (base && await probe(base, '/v1/connectors')) return true;
+  return probe('', '/v1/connectors');
 }
 
 export async function fetchEnergy(): Promise<unknown> {

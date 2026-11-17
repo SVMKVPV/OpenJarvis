@@ -1,5 +1,5 @@
 import { FormEvent, type CSSProperties, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useOutletContext } from 'react-router';
 import { Activity, ArrowUp, Mic, MicOff, Plus, Square, Volume2 } from 'lucide-react';
 
 import {
@@ -570,6 +570,7 @@ function BasicDashboard({ stations, onOpen }: { stations: Station[]; onOpen: (id
 }
 
 export function CommandCenterPage() {
+  const backendReachable = useOutletContext<boolean | null>();
   const [view, setView] = useState<'overview' | 'workstations' | 'workspace' | 'dashboard'>('overview');
   const [workspaceEntry, setWorkspaceEntry] = useState<WorkspaceEntry>({});
   const openWorkspace = (entry: WorkspaceEntry) => {
@@ -727,7 +728,9 @@ export function CommandCenterPage() {
           <button className={view === 'workspace' ? 'active' : ''} onClick={() => { if (view !== 'workspace') openWorkflowReview(''); }}>WORKSPACE</button>
           <button className={view === 'dashboard' ? 'active' : ''} onClick={() => setView('dashboard')}>DASHBOARD</button>
         </nav>
-        <div className="header-telemetry"><span><i /> SYSTEM ONLINE</span><span>{stations.length} STATIONS</span><span>LOCAL FIRST</span></div>
+        <div className="header-telemetry"><span role="status" data-backend={backendReachable === true ? 'online' : 'offline'}>
+          <i /> {backendReachable === true ? 'BACKEND REACHABLE' : backendReachable === false ? 'BACKEND UNREACHABLE' : 'CHECKING BACKEND'}
+        </span><span>{stations.length} STATIONS</span><span>LOCAL FIRST</span></div>
       </header>
       {view === 'overview' ? <OrganizationOverview stations={stations} onOpen={openStation} accent={accent} /> : view === 'workspace' ? <SoftwareEngineeringWorkspace {...workspaceEntry} recipients={workflowRecipients} projectStations={stations} reportingRoutes={workflowReportingRoutes} onOpenStation={openStation} /> : view === 'dashboard' ? <CustomDashboard widgetIds={dashboardWidgetIds} setWidgetIds={setDashboardWidgetIds} onOpenStation={openStation} onOpenWorkflow={openWorkflowReview}
         onOpenRecurringWorkflow={(initialDefinitionId, initialRecurrenceId) =>

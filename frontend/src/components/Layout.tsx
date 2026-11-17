@@ -65,7 +65,7 @@ export function Layout() {
         )}
         <main className="flex-1 flex flex-col min-w-0 h-full relative overflow-hidden" style={{ background: 'transparent' }}>
           <div className="flex-1 flex flex-col min-w-0 min-h-0 relative z-[2]">
-            <Outlet />
+            <Outlet context={apiReachable} />
           </div>
         </main>
       </div>

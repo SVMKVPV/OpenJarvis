@@ -1308,7 +1308,7 @@ export function SoftwareEngineeringWorkspace({
         {folderError === 'Saved project folders could not be loaded.' &&
           <button type="button" onClick={() => setFolderReload((value) => value + 1)}>Retry folders</button>}
         <nav>{folders.map((folder) => <button key={folder} className={folder === selectedFolder ? 'active' : ''} onClick={() => setSelectedFolder(folder)}><Folder size={13}/><span>{folder}</span><ChevronRight size={11}/></button>)}</nav>
-        <div className="folder-status"><span>SHARED BRAIN</span><strong>CONTEXT SYNCHRONIZED</strong><small>10 stations · 0 duplicate conflicts</small></div>
+        <div className="folder-status"><span>SHARED BRAIN</span><strong>SHARED WORKSTATION CONTEXT</strong></div>
       </aside>
 
       <section className="project-surface">
