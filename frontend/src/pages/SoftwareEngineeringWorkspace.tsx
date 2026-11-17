@@ -1864,10 +1864,14 @@ export function SoftwareEngineeringWorkspace({
           {selectedDefinition && (
             <details>
               <summary>Run this workflow from another app</summary>
-              <p>Send this request to your OpenJarvis backend. Reuse the same idempotency key when retrying the same event.</p>
+              <p>Send this request to your OpenJarvis backend with a key scoped to this workflow.
+                Ask your backend administrator to configure its digest in <code>OPENJARVIS_WORKFLOW_LAUNCH_KEYS</code>.
+                Store the original key in your automation's credential store.</p>
+              <p>Reuse the same event ID and request body on retries. After editing the saved workflow,
+                refresh the revision in your automation before launching it again.</p>
               <pre className="overflow-x-auto">{`POST ${savedWorkflowRunPath(selectedDefinition.id)}
 Content-Type: application/json
-Authorization: Bearer <backend-api-key>
+Authorization: Bearer <workflow-launch-key>
 Idempotency-Key: <unique-event-id>
 
 ${JSON.stringify({
