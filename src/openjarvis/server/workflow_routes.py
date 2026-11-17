@@ -38,7 +38,11 @@ class WorkflowInputs(BaseModel):
     context: Dict[str, Any] = Field(default_factory=dict)
 
 
-class ScheduledWorkflowInputs(WorkflowInputs):
+class SavedWorkflowInputs(WorkflowInputs):
+    expected_revision: str | None = Field(default=None, min_length=1, max_length=128)
+
+
+class ScheduledWorkflowInputs(SavedWorkflowInputs):
     scheduled_at: float = Field(gt=0, allow_inf_nan=False)
 
 
@@ -500,7 +504,7 @@ def create_workflow_runs_router() -> APIRouter:
     @root.post("/definitions/{definition_id}/runs", status_code=202)
     def run_definition(
         definition_id: str,
-        payload: WorkflowInputs,
+        payload: SavedWorkflowInputs,
         request: Request,
         launch_key: str | None = Header(
             None, alias="Idempotency-Key", min_length=1, max_length=128
@@ -600,7 +604,7 @@ def create_workflow_runs_router() -> APIRouter:
 
     def launch_definition(
         definition_id: str,
-        payload: WorkflowInputs,
+        payload: SavedWorkflowInputs,
         request: Request,
         launch_key: str | None,
         scheduled_at: float | None = None,
@@ -612,7 +616,10 @@ def create_workflow_runs_router() -> APIRouter:
                 context=payload.context,
                 launch_key=launch_key,
                 scheduled_at=scheduled_at,
+                expected_revision=payload.expected_revision,
             )
+        except WorkflowDefinitionConflict as exc:
+            raise HTTPException(status_code=412, detail=str(exc)) from exc
         except WorkflowLaunchConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except KeyError as exc:

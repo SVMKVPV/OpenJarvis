@@ -266,6 +266,7 @@ class WorkflowRunStore:
         parent_run_id: str | None = None,
         launch: tuple[str, str] | None = None,
         scheduled_at: float | None = None,
+        saved_revision: tuple[str, str] | None = None,
     ) -> tuple[dict[str, Any], bool]:
         run_id = uuid.uuid4().hex
         now = time.time()
@@ -274,6 +275,8 @@ class WorkflowRunStore:
                 launch_inputs = [initial_input, dict(context)]
                 if scheduled_at is not None:
                     launch_inputs.append(scheduled_at)
+                if saved_revision is not None:
+                    launch_inputs.append({"expected_revision": saved_revision[0]})
                 input_data = json.dumps(launch_inputs, sort_keys=True)
                 input_hash = hashlib.sha256(input_data.encode()).hexdigest()
                 self._conn.execute("BEGIN IMMEDIATE")
@@ -290,6 +293,12 @@ class WorkflowRunStore:
                     run = self.get_run(existing["run_id"])
                     assert run is not None
                     return run, False
+
+            if saved_revision is not None and saved_revision[0] != saved_revision[1]:
+                raise WorkflowDefinitionConflict(
+                    "The saved workflow changed. Load it into the editor to review "
+                    "the latest version before launching."
+                )
 
             self._conn.execute(
                 "INSERT INTO workflow_runs "

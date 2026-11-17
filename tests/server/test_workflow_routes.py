@@ -466,6 +466,49 @@ def test_saved_definition_survives_runtime_restart(tmp_path, monkeypatch) -> Non
         app.state.workflow_runtime.close()
 
 
+@pytest.mark.parametrize("action", ["runs", "schedule"])
+def test_saved_launch_checks_revision_and_confirms_retries(
+    tmp_path, monkeypatch, action
+):
+    monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(tmp_path / "workflow.db"))
+    app = FastAPI()
+    app.state.workflow_system = None
+    app.include_router(create_workflow_runs_router())
+    path = "/v1/workflows/definitions"
+
+    with TestClient(app) as client:
+        graph = {"name": "Original", "nodes": [{"id": "copy", "type": "transform"}]}
+        saved = client.post(path, json=graph).json()
+        definition_path = f"{path}/{saved['id']}"
+        launch_path = f"{definition_path}/{action}"
+        payload = {
+            "initial_input": "same input",
+            "expected_revision": saved["revision"],
+        }
+        if action == "schedule":
+            payload["scheduled_at"] = time.time() + 600
+        headers = {"Idempotency-Key": "original-attempt"}
+        launched = client.post(launch_path, json=payload, headers=headers)
+        assert launched.status_code == 202
+        old_run_id = launched.json()["id"]
+
+        updated = client.put(definition_path, json={
+            **graph, "name": "Updated", "expected_revision": saved["revision"],
+        })
+        assert updated.status_code == 200
+        retry = client.post(launch_path, json=payload, headers=headers)
+        assert retry.status_code == 202 and retry.json()["id"] == old_run_id
+
+        new_headers = {"Idempotency-Key": "new-attempt"}
+        stale = client.post(launch_path, json=payload, headers=new_headers)
+        assert stale.status_code == 412
+        payload["expected_revision"] = updated.json()["revision"]
+        fresh = client.post(launch_path, json=payload, headers=new_headers)
+        assert fresh.status_code == 202 and fresh.json()["id"] != old_run_id
+        assert fresh.json()["workflow_name"] == "Updated"
+        app.state.workflow_runtime.close()
+
+
 def test_saved_workflow_pages_remain_stable_with_new_definitions(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(tmp_path / "workflow.db"))
     app = FastAPI()

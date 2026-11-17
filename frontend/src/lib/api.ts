@@ -1864,8 +1864,10 @@ export async function workflowRecurrences(
   return (await response.json()).recurrences;
 }
 
+export class SavedWorkflowChangedError extends Error {}
+
 export async function runSavedWorkflow(
-  id: string, initialInput: string, launchKey?: string, scheduledAt?: number,
+  id: string, initialInput: string, launchKey?: string, scheduledAt?: number, expectedRevision?: string,
 ): Promise<WorkflowRunSummary> {
   const action = scheduledAt === undefined ? 'runs' : 'schedule';
   const res = await apiFetch(`/v1/workflows/definitions/${encodeURIComponent(id)}/${action}`, {
@@ -1874,12 +1876,14 @@ export async function runSavedWorkflow(
       'Content-Type': 'application/json',
       ...(launchKey ? { 'Idempotency-Key': launchKey } : {}),
     },
-    body: JSON.stringify({ initial_input: initialInput, scheduled_at: scheduledAt }),
+    body: JSON.stringify({ initial_input: initialInput, scheduled_at: scheduledAt, expected_revision: expectedRevision }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new Error(typeof body?.detail === 'string'
-      ? body.detail : `Failed to start saved workflow (${res.status}).`);
+    const message = typeof body?.detail === 'string'
+      ? body.detail : `Failed to start saved workflow (${res.status}).`;
+    if (res.status === 412) throw new SavedWorkflowChangedError(message);
+    throw new Error(message);
   }
   return res.json();
 }

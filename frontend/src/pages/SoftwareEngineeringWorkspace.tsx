@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import { Check, ChevronRight, Folder, FolderPlus, Monitor, Plus, Settings2 } from 'lucide-react';
 import {
   ApprovalDecisionError,
+  SavedWorkflowChangedError,
   approveAction,
   denyAction,
   discoverMcpTools,
@@ -709,7 +710,7 @@ export function SoftwareEngineeringWorkspace({
   const [definitionMessage, setDefinitionMessage] = useState('Loading saved workflows…');
   const [launchingSaved, setLaunchingSaved] = useState(false);
   const savedLaunch = useRef<{
-    definitionId: string; input: string; key: string; scheduledAt?: number;
+    definitionId: string; input: string; key: string; scheduledAt?: number; revision?: string;
   } | null>(null);
   const [savingDefinition, setSavingDefinition] = useState(false);
   const initialGraph = initialStarter === 'finance' ? FINANCE_EVIDENCE_REVIEW
@@ -965,30 +966,34 @@ export function SoftwareEngineeringWorkspace({
 
   const launchSaved = async (event: FormEvent) => {
     event.preventDefault();
-    if (!definitionId || launchingSaved) return;
+    if (!selectedDefinition || launchingSaved) return;
+    const revision = selectedDefinition.revision;
     const scheduledAt = workflowStart ? Date.parse(workflowStart) / 1000 : undefined;
     const previous = savedLaunch.current;
     const repeated = previous?.definitionId === definitionId &&
-      previous.input === workflowInput && previous.scheduledAt === scheduledAt;
+      previous.input === workflowInput && previous.scheduledAt === scheduledAt && previous.revision === revision;
     if (!repeated && scheduledAt !== undefined &&
       (!Number.isFinite(scheduledAt) || scheduledAt <= Date.now() / 1000)) {
       setDefinitionMessage('Choose a future start time.');
       return;
     }
     const attempt = repeated ? previous : {
-      definitionId, input: workflowInput, key: crypto.randomUUID(), scheduledAt,
+      definitionId, input: workflowInput, key: crypto.randomUUID(), scheduledAt, revision,
     };
     savedLaunch.current = attempt;
     setLaunchingSaved(true);
     setDefinitionMessage('');
     try {
-      const run = await runSavedWorkflow(attempt.definitionId, attempt.input, attempt.key, attempt.scheduledAt);
+      const run = await runSavedWorkflow(
+        attempt.definitionId, attempt.input, attempt.key, attempt.scheduledAt, attempt.revision,
+      );
       savedLaunch.current = null;
       setHistoryStatus('');
       setHistoryCursors(['']);
       setHistoryRefresh((version) => version + 1);
       setDefinitionMessage(repeated ? 'Workflow run confirmed.' : run.status === 'scheduled' ? 'Workflow scheduled.' : 'Workflow queued.');
     } catch (error) {
+      if (error instanceof SavedWorkflowChangedError) savedLaunch.current = null;
       setDefinitionMessage(error instanceof Error ? error.message : 'Could not start workflow.');
     } finally {
       setLaunchingSaved(false);
