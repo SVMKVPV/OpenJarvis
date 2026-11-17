@@ -258,7 +258,7 @@ function DotVoice({ station, brainContext, onShare }: {
     const text = raw.trim();
     if (!text || thinking) return;
     const brief = includeBrainBrief ? brainContext.trim() : '';
-    const conversationKey = JSON.stringify([station.id, selectedModel]);
+    const conversationKey = JSON.stringify([station.id, selectedModel, station.reportsTo]);
     const history = conversationHistory.current.get(conversationKey) ?? [];
     setIncludeBrainBrief(false);
     const user: VoiceMessage = { id: `u-${Date.now()}`, role: 'user', text };
@@ -272,7 +272,18 @@ function DotVoice({ station, brainContext, onShare }: {
         for await (const event of streamChat({
           model: selectedModel,
           messages: [
-            { role: 'system', content: `You are Dot, the concise Jarvis-style voice interface for an organization command center. The selected station is ${station.name}. Its purpose is: ${station.purpose}. Its current work is: ${station.current}. Answer clearly, state what you understood, and suggest the next operational action.` },
+            { role: 'system', content: [
+              'You are Dot, the concise Jarvis-style voice interface for an organization command center.',
+              'Use the selected workstation details as background when suggesting who should act or review.',
+              'Shared Brain is a communication service. The CEO / Director retains final approval.',
+              JSON.stringify({
+                workstation: station.name,
+                purpose: station.purpose,
+                currentWork: station.current,
+                reportsTo: station.reportsTo,
+              }),
+              'Answer clearly and suggest the next operational action.',
+            ].join('\n') },
             ...history.flatMap((turn) => [
               { role: 'user' as const, content: turn.request },
               { role: 'assistant' as const, content: turn.reply },
