@@ -952,7 +952,7 @@ def create_connectors_router():
                 if row is not None and row[0]:
                     oldest_item_date = str(row[0])
         except Exception:  # noqa: BLE001
-            checkpoint = None
+            logger.debug("Could not read all sync metadata for %s", connector_id)
 
         # Prefer the checkpoint's items_synced — it is the running cumulative
         # total across every sync this connector has ever run. The connector
@@ -970,29 +970,27 @@ def create_connectors_router():
         # page load if we masked the zero with items_synced as a fallback.
         items_total = status.items_total
         last_sync_str: Optional[str]
-        if status.last_sync:
-            last_sync_str = status.last_sync.isoformat()
-        elif checkpoint and checkpoint.get("last_sync"):
-            last_sync_str = checkpoint["last_sync"]
+        if checkpoint is not None:
+            last_sync_str = checkpoint.get("last_sync")
         else:
-            last_sync_str = None
+            last_sync_str = status.last_sync.isoformat() if status.last_sync else None
 
         # Determine effective state
+        checkpoint_error = (checkpoint or {}).get("error")
         if _disconnect_pending(connector_id):
             effective_state = "stopping"
         elif is_bg_running:
             effective_state = "syncing"
-        elif bg.get("state") == "error":
+        elif bg.get("state") == "error" or (not bg and checkpoint_error):
             effective_state = "error"
-        elif status.state != "idle":
-            effective_state = status.state
         else:
             effective_state = status.state
 
-        # Use the bg error if the connector doesn't have one
-        effective_error = (
-            status.error or bg.get("error") or (checkpoint or {}).get("error")
-        )
+        effective_error = None
+        if effective_state == "error":
+            effective_error = bg.get("error") or status.error
+            if not effective_error and checkpoint_error:
+                effective_error = _translate_sync_error(checkpoint_error)
 
         # Items processed during the *current* (or just-finished) run = total
         # minus the baseline captured when this sync was kicked off. This

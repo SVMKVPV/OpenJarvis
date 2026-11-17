@@ -510,6 +510,38 @@ def test_sync_status(app):
     assert data["connector_id"] == "obsidian"
 
 
+def test_sync_status_restores_failure_and_last_success(app, tmp_path, monkeypatch):
+    from openjarvis.connectors import sync_engine
+    from openjarvis.connectors._stubs import SyncStatus
+    from openjarvis.connectors.pipeline import IngestionPipeline
+    from openjarvis.connectors.store import KnowledgeStore
+    from openjarvis.core import config
+    from openjarvis.server.connectors_router import _instances
+
+    class FreshConnector:
+        def sync_status(self):
+            return SyncStatus()
+
+    monkeypatch.setattr(sync_engine, "DEFAULT_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(config, "DEFAULT_CONFIG_DIR", tmp_path)
+    monkeypatch.setitem(_instances, "obsidian", FreshConnector())
+    successful_at = "2026-01-01T00:00:00+00:00"
+    with KnowledgeStore() as store:
+        with sync_engine.SyncEngine(pipeline=IngestionPipeline(store=store)) as engine:
+            engine._save_checkpoint("obsidian", 8, cursor=None, last_sync=successful_at)
+            engine._save_checkpoint(
+                "obsidian", 10, cursor=None, error="request timeout"
+            )
+
+    response = app.get("/v1/connectors/obsidian/sync")
+    assert response.status_code == 200
+    status = response.json()
+    assert status["state"] == "error"
+    assert status["error"] == "Connection timed out."
+    assert status["items_synced"] == 10
+    assert status["last_sync"] == successful_at
+
+
 def test_trigger_sync(app, tmp_path: Path) -> None:
     """POST /v1/connectors/obsidian/sync triggers an incremental sync.
 

@@ -1075,8 +1075,8 @@ export function SoftwareEngineeringWorkspace({
                 <p role="status">
                   {connectorSync === 'unavailable' ? 'Sync history unavailable.' : connectorSync
                     ? `Sync status: ${connectorSync.state}. ${connectorSync.last_sync
-                      ? `Last recorded sync: ${new Date(connectorSync.last_sync).toLocaleString()}.`
-                      : 'No sync recorded.'}`
+                      ? `Last successful sync: ${new Date(connectorSync.last_sync).toLocaleString()}.`
+                      : 'No successful sync recorded.'} ${connectorSync.error ?? ''}`
                     : 'Loading sync history…'}
                 </p>
               )}
