@@ -1,0 +1,48 @@
+{
+  "name": "Launch a saved OpenJarvis workflow",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "nodes": [
+    {
+      "id": "manual-trigger",
+      "name": "Manual trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "parameters": {}
+    },
+    {
+      "id": "launch-workflow",
+      "name": "Launch saved workflow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [260, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "https://backend.example.invalid/v1/workflows/definitions/WORKFLOW_ID/runs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Idempotency-Key",
+              "value": "REPLACE_WITH_STABLE_EVENT_ID"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"initial_input\": \"Example event\", \"expected_revision\": \"REPLACE_WITH_SAVED_REVISION\"}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Manual trigger": {
+      "main": [[{"node": "Launch saved workflow", "type": "main", "index": 0}]]
+    }
+  }
+}

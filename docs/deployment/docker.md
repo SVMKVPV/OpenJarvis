@@ -214,6 +214,14 @@ run ID and status. Check the run in Command Center using your regular login
 and backend connection. Remove the digest and restart the backend to revoke
 the key.
 
+For n8n, import the [workflow launch example](../../examples/openjarvis/n8n-workflow-launch.json).
+Set the HTTP Request URL to the backend URL and saved workflow ID from
+**Run this workflow from another app** in Workspace. Create a **Header Auth**
+credential with header name `Authorization` and value `Bearer <workflow-launch-key>`.
+Select it in the request node and replace the saved revision and event ID
+placeholders. Use the same event ID and request body when retrying that event.
+Use a fresh event ID for distinct events.
+
 ### Persistent data
 
 The `openjarvis-data` named volume persists Command Center state, including
