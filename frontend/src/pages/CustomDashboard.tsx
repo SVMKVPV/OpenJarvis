@@ -320,6 +320,12 @@ export function CustomDashboard({
                       month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
                     })}</time>
                     <span>{schedule.workflow_name}</span>
+                    {!!schedule.skipped_during_catchup && (
+                      <small>{schedule.skipped_during_catchup} skipped during catch-up</small>
+                    )}
+                    {!!schedule.skipped_while_active && (
+                      <small>{schedule.skipped_while_active} skipped while active</small>
+                    )}
                   </button>
                 </li>
               );

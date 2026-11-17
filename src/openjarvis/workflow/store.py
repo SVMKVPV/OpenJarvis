@@ -357,6 +357,7 @@ class WorkflowRunStore:
                 "SELECT recurrence.id, recurrence.definition_id, "
                 "recurrence.next_due_at, "
                 "recurrence.interval_seconds, "
+                "recurrence.skipped_while_active, recurrence.skipped_during_catchup, "
                 "COALESCE(json_extract(definition.graph_json, '$.name'), 'workflow') "
                 "AS workflow_name "
                 "FROM workflow_recurrences AS recurrence "

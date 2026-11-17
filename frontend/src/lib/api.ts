@@ -1626,7 +1626,8 @@ type WorkflowRecurrenceChange = string
   | (WorkflowRecurrenceInputs & { id: string; expected_revision: number });
 
 export type UpcomingWorkflowRecurrence = Pick<
-  WorkflowRecurrence, 'id' | 'next_due_at' | 'interval_seconds'
+  WorkflowRecurrence, 'id' | 'next_due_at' | 'interval_seconds' |
+  'skipped_while_active' | 'skipped_during_catchup'
 > & { definition_id: string; workflow_name: string };
 
 export async function fetchUpcomingWorkflowRecurrences(): Promise<UpcomingWorkflowRecurrence[]> {

@@ -162,6 +162,8 @@ def test_recurring_workflow_catches_up_once_after_restart(tmp_path, monkeypatch)
             "next_due_at": request["first_due_at"],
             "interval_seconds": 60,
             "workflow_name": "Recurring review",
+            "skipped_while_active": 0,
+            "skipped_during_catchup": 0,
         }]
         schedule_url = f"{url}/{created.json()['id']}"
         paused = client.patch(schedule_url, json={"paused": True})
@@ -207,6 +209,10 @@ def test_recurring_workflow_catches_up_once_after_restart(tmp_path, monkeypatch)
             assert runs[0]["scheduled_at"] == overdue["next_due_at"] + 180
             schedule = client.get(url).json()["recurrences"][0]
             assert schedule["next_due_at"] == overdue["next_due_at"] + 240
+            upcoming = client.get(upcoming_url).json()["recurrences"][0]
+            assert upcoming["id"] == overdue["id"]
+            assert upcoming["skipped_during_catchup"] == 3
+            assert upcoming["skipped_while_active"] == 0
             assert client.delete(f"{url}/{overdue['id']}").status_code == 204
             assert client.get(url).json()["recurrences"] == [updated]
     finally:
