@@ -16,18 +16,18 @@ import './custom-dashboard.css';
 
 export type DashboardWidget = { id: string; stationId: string; station: string; name: string; value: string; detail: string; kind: 'metric' | 'calendar' | 'queue' | 'trend' | 'content' };
 export const DASHBOARD_WIDGETS: DashboardWidget[] = [
-  { id: 'dot-briefing', stationId: 'dot', station: 'DOT', name: 'CEO briefing', value: '7', detail: 'DECISIONS + UPDATES', kind: 'queue' },
+  { id: 'dot-briefing', stationId: 'dot', station: 'DOT', name: 'CEO briefing', value: '', detail: 'Pending workflow reviews', kind: 'queue' },
   { id: 'brain-health', stationId: 'brain', station: 'SHARED BRAIN', name: 'Shared brief', value: '', detail: '', kind: 'content' },
   { id: 'leads-found', stationId: 'growth', station: 'LEADS + GROWTH', name: 'Leads found', value: '', detail: 'Saved growth leads', kind: 'metric' },
   { id: 'content-approval', stationId: 'marketing', station: 'MARKETING', name: 'Content to approve', value: '', detail: 'Waiting for review', kind: 'queue' },
   { id: 'social-pipeline', stationId: 'marketing', station: 'MARKETING', name: 'Social content pipeline', value: '', detail: 'Recent drafts and planned content', kind: 'content' },
   { id: 'analytics-views', stationId: 'marketing', station: 'MARKETING', name: 'Google Analytics views', value: '', detail: 'Last 28 completed days', kind: 'metric' },
   { id: 'email-replies', stationId: 'email', station: 'EMAIL REPLY', name: 'Gmail threads to review', value: '', detail: 'Latest indexed message is inbound', kind: 'queue' },
-  { id: 'comment-replies', stationId: 'email', station: 'EMAIL REPLY', name: 'Comment replies due', value: '31', detail: 'SOCIAL + COMMUNITY', kind: 'queue' },
+  { id: 'comment-replies', stationId: 'email', station: 'EMAIL REPLY', name: 'Comment replies due', value: '—', detail: 'No social comment source connected', kind: 'queue' },
   { id: 'revenue', stationId: 'finance', station: 'FINANCE', name: 'Recorded revenue MTD', value: '', detail: '', kind: 'content' },
   { id: 'calendar', stationId: 'operations-manager', station: 'OPERATIONS MANAGER', name: 'Operating calendar', value: '', detail: 'Upcoming workflow runs', kind: 'calendar' },
   { id: 'workflow-failures', stationId: 'operations-manager', station: 'OPERATIONS MANAGER', name: 'Workflow failures', value: '', detail: '', kind: 'content' },
-  { id: 'approvals', stationId: 'managers', station: 'MANAGERS', name: 'Approval queue', value: '6', detail: '2 EXECUTIVE DECISIONS', kind: 'queue' },
+  { id: 'approvals', stationId: 'managers', station: 'MANAGERS', name: 'Approval queue', value: '', detail: 'Pending decisions', kind: 'queue' },
   { id: 'builder-proposals', stationId: 'system-builder', station: 'SYSTEM BUILDER', name: 'Improvement proposals', value: '', detail: 'Proposals awaiting review', kind: 'queue' },
 ];
 export const DEFAULT_WIDGET_IDS = ['dot-briefing','brain-health','leads-found','content-approval','social-pipeline','analytics-views','email-replies','revenue','calendar','builder-proposals'];
@@ -92,7 +92,7 @@ export function CustomDashboard({
       (approval.action_type === 'workflow_action' && approval.payload.workflow_node_id === 'proposal-review'))
     .map((item) => [item.runId, item])).values());
   const [approvalDetail, setApprovalDetail] = useState('Checking approval queue…');
-  const showApprovals = widgetIds.includes('approvals') || widgetIds.includes('builder-proposals');
+  const showApprovals = ['approvals', 'builder-proposals', 'dot-briefing'].some((id) => widgetIds.includes(id));
 
   useEffect(() => {
     if (!showApprovals) return;
@@ -281,6 +281,10 @@ export function CustomDashboard({
       detail: analytics ? analyticsDetails[analytics.status] : 'Checking Google Analytics…',
     },
     'email-replies': { value: gmail.count ?? '—', detail: gmail.detail },
+    'dot-briefing': {
+      value: pendingApprovals ? workflowApprovals.length : '—',
+      detail: pendingApprovals ? 'Pending workflow reviews' : approvalDetail,
+    },
     approvals: { value: approvalCount ?? '—', detail: approvalDetail },
     'builder-proposals': {
       value: pendingApprovals ? builderProposals.length : '—',
@@ -303,11 +307,11 @@ export function CustomDashboard({
   const move = (index: number, delta: number) => { const next = [...widgetIds]; const target = index + delta; if (target < 0 || target >= next.length) return; [next[index], next[target]] = [next[target], next[index]]; setWidgetIds(next); };
   return <main className="custom-dashboard"><div className="dashboard-title"><div><span>CUSTOM DASHBOARD</span><h2>CEO operating picture</h2><p>Station-owned widgets. Add what matters, remove what does not.</p></div><button className={editing ? 'active' : ''} onClick={() => setEditing(!editing)}><Settings2 size={13}/>{editing ? 'DONE EDITING' : 'EDIT DASHBOARD'}</button></div>
     {editing && <section className="widget-catalog"><header><div><span>ADD WIDGET</span><strong>AVAILABLE FROM WORKSTATIONS</strong></div><em>{available.length} AVAILABLE</em></header><div>{available.length ? available.map((widget) => <button key={widget.id} onClick={() => setWidgetIds([...widgetIds, widget.id])}><Plus size={11}/><span><b>{widget.name}</b><small>{widget.station}</small></span></button>) : <p>All available widgets are already on the dashboard.</p>}</div></section>}
-    {widgets.length ? <section className="widget-grid">{widgets.map((widget,index) => <article key={widget.id} className={`dashboard-widget ${sizes[widget.id] ?? (widget.kind === 'calendar' ? 'large' : 'small')}`}><header><button onClick={() => onOpenStation(widget.stationId)}>{widget.station}</button><span>{widget.id === 'approvals' || widget.id === 'builder-proposals' ? (approvalCount !== null ? 'LIVE DATA' : 'BACKEND') : widget.kind === 'calendar' ? (scheduledRuns !== null ? 'LIVE WORKFLOWS' : 'BACKEND') : widget.id === 'content-approval' || widget.id === 'social-pipeline' ? (socialQueue ? 'LIVE QUEUE' : 'BACKEND') : widget.id === 'email-replies' ? 'GMAIL INDEX' : widget.id === 'analytics-views' ? (analytics?.status === 'live' ? 'LIVE GA4' : 'GA4') : widget.id === 'leads-found' ? 'LEAD REGISTER' : widget.id === 'workflow-failures' ? 'WORKFLOW HISTORY' : widget.id === 'revenue' ? 'FINANCE RECORD' : widget.id === 'brain-health' ? 'BACKEND BRIEF' : 'DEMO DATA'}</span></header><div className="widget-content"><span>{widget.name}</span>{widget.kind !== 'content' && widget.kind !== 'calendar' && <><strong>{queueMetrics[widget.id]?.value ?? widget.value}</strong><small>{queueMetrics[widget.id]?.detail ?? widget.detail}</small></>}
+    {widgets.length ? <section className="widget-grid">{widgets.map((widget,index) => <article key={widget.id} className={`dashboard-widget ${sizes[widget.id] ?? (widget.kind === 'calendar' ? 'large' : 'small')}`}><header><button onClick={() => onOpenStation(widget.stationId)}>{widget.station}</button><span>{widget.id === 'approvals' || widget.id === 'builder-proposals' || widget.id === 'dot-briefing' ? (approvalCount !== null ? 'LIVE DATA' : 'BACKEND') : widget.kind === 'calendar' ? (scheduledRuns !== null ? 'LIVE WORKFLOWS' : 'BACKEND') : widget.id === 'content-approval' || widget.id === 'social-pipeline' ? (socialQueue ? 'LIVE QUEUE' : 'BACKEND') : widget.id === 'email-replies' ? 'GMAIL INDEX' : widget.id === 'analytics-views' ? (analytics?.status === 'live' ? 'LIVE GA4' : 'GA4') : widget.id === 'leads-found' ? 'LEAD REGISTER' : widget.id === 'workflow-failures' ? 'WORKFLOW HISTORY' : widget.id === 'revenue' ? 'FINANCE RECORD' : widget.id === 'brain-health' ? 'BACKEND BRIEF' : widget.id === 'comment-replies' ? 'DISCONNECTED' : 'DEMO DATA'}</span></header><div className="widget-content"><span>{widget.name}</span>{widget.kind !== 'content' && widget.kind !== 'calendar' && <><strong>{queueMetrics[widget.id]?.value ?? widget.value}</strong><small>{queueMetrics[widget.id]?.detail ?? widget.detail}</small></>}
     {widget.id === 'revenue' && <FinanceRevenue />}
     {widget.id === 'brain-health' && <DashboardSharedBrief />}
     {widget.id === 'workflow-failures' && <DashboardWorkflowFailures onOpen={onOpenWorkflow} />}
-    {widget.id === 'approvals' && (
+    {(widget.id === 'approvals' || widget.id === 'dot-briefing') && (
       <WorkflowApprovalLinks approvals={workflowApprovals} label="Workflow approvals" onOpen={onOpenWorkflow} />
     )}{widget.id === 'builder-proposals' && (
       <WorkflowApprovalLinks approvals={builderProposals} label="System Builder proposals" onOpen={onOpenWorkflow} />
