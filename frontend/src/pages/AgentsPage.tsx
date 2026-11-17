@@ -1777,8 +1777,9 @@ function InteractTab({ agentId, agentStatus, onRunStateChange }: { agentId: stri
       await askAgent(agentId, q);
       setRunning(true);
       onRunStateChange?.(); // flip the parent status badge to "running" now
-    } catch {
-      setErrorMsg('Could not start the agent run.');
+    } catch (error) {
+      setInput(q);
+      setErrorMsg(error instanceof Error ? error.message : 'Could not start the agent run.');
       setLiveItems([]);
     } finally {
       setSending(false);

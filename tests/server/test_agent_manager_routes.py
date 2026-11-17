@@ -445,11 +445,28 @@ class TestAgentManagerRoutes:
         assert captured[0].capability_policy is policy
         assert captured[0].rate_limiter is limiter
         expected = (
-            {"message_id": response.json()["id"]}
+            {"message_id": response.json()["id"], "lock_already_held": True}
             if route_kind == "immediate"
             else {"lock_already_held": True}
         )
         assert ticks == [((agent["id"],), expected)]
+
+    def test_busy_agent_rejects_immediate_but_accepts_queued(self, manager, client):
+        agent = manager.create_agent(name="busy", agent_type="simple")
+        agent_id = agent["id"]
+        manager.start_tick(agent_id)
+        inbox = f"/v1/managed-agents/{agent_id}/messages"
+
+        immediate = client.post(inbox, json={"content": "now", "mode": "immediate"})
+        assert immediate.status_code == 409
+        assert manager.list_messages(agent_id) == []
+        assert manager.get_agent(agent_id)["status"] == "running"
+
+        queued = client.post(inbox, json={"content": "later", "mode": "queued"})
+        assert queued.status_code == 200
+        assert [
+            message["id"] for message in manager.get_pending_messages(agent_id)
+        ] == [queued.json()["id"]]
 
 
 def test_run_agent_concurrent_returns_409(tmp_path):

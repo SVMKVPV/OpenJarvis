@@ -2183,34 +2183,29 @@ def create_agent_manager_router(
         if not agent_record:
             raise HTTPException(status_code=404, detail="Agent not found")
 
-        # Auto-recover error-state agents on immediate messages
-        if req.mode == "immediate" and agent_record["status"] in (
-            "error",
-            "needs_attention",
-        ):
-            manager.update_agent(agent_id, status="idle")
+        stream_engine = (
+            getattr(request.app.state, "engine", None) if req.stream else None
+        )
+        if req.stream and stream_engine is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Engine not available for streaming",
+            )
+        starts_tick = req.stream or req.mode == "immediate"
+        if starts_tick:
+            try:
+                manager.start_tick(agent_id)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Agent is already running",
+                ) from exc
 
-        stream_tick_acquired = False
-        stream_engine = None
-        if req.stream:
-            stream_engine = getattr(request.app.state, "engine", None)
-            if stream_engine is not None:
-                # Unlike the queued/immediate paths, streaming runs directly
-                # in the request, so it must acquire the same tick guard here.
-                try:
-                    manager.start_tick(agent_id)
-                    stream_tick_acquired = True
-                except ValueError:
-                    raise HTTPException(
-                        status_code=409,
-                        detail="Agent is already running",
-                    )
-
-        # Store user message in DB (always, regardless of stream mode)
+        # Reserve execution before persisting requests that expect a reply now.
         try:
             msg = manager.send_message(agent_id, req.content, mode=req.mode)
         except Exception:
-            if stream_tick_acquired:
+            if starts_tick:
                 manager.end_tick(agent_id)
             raise
 
@@ -2258,7 +2253,9 @@ def create_agent_manager_router(
                         _time.time() - _start,
                         agent_id,
                     )
-                    executor.execute_tick(agent_id, message_id=msg["id"])
+                    executor.execute_tick(
+                        agent_id, lock_already_held=True, message_id=msg["id"]
+                    )
                     logger.info(
                         "Immediate tick completed for agent %s in %.1fs",
                         agent_id,
@@ -2288,17 +2285,12 @@ def create_agent_manager_router(
                     name=f"managed-agent-immediate-{agent_id}",
                 )
             except RuntimeError as exc:
+                manager.end_tick(agent_id)
                 raise HTTPException(status_code=503, detail=str(exc))
             return msg
 
         # --- Streaming mode: run agent and return SSE response ---
-        engine = stream_engine
         bus = getattr(request.app.state, "bus", None)
-        if engine is None:
-            raise HTTPException(
-                status_code=503,
-                detail="Engine not available for streaming",
-            )
 
         try:
             return await _stream_managed_agent(
@@ -2306,14 +2298,13 @@ def create_agent_manager_router(
                 agent_record=agent_record,
                 user_content=req.content,
                 message_id=msg["id"],
-                engine=engine,
+                engine=stream_engine,
                 bus=bus,
                 app_state=request.app.state,
                 on_complete=lambda: manager.end_tick(agent_id),
             )
         except Exception:
-            if stream_tick_acquired:
-                manager.end_tick(agent_id)
+            manager.end_tick(agent_id)
             raise
 
     # ── State inspection ─────────────────────────────────────

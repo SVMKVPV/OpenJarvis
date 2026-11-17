@@ -58,8 +58,8 @@ export function WorkstationAgentInbox({ agentId, brainContext, onShare, onOpenWo
       setDraft('');
       setIncludeBrief(false);
       setSendStatus(queueOnly ? 'Queued for the next agent run.' : 'Message submitted and a run requested.');
-    } catch {
-      setSendStatus('Could not send the message. Check the agent in Agents before retrying.');
+    } catch (error) {
+      setSendStatus(error instanceof Error ? error.message : 'Could not send the message.');
     } finally {
       setSending(false);
     }

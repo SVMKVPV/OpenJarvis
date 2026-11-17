@@ -1051,7 +1051,10 @@ export async function askAgent(
     headers: { 'Content-Type': 'application/json', ...timeZoneHeaders() },
     body: JSON.stringify({ content, mode, stream: false }),
   });
-  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  if (res.status === 409) {
+    throw new Error('This agent is already running. Try again when it finishes.');
+  }
+  if (!res.ok) throw new Error('Could not send the message. Try again.');
   return res.json();
 }
 
