@@ -390,6 +390,14 @@ export async function fetchServerInfo(): Promise<ServerInfo> {
   return res.json();
 }
 
+export async function checkInferenceHealth(signal: AbortSignal): Promise<'healthy' | 'unhealthy'> {
+  const response = await apiFetch('/health', { signal, cache: 'no-store' });
+  const body = await response.json();
+  if (response.ok && body?.status === 'ok') return 'healthy';
+  if (response.status === 503 && body?.detail === 'Engine unhealthy') return 'unhealthy';
+  throw new Error('The backend did not return inference health.');
+}
+
 export async function checkHealth(): Promise<boolean> {
   if (isTauri()) {
     try {

@@ -38,6 +38,7 @@ import { WorkflowBrainHandoff } from './WorkflowBrainHandoff';
 import { WorkflowWorkstationAssignment, type WorkflowRecipient, type WorkflowReportingRoute } from './WorkflowWorkstationAssignment';
 import { WorkflowEvidenceUpload } from './WorkflowEvidenceUpload';
 import { WorkspaceProjectTasks } from './WorkspaceProjectTasks';
+import { WorkspaceInferenceHealth } from './WorkspaceInferenceHealth';
 import { PriorResearchCheck } from './PriorResearchCheck';
 import { WorkflowRecurrenceEditor } from './WorkflowRecurrenceEditor';
 import './software-workspace.css';
@@ -1198,6 +1199,7 @@ export function SoftwareEngineeringWorkspace({
                       <small>{isTauri()
                         ? 'Choose Ollama or a custom inference server in desktop Settings.'
                         : 'This workspace uses the inference engine configured on its backend.'}</small>
+                      <WorkspaceInferenceHealth />
                       <Link to="/settings#inference-source">Open inference settings</Link>
                     </>
                   ) : (
