@@ -1779,6 +1779,42 @@ class TestHealthEndpoint:
         assert resp.status_code == 503
 
 
+@pytest.mark.asyncio
+async def test_slow_engine_health_keeps_backend_info_responsive():
+    import asyncio
+    import threading
+
+    import httpx
+
+    started = threading.Event()
+    release = threading.Event()
+    timed_out = threading.Event()
+    engine = _make_engine()
+
+    def slow_health():
+        started.set()
+        if not release.wait(timeout=5):
+            timed_out.set()
+        return True
+
+    engine.health.side_effect = slow_health
+    app = create_app(engine, "test-model", config=_test_config())
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        health = asyncio.create_task(client.get("/health"))
+        try:
+            assert await asyncio.to_thread(started.wait, 5)
+            response = await asyncio.wait_for(client.get("/v1/info"), timeout=3)
+            assert response.status_code == 200
+            assert response.json()["model"] == "test-model"
+            assert not timed_out.is_set()
+            assert not health.done()
+        finally:
+            release.set()
+            assert (await health).status_code == 200
+
+
 # ---------------------------------------------------------------------------
 # App creation tests
 # ---------------------------------------------------------------------------

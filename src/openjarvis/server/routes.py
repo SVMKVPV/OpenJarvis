@@ -1455,7 +1455,7 @@ async def server_info(request: Request):
 
 
 @router.get("/health")
-async def health(request: Request, response: Response):
+def health(request: Request, response: Response):
     """Health check endpoint."""
     engine = request.app.state.engine
     healthy = engine.health()
