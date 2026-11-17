@@ -2828,7 +2828,7 @@ dependencies = [
 
 [[package]]
 name = "openjarvis-desktop"
-version = "1.107.0"
+version = "1.108.0"
 dependencies = [
  "dispatch",
  "keyring",
