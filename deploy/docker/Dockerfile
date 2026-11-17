@@ -37,7 +37,8 @@ WORKDIR /app
 # only application code changes.
 COPY pyproject.toml uv.lock README.md ./
 RUN pip install --no-cache-dir uv && \
-    uv export --frozen --no-dev --extra server --no-emit-project > requirements.txt && \
+    uv export --frozen --no-dev --extra server --extra inference-cloud \
+        --extra inference-google --extra channel-gmail --no-emit-project > requirements.txt && \
     uv pip install --system --no-deps -r requirements.txt && \
     uv pip install --system --no-deps "maturin>=1.12.6,<2"
 
