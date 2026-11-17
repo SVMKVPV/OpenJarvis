@@ -365,8 +365,28 @@ function workflowReviewChecklist(approval: PendingApproval): string[] {
   return reviewChecklistLines(approval.payload.review_checklist).filter((item) => item.trim());
 }
 
+function reviewedWorkflowOutput(
+  run: WorkflowRunDetail | null, draftId: string, approvalId: string,
+): string | null {
+  if (run?.status !== 'succeeded') return null;
+  const attempts = new Map(run.steps.map((step) => [step.node_id, step]));
+  const draft = attempts.get(draftId);
+  const approval = attempts.get(approvalId);
+  const actionId = approval?.metadata.approval_id;
+  if (!draft?.success || !draft.output.trim() ||
+      approval?.metadata.approval_status !== 'approved' || typeof actionId !== 'string') return null;
+  const reviewedInput = run.steps.find((step) => step.node_id === approvalId &&
+    step.metadata.workflow_status === 'waiting_approval' &&
+    step.metadata.approval_id === actionId,
+  )?.metadata.review_input;
+  return typeof reviewedInput === 'string' && reviewedInput.includes(draft.output) ? draft.output : null;
+}
+
 function downloadWorkflowJson(filename: string, data: object) {
-  const file = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  downloadWorkflowFile(filename, new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+}
+
+function downloadWorkflowFile(filename: string, file: Blob) {
   const url = URL.createObjectURL(file);
   const link = document.createElement('a');
   link.href = url;
@@ -594,17 +614,8 @@ export function SoftwareEngineeringWorkspace({
   const skippedStepElements = useRef(new Map<string, HTMLLIElement>());
   const runStepElements = useRef(new Map<string, HTMLLIElement>());
   const lastAttempts = new Map((runDetail?.steps ?? []).map((step) => [step.node_id, step]));
-  const gmailDraft = lastAttempts.get('draft-reply');
-  const gmailApproval = lastAttempts.get('review-reply');
-  const reviewedGmailInput = runDetail?.steps.find((step) =>
-    step.node_id === 'review-reply' && step.metadata.workflow_status === 'waiting_approval' &&
-    step.metadata.approval_id === gmailApproval?.metadata.approval_id,
-  )?.metadata.review_input;
-  const approvedGmailDraft = runDetail?.status === 'succeeded' && gmailDraft?.success &&
-    gmailDraft.output.trim() && gmailApproval?.metadata.approval_status === 'approved' &&
-    typeof gmailApproval.metadata.approval_id === 'string' && typeof reviewedGmailInput === 'string' &&
-    reviewedGmailInput.includes(gmailDraft.output)
-    ? gmailDraft.output : null;
+  const approvedGmailDraft = reviewedWorkflowOutput(runDetail, 'draft-reply', 'review-reply');
+  const approvedWorkpaper = reviewedWorkflowOutput(runDetail, 'finance-workpaper', 'finance-review');
   const runStepStatuses = new Map<string, 'waiting for approval' | 'succeeded' | 'failed' | 'skipped'>(Array.from(lastAttempts, ([id, step]) => [
     id,
     step.metadata.workflow_status === 'waiting_approval'
@@ -2015,6 +2026,12 @@ export function SoftwareEngineeringWorkspace({
                     </li>
                   ))}</ol> : <p>No steps recorded yet.</p>}
                   {approvedGmailDraft && <ApprovedGmailDraft key={runDetail.id} draft={approvedGmailDraft} />}
+                  {approvedWorkpaper && (
+                    <button type="button" onClick={() => downloadWorkflowFile(
+                      `finance-workpaper-${runDetail.id}.md`,
+                      new Blob([approvedWorkpaper], { type: 'text/markdown;charset=utf-8' }),
+                    )}>Download approved workpaper</button>
+                  )}
                   {!!runDetail.skipped_steps?.length && (
                     <section aria-label="Skipped workflow steps">
                       <h5>Skipped workflow steps</h5>
