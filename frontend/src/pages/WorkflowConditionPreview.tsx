@@ -1,11 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { previewWorkflowCondition, type WorkflowConditionResult } from '../lib/api';
+import { isJsonTextCondition, readJsonTextCondition } from '../lib/workflow-json-condition';
 
 export function WorkflowConditionPreview({ expression, branches }: {
   expression: string;
   branches: Array<{ target: string; condition?: string }>;
 }) {
-  const [sample, setSample] = useState('{"_input":"yes"}');
+  const [samples, setSamples] = useState<{ json?: string; expression?: string }>({});
+  const jsonMode = isJsonTextCondition(expression);
+  const fields = readJsonTextCondition(expression);
+  const sample = jsonMode
+    ? samples.json ?? (fields?.key ? JSON.stringify({ [fields.key]: fields.value }, null, 2) : '{}')
+    : samples.expression ?? '{"_input":"yes"}';
   const [pending, setPending] = useState(false);
   const [preview, setPreview] = useState<{ key: string; result: WorkflowConditionResult } | null>(null);
   const key = JSON.stringify([expression, branches, sample]);
@@ -17,12 +23,13 @@ export function WorkflowConditionPreview({ expression, branches }: {
     if (pending) return;
     let outputs: Record<string, string>;
     try {
-      outputs = JSON.parse(sample);
-      if (!outputs || typeof outputs !== 'object' || Array.isArray(outputs)
-          || Object.values(outputs).some((value) => typeof value !== 'string')) throw new Error();
+      const parsed = JSON.parse(sample);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) ||
+          (!jsonMode && Object.values(parsed).some((value) => typeof value !== 'string'))) throw new Error();
+      outputs = jsonMode ? { _input: sample } : parsed;
     } catch {
       setPreview({ key, result: {
-        success: false, output: 'Enter a JSON object with text values.', matched_targets: [],
+        success: false, output: jsonMode ? 'Enter a JSON object.' : 'Enter a JSON object with text values.', matched_targets: [],
       } });
       return;
     }
@@ -44,10 +51,13 @@ export function WorkflowConditionPreview({ expression, branches }: {
 
   return <details>
     <summary>Preview branch condition</summary>
-    <label>Sample step outputs
-      <textarea value={sample} rows={3} maxLength={16000} onChange={(event) => setSample(event.target.value)} />
+    <label>{jsonMode ? 'Sample JSON input' : 'Sample step outputs'}
+      <textarea value={sample} rows={3} maxLength={16000} onChange={(event) => {
+        const value = event.target.value;
+        setSamples((current) => ({ ...current, [jsonMode ? 'json' : 'expression']: value }));
+      }} />
     </label>
-    <small>Use step IDs for keys. _input is the initial workflow input.</small>
+    {!jsonMode && <small>Use step IDs for keys. _input is the initial workflow input.</small>}
     <button type="button" disabled={pending} onClick={() => void check()}>
       {pending ? 'Testing…' : 'Test condition'}
     </button>

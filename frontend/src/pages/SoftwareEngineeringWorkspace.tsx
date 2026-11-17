@@ -35,6 +35,7 @@ import {
 import { getSyncStatus, listConnectors, triggerSync } from '../lib/connectors-api';
 import { isEmbedOnlyModel } from '../lib/model-capabilities';
 import { reviewedWorkflowOutput } from '../lib/reviewed-workflow-output';
+import { isJsonTextCondition, readJsonTextCondition } from '../lib/workflow-json-condition';
 import { useAppStore } from '../lib/store';
 import type { ConnectorInfo, SyncStatus } from '../types/connectors';
 import { ApprovedGmailDraft } from './ApprovedGmailDraft';
@@ -47,6 +48,7 @@ import { WorkspaceProjectTasks } from './WorkspaceProjectTasks';
 import { WorkspaceInferenceHealth } from './WorkspaceInferenceHealth';
 import { WorkflowTransformEditor } from './WorkflowTransformEditor';
 import { WorkflowConditionPreview } from './WorkflowConditionPreview';
+import { WorkflowConditionEditor } from './WorkflowConditionEditor';
 import { WorkflowIndexPreview } from './WorkflowIndexPreview';
 import { N8nWorkflowInspector } from './N8nWorkflowInspector';
 import { PriorWorkflowCheck } from './PriorWorkflowCheck';
@@ -914,6 +916,14 @@ export function SoftwareEngineeringWorkspace({
           (graph.edges !== undefined && !Array.isArray(graph.edges))) {
         throw new Error('Provide a nonempty nodes array and an optional edges array.');
       }
+      const incompleteJsonCondition = graph.nodes.find((node: DraftNode) =>
+        node?.type === 'condition' && typeof node.condition_expr === 'string' &&
+        isJsonTextCondition(node.condition_expr) &&
+        !readJsonTextCondition(node.condition_expr)?.key.trim(),
+      );
+      if (incompleteJsonCondition) {
+        throw new Error(`Enter a JSON field name for ${incompleteJsonCondition.id}.`);
+      }
       const saveAsCopy = (event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'copy';
       const target = saveAsCopy ? undefined : editingDefinition;
       const saved = await saveWorkflowDefinition(
@@ -977,10 +987,13 @@ export function SoftwareEngineeringWorkspace({
   const hasJsonFields = stepSetting === 'json_select'
     ? jsonField.split(',').every((field) => field.trim())
     : Boolean(jsonField.trim());
+  const hasStepSetting = stepType === 'condition' && isJsonTextCondition(stepSetting)
+    ? readJsonTextCondition(stepSetting)?.key.trim()
+    : stepSetting.trim();
   const canAddStep = draftGraph && newStepId && newStepId !== '_input' &&
     !draftGraph.nodes.some((node) => node.id === newStepId) &&
     (stepType === 'agent' || stepType === 'n8n_node_lookup' ||
-      (stepType === 'transform' ? !needsJsonFields || hasJsonFields : stepSetting.trim()));
+      (stepType === 'transform' ? !needsJsonFields || hasJsonFields : hasStepSetting));
   const addStep = () => {
     if (!draftGraph || !canAddStep) return;
     const node = { id: newStepId, type: stepType };
@@ -1652,17 +1665,13 @@ export function SoftwareEngineeringWorkspace({
                       )}
                       {node.type === 'condition' && (
                         <>
-                          <label>Condition expression for {node.id}
-                            <input value={node.condition_expr ?? ''} maxLength={4000} disabled={savingDefinition}
-                              onChange={(event) => {
-                                const expression = event.target.value;
-                                setWorkflowGraph(JSON.stringify({
-                                  ...draftGraph,
-                                  nodes: draftGraph.nodes.map((entry) => entry.id === node.id
-                                    ? { ...entry, condition_expr: expression } : entry),
-                                }, null, 2));
-                              }} />
-                          </label>
+                          <WorkflowConditionEditor stepId={node.id} expression={node.condition_expr ?? ''}
+                            disabled={savingDefinition}
+                            onChange={(expression) => setWorkflowGraph(JSON.stringify({
+                              ...draftGraph,
+                              nodes: draftGraph.nodes.map((entry) => entry.id === node.id
+                                ? { ...entry, condition_expr: expression } : entry),
+                            }, null, 2))} />
                           <WorkflowConditionPreview expression={node.condition_expr ?? ''}
                             branches={draftEdges.filter((edge) => edge.source === node.id)
                               .map(({ target, condition }) => ({ target, condition }))} />
@@ -1826,10 +1835,12 @@ export function SoftwareEngineeringWorkspace({
                         placeholder="Summarize the input in three bullet points."
                         onChange={(event) => setStepSetting(event.target.value)} />
                     </label>
+                  ) : stepType === 'condition' ? (
+                    <WorkflowConditionEditor expression={stepSetting} onChange={setStepSetting} />
                   ) : (
-                    <label>{stepType === 'condition' ? 'Condition expression' : 'Approval request'}
+                    <label>Approval request
                       <input value={stepSetting} onChange={(event) => setStepSetting(event.target.value)}
-                        placeholder={stepType === 'condition' ? "outputs['_input'] == 'yes'" : 'Review the prepared result'} />
+                        placeholder="Review the prepared result" />
                     </label>
                   )}
                   {stepType === 'transform' && needsJsonFields && (

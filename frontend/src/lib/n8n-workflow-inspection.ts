@@ -1,4 +1,5 @@
 import type { SavedWorkflowDefinition } from './api';
+import { jsonTextCondition } from './workflow-json-condition';
 
 type N8nNode = { id: string; type: string; usesCredentials: boolean; disabled: boolean };
 type N8nConnection = { source: string; target: string; condition: string };
@@ -59,7 +60,7 @@ function stringCondition(node: Record<string, unknown>): string | undefined {
       typeof left !== 'string' || typeof right !== 'string' ||
       right.startsWith('=') || right.includes('{{') || right.length > 500) return undefined;
   const match = /^=\{\{\s*\$json\.([a-zA-Z_][a-zA-Z0-9_]{0,127})\s*\}\}$/.exec(left);
-  if (match) return `json_string_equals:${JSON.stringify({ key: match[1], value: right })}`;
+  if (match) return jsonTextCondition(match[1], right);
 }
 
 export function inspectN8nWorkflow(value: unknown) {
