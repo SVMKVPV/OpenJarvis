@@ -8,6 +8,8 @@ type RevenueRecord = {
   source_reference: string;
 };
 
+type RevenueHistoryRecord = RevenueRecord & { id: number; recorded_at: number | null };
+
 function localDate(): string {
   const now = new Date();
   return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -19,7 +21,10 @@ export function FinanceRevenue({ editable = false }: { editable?: boolean }) {
   const [currency, setCurrency] = useState('');
   const [amount, setAmount] = useState('');
   const [reference, setReference] = useState('');
-  const [loaded, setLoaded] = useState<{ month: string; records: RevenueRecord[] } | null>(null);
+  const [loaded, setLoaded] = useState<{
+    month: string; records: RevenueRecord[]; history?: RevenueHistoryRecord[];
+  } | null>(null);
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const [errorMonth, setErrorMonth] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
   const [saving, setSaving] = useState(false);
@@ -29,7 +34,8 @@ export function FinanceRevenue({ editable = false }: { editable?: boolean }) {
     const controller = new AbortController();
     const load = async () => {
       try {
-        const response = await apiFetch(`/v1/finance/revenue?month=${encodeURIComponent(month)}`, {
+        const query = new URLSearchParams({ month, include_history: String(editable) });
+        const response = await apiFetch(`/v1/finance/revenue?${query}`, {
           signal: controller.signal, cache: 'no-store',
         });
         if (!response.ok) throw new Error();
@@ -45,7 +51,7 @@ export function FinanceRevenue({ editable = false }: { editable?: boolean }) {
     };
     void load();
     return () => controller.abort();
-  }, [month]);
+  }, [editable, month, refreshVersion]);
 
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -69,9 +75,11 @@ export function FinanceRevenue({ editable = false }: { editable?: boolean }) {
       const saved = result as RevenueRecord;
       setLoaded({
         month,
+        history: loaded?.history,
         records: [...records.filter((row) => row.currency !== saved.currency), saved]
           .sort((a, b) => a.currency.localeCompare(b.currency)),
       });
+      setRefreshVersion((version) => version + 1);
       setSaveMessage('Reviewed total saved.');
     } catch (error) {
       setSaveMessage(error instanceof Error ? error.message : 'Revenue total could not be saved.');
@@ -112,5 +120,20 @@ export function FinanceRevenue({ editable = false }: { editable?: boolean }) {
             <small>Through {record.as_of} · {record.source_reference}</small>
           </li>)}
         </ul> : <p>No reviewed revenue recorded for {month}.</p>}
+    {editable && loaded?.month === month && !!loaded.history?.length && (
+      <details>
+        <summary>Revenue revision history</summary>
+        <small>Latest 25 recorded entries for {month}</small>
+        <ul>
+          {loaded.history.map((record) => <li key={record.id}>
+            <strong>{record.currency} {record.amount}</strong>{' '}
+            <small>Through {record.as_of} · {record.source_reference}</small>{' '}
+            <small>{record.recorded_at === null
+              ? 'Saved before revision history'
+              : `Recorded ${new Date(record.recorded_at * 1000).toLocaleString()}`}</small>
+          </li>)}
+        </ul>
+      </details>
+    )}
   </section>;
 }
