@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { previewWorkflowIndex } from '../lib/api';
 
-export function WorkflowIndexPreview({ source, allowGmailReference }: {
+export function WorkflowIndexPreview({ source, allowGmailReference, maxSyncAgeHours }: {
   source: string;
   allowGmailReference: boolean;
+  maxSyncAgeHours?: number;
 }) {
   const [query, setQuery] = useState('');
   const [pending, setPending] = useState(false);
@@ -18,7 +19,7 @@ export function WorkflowIndexPreview({ source, allowGmailReference }: {
     setPending(true);
     setPreview(null);
     try {
-      const result = await previewWorkflowIndex(source, query, allowGmailReference, controller.signal);
+      const result = await previewWorkflowIndex(source, query, allowGmailReference, controller.signal, maxSyncAgeHours);
       if (!controller.signal.aborted) setPreview(result);
     } catch {
       if (!controller.signal.aborted) setPreview({ success: false, output: 'Index preview is unavailable.' });

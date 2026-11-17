@@ -738,7 +738,7 @@ export function SoftwareEngineeringWorkspace({
   const serverInfo = useAppStore((state) => state.serverInfo);
   const models = useAppStore((state) => state.models);
   const workflowModels = [...new Set(models.map((entry) => entry.id).filter((id) => !isEmbedOnlyModel(id)))];
-  const setStepConfig = (node: DraftNode, key: string, value: string | boolean | Record<string, unknown>) => {
+  const setStepConfig = (node: DraftNode, key: string, value: string | number | boolean | Record<string, unknown>) => {
     if (!draftGraph || savingDefinition) return;
     const config = { ...node.config };
     if (value) config[key] = value;
@@ -1569,10 +1569,19 @@ export function SoftwareEngineeringWorkspace({
                               <small>{indexHint(node.config.source)}</small>
                             </label>
                             {indexSyncActions(node.config.source)}
+                            <label>Maximum sync age in hours for {node.id}
+                              <input type="number" min="1" max="8760" step="1"
+                                value={typeof node.config.max_sync_age_hours === 'number' ? node.config.max_sync_age_hours : ''}
+                                disabled={savingDefinition}
+                                onChange={(event) => setStepConfig(node, 'max_sync_age_hours', event.target.valueAsNumber)} />
+                              <small>Optional. Use a connector ID and sync it before running.</small>
+                            </label>
                             {typeof node.config.source === 'string' && node.config.source.trim() && (
-                              <WorkflowIndexPreview key={node.config.source}
+                              <WorkflowIndexPreview key={`${node.config.source}:${node.config.max_sync_age_hours ?? ''}`}
                                 source={node.config.source}
-                                allowGmailReference={node.config.allow_gmail_reference === true} />
+                                allowGmailReference={node.config.allow_gmail_reference === true}
+                                maxSyncAgeHours={typeof node.config.max_sync_age_hours === 'number'
+                                  ? node.config.max_sync_age_hours : undefined} />
                             )}
                             <label>
                               <input type="checkbox" checked={node.config.require_match === true}

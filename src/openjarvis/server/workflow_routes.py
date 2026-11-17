@@ -100,6 +100,7 @@ class WorkflowIndexPreview(BaseModel):
     source: str = Field(min_length=1, max_length=128)
     query: str = Field(min_length=1, max_length=500)
     allow_gmail_reference: StrictBool = False
+    max_sync_age_hours: int | None = Field(default=None, ge=1, le=8760, strict=True)
 
 
 class PreviewBranch(BaseModel):
@@ -237,6 +238,7 @@ def create_workflow_runs_router() -> APIRouter:
             config={
                 "source": source,
                 "allow_gmail_reference": payload.allow_gmail_reference,
+                "max_sync_age_hours": payload.max_sync_age_hours,
             },
         )
         state = request.app.state

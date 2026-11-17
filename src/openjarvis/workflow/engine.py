@@ -5,6 +5,7 @@ from __future__ import annotations
 import concurrent.futures
 import json
 import time
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
 from openjarvis.core.events import EventBus, EventType
@@ -508,13 +509,28 @@ class WorkflowEngine:
             )
 
         source = source.strip()
-        if ConnectorRegistry.contains(source):
+        connector_id = source if ConnectorRegistry.contains(source) else None
+        if connector_id is not None:
             connector = ConnectorRegistry.get(source)
             indexed_sources = getattr(connector, "indexed_sources", ())
             if len(indexed_sources) == 1:
                 source = indexed_sources[0]
 
         with KnowledgeStore() as store:
+            max_age = node.config.get("max_sync_age_hours")
+            if max_age is not None:
+                if type(max_age) is not int or not 1 <= max_age <= 8760:
+                    problem = "Maximum sync age must be a whole number of hours."
+                elif connector_id is None:
+                    problem = "A registered connector ID is required to check sync age."
+                else:
+                    problem = self._check_connector_sync_age(
+                        store, connector_id, max_age
+                    )
+                if problem:
+                    return WorkflowStepResult(
+                        node_id=node.id, success=False, output=problem
+                    )
             tool: GmailIndexedMessageTool | KnowledgeSearchTool
             arguments: dict[str, Any]
             if (
@@ -544,6 +560,29 @@ class WorkflowEngine:
             success=result.success and (matched or not require_match),
             output=result.content,
         )
+
+    @staticmethod
+    def _check_connector_sync_age(store: Any, connector_id: str, max_age: int) -> str:
+        from openjarvis.connectors.pipeline import IngestionPipeline
+        from openjarvis.connectors.sync_engine import SyncEngine
+
+        with SyncEngine(IngestionPipeline(store=store)) as sync:
+            checkpoint = sync.get_checkpoint(connector_id)
+        if not checkpoint or not checkpoint["last_sync"] or checkpoint["error"]:
+            return f"{connector_id} needs a successful sync before searching its index."
+        try:
+            synced_at = datetime.fromisoformat(checkpoint["last_sync"])
+        except ValueError:
+            return f"{connector_id} has no valid sync timestamp."
+        if synced_at.tzinfo is None:
+            return f"{connector_id} has no valid sync timestamp."
+        age = (datetime.now(timezone.utc) - synced_at).total_seconds()
+        if not 0 <= age <= max_age * 3600:
+            return (
+                f"{connector_id} needs a successful sync within the last "
+                f"{max_age} hours."
+            )
+        return ""
 
     def evaluate_condition(
         self,

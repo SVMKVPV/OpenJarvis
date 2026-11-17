@@ -1554,10 +1554,13 @@ export async function previewWorkflowCondition(
 
 export async function previewWorkflowIndex(
   source: string, query: string, allowGmailReference: boolean, signal: AbortSignal,
+  maxSyncAgeHours?: number,
 ): Promise<{ success: boolean; output: string }> {
   const response = await apiFetch('/v1/workflows/preview-index', {
     method: 'POST', signal, headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ source, query, allow_gmail_reference: allowGmailReference }),
+    body: JSON.stringify({
+      source, query, allow_gmail_reference: allowGmailReference, max_sync_age_hours: maxSyncAgeHours,
+    }),
   });
   if (!response.ok) throw new Error('Index preview is unavailable.');
   const result = await response.json();

@@ -1029,6 +1029,71 @@ def test_workflow_index_preview_reads_only_the_selected_index(tmp_path, monkeypa
         assert invalid.status_code == 422
 
 
+def test_index_sync_age_applies_to_preview_and_execution(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    from openjarvis.connectors.gmail_imap import GmailIMAPConnector
+    from openjarvis.connectors.pipeline import IngestionPipeline
+    from openjarvis.connectors.store import KnowledgeStore
+    from openjarvis.connectors.sync_engine import SyncEngine
+    from openjarvis.core.registry import ConnectorRegistry
+
+    if not ConnectorRegistry.contains("gmail_imap"):
+        ConnectorRegistry.register_value("gmail_imap", GmailIMAPConnector)
+    monkeypatch.setenv("OPENJARVIS_HOME", str(tmp_path))
+    monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(tmp_path / "workflows.db"))
+    with KnowledgeStore() as store:
+        store.store("Freshness sentinel indexed email", source="gmail")
+
+    app = FastAPI()
+    app.state.workflow_system = None
+    app.include_router(create_workflow_runs_router())
+    payload = {"source": "gmail_imap", "query": "sentinel", "max_sync_age_hours": 2}
+    endpoint = "/v1/workflows/preview-index"
+
+    with (
+        TestClient(app) as client,
+        KnowledgeStore() as store,
+        SyncEngine(IngestionPipeline(store=store)) as sync,
+    ):
+        assert not client.post(endpoint, json=payload).json()["success"]
+        for hours_ago, error in [(3, None), (1, "Sync failed"), (1, None)]:
+            sync.restore_checkpoint("gmail_imap", {
+                "items_synced": 1,
+                "cursor": None,
+                "last_sync": (
+                    datetime.now(timezone.utc) - timedelta(hours=hours_ago)
+                ).isoformat(),
+                "error": error,
+            })
+            result = client.post(endpoint, json=payload).json()
+            assert result["success"] is (hours_ago == 1 and error is None)
+        assert "Freshness sentinel" in result["output"]
+
+        sync.reset_checkpoint("gmail_imap")
+        launched = client.post("/v1/workflows/runs", json={
+            "name": "Checked index",
+            "initial_input": payload["query"],
+            "nodes": [{"id": "search", "type": "tool", "config": {
+                "tool_name": "knowledge_search", "query_from_input": True,
+                "source": payload["source"],
+                "max_sync_age_hours": payload["max_sync_age_hours"],
+            }}],
+        })
+        assert launched.status_code == 202
+        run_path = f"/v1/workflows/runs/{launched.json()['id']}"
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            run = client.get(run_path).json()
+            if run["status"] == "failed":
+                assert "needs a successful sync" in run["steps"][0]["output"]
+                break
+            time.sleep(0.01)
+        else:
+            pytest.fail("Workflow did not stop at the sync age check")
+        app.state.workflow_runtime.close()
+
+
 def test_workflow_condition_preview_matches_branch_labels(tmp_path, monkeypatch):
     workflow_db = tmp_path / "workflows.db"
     monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(workflow_db))
