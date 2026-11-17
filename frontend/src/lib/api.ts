@@ -1370,6 +1370,7 @@ export interface WorkflowRunSummary {
   final_output: string;
   error: string;
   parent_run_id: string | null;
+  launch_source?: string;
   cancel_requested: boolean;
   created_at: number;
   scheduled_at?: number | null;

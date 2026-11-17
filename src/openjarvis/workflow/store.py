@@ -54,6 +54,7 @@ class WorkflowRunStore:
                     final_output TEXT NOT NULL DEFAULT '',
                     error TEXT NOT NULL DEFAULT '',
                     parent_run_id TEXT,
+                    launch_source TEXT,
                     cancel_requested INTEGER NOT NULL DEFAULT 0,
                     created_at REAL NOT NULL,
                     started_at REAL,
@@ -106,6 +107,10 @@ class WorkflowRunStore:
             columns = {row["name"] for row in self._conn.execute(
                 "PRAGMA table_info(workflow_runs)"
             )}
+            if "launch_source" not in columns:
+                self._conn.execute(
+                    "ALTER TABLE workflow_runs ADD COLUMN launch_source TEXT"
+                )
             if "scheduled_at" not in columns:
                 self._conn.execute(
                     "ALTER TABLE workflow_runs ADD COLUMN scheduled_at REAL"
@@ -271,6 +276,7 @@ class WorkflowRunStore:
         launch: tuple[str, str] | None = None,
         scheduled_at: float | None = None,
         saved_revision: tuple[str, str] | None = None,
+        launch_source: str | None = None,
     ) -> tuple[dict[str, Any], bool]:
         run_id = uuid.uuid4().hex
         now = time.time()
@@ -307,8 +313,8 @@ class WorkflowRunStore:
             self._conn.execute(
                 "INSERT INTO workflow_runs "
                 "(id, workflow_name, status, graph_json, initial_input, "
-                "context_json, parent_run_id, created_at, scheduled_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "context_json, parent_run_id, created_at, scheduled_at, launch_source) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     run_id,
                     workflow_name,
@@ -319,6 +325,7 @@ class WorkflowRunStore:
                     parent_run_id,
                     now,
                     scheduled_at,
+                    launch_source,
                 ),
             )
             if launch is not None:
@@ -756,6 +763,8 @@ class WorkflowRunStore:
                 for step in step_rows
             ],
         }
+        if row["launch_source"]:
+            item["launch_source"] = row["launch_source"]
         if include_graph:
             item["graph"] = json.loads(row["graph_json"])
         return item

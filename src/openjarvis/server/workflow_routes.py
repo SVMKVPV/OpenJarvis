@@ -525,7 +525,8 @@ def create_workflow_runs_router() -> APIRouter:
                     ),
                 )
             result = launch_definition(
-                definition_id, payload, request, "scoped:" + launch_key
+                definition_id, payload, request, "scoped:" + launch_key,
+                launch_source="external_automation",
             )
             return {"id": result["id"], "status": result["status"]}
         return launch_definition(definition_id, payload, request, launch_key)
@@ -644,6 +645,7 @@ def create_workflow_runs_router() -> APIRouter:
         request: Request,
         launch_key: str | None,
         scheduled_at: float | None = None,
+        *, launch_source: str | None = None,
     ) -> dict:
         try:
             return _runtime(request).submit_saved(
@@ -653,6 +655,7 @@ def create_workflow_runs_router() -> APIRouter:
                 launch_key=launch_key,
                 scheduled_at=scheduled_at,
                 expected_revision=payload.expected_revision,
+                launch_source=launch_source,
             )
         except WorkflowDefinitionConflict as exc:
             raise HTTPException(status_code=412, detail=str(exc)) from exc

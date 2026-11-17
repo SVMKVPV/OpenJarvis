@@ -57,6 +57,7 @@ class WorkflowRuntime:
         launch: tuple[str, str] | None = None,
         scheduled_at: float | None = None,
         saved_revision: tuple[str, str] | None = None,
+        launch_source: str | None = None,
     ) -> dict[str, Any]:
         context = {
             key: value for key, value in (context or {}).items()
@@ -74,6 +75,7 @@ class WorkflowRuntime:
                 launch=launch,
                 scheduled_at=scheduled_at,
                 saved_revision=saved_revision,
+                launch_source=launch_source,
             )
             if not created:
                 return run
@@ -200,6 +202,7 @@ class WorkflowRuntime:
         launch_key: str | None = None,
         scheduled_at: float | None = None,
         expected_revision: str | None = None,
+        launch_source: str | None = None,
     ) -> dict[str, Any]:
         with self._lock:
             if self._stopping:
@@ -213,6 +216,7 @@ class WorkflowRuntime:
                 context=context,
                 launch=(definition_id, launch_key) if launch_key is not None else None,
                 scheduled_at=scheduled_at,
+                launch_source=launch_source,
                 saved_revision=(
                     (expected_revision, definition["revision"])
                     if expected_revision is not None else None

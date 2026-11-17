@@ -1070,6 +1070,7 @@ export function SoftwareEngineeringWorkspace({
         final_output: run.final_output,
         error: run.error,
         parent_run_id: run.parent_run_id,
+        launch_source: run.launch_source,
         cancel_requested: run.cancel_requested,
         created_at: run.created_at,
         scheduled_at: run.scheduled_at,
@@ -2031,6 +2032,7 @@ ${JSON.stringify({
                     </details>
                   )}
                   {runActionMessage?.id === runDetail.id && <p role="status">{runActionMessage.text}</p>}
+                  {runDetail.launch_source === 'external_automation' && <p>Started by external automation</p>}
                   {runGraph && runGraph.nodes.length > 0 && (
                     <WorkflowDraftMap label="Workflow run diagram" steps={runGraph.nodes}
                       connections={runGraph.edges ?? []} statuses={runStepStatuses} onOpen={openRunStep} />

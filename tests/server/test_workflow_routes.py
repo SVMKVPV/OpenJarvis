@@ -558,7 +558,13 @@ def test_scoped_workflow_key_can_launch_only_its_saved_revision(tmp_path, monkey
         run_path = f"/v1/workflows/runs/{run_id}"
         assert client.get(run_path, headers=headers).status_code == 401
         owner = {"Authorization": "Bearer test-owner-key"}
-        assert client.get(run_path, headers=owner).status_code == 200
+        result = client.get(run_path, headers=owner)
+        assert result.status_code == 200
+        assert result.json()["launch_source"] == "external_automation"
+        spoof = client.post(launch, headers=owner, json={
+            **body, "context": {"launch_source": "external_automation"},
+        })
+        assert spoof.status_code == 202 and "launch_source" not in spoof.json()
         secured.state.workflow_runtime.close()
 
 
