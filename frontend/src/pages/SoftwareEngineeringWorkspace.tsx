@@ -754,6 +754,7 @@ export function SoftwareEngineeringWorkspace({
   }, [initialGmailReference, initialStarter]);
   const draftGraph = useMemo(() => readDraftGraph(workflowGraph), [workflowGraph]);
   const [graphEditorOpen, setGraphEditorOpen] = useState(false);
+  const graphEditor = useRef<HTMLDetailsElement>(null);
   const stepElements = useRef(new Map<string, HTMLLIElement>());
   const openWorkflowStep = (id: string) => stepElements.current.get(id)?.focus();
   const [edgeSource, setEdgeSource] = useState('');
@@ -1055,7 +1056,8 @@ export function SoftwareEngineeringWorkspace({
     setWorkflowInput(JSON.stringify({
       folder: selectedFolder, task_id: task.id, task: task.title, owner: owner?.name ?? 'Unassigned',
     }));
-    setDefinitionMessage('Save the draft workflow, then run it to send the task details to the configured model. The contribution will wait for your review.');
+    if (graphEditor.current) graphEditor.current.open = true;
+    setDefinitionMessage('Choose a model or keep the backend default. Save and run the workflow to send the task details and queue the contribution for review.');
   };
 
   const editSaved = async () => {
@@ -1568,7 +1570,7 @@ export function SoftwareEngineeringWorkspace({
                 }} />
               <small>Replaces the editor draft. Save to add it as a new workflow.</small>
             </label>
-            <details className="workflow-graph-editor"
+            <details ref={graphEditor} className="workflow-graph-editor"
               onToggle={(event) => setGraphEditorOpen(event.currentTarget.open)}>
               <summary>Edit workflow definition</summary>
               {draftGraph && (
@@ -2095,6 +2097,17 @@ ${JSON.stringify({
                       {typeof step.metadata.shared_brain_revision === 'number' && (
                         <small>Shared Brain revision {step.metadata.shared_brain_revision}</small>
                       )}
+                      {typeof step.metadata.model === 'string' && (
+                        <small>Model route {step.metadata.model}
+                          {typeof step.metadata.resolved_engine === 'string'
+                            ? ` · ${step.metadata.resolved_engine}`
+                            : typeof step.metadata.engine === 'string' && ` · ${step.metadata.engine}`}
+                        </small>
+                      )}
+                      {typeof step.metadata.resolved_model === 'string' &&
+                        step.metadata.resolved_model !== step.metadata.model && (
+                          <small>Provider-reported model {step.metadata.resolved_model}</small>
+                        )}
                       {typeof step.metadata.mcp_server === 'string' &&
                         typeof step.metadata.mcp_tool === 'string' && (
                           <small>MCP source {step.metadata.mcp_server} · {step.metadata.mcp_tool}</small>

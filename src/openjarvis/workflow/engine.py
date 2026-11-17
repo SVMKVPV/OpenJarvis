@@ -444,6 +444,10 @@ class WorkflowEngine:
                     success=False,
                     output="The model returned an empty response.",
                 )
+            for key in ("model", "resolved_model", "engine", "resolved_engine"):
+                value = result.get(key)
+                if isinstance(value, str) and value.strip():
+                    metadata[key] = value
             return WorkflowStepResult(
                 node_id=node.id,
                 output=content,

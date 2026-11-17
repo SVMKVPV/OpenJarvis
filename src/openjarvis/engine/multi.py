@@ -88,13 +88,18 @@ class MultiEngine(InferenceEngine):
         max_tokens: int = 1024,
         **kwargs: Any,
     ) -> Dict[str, Any]:
-        return self._engine_for(model).generate(
+        engine = self._engine_for(model)
+        result = engine.generate(
             messages,
             model=model,
             temperature=temperature,
             max_tokens=max_tokens,
             **kwargs,
         )
+        engine_key = next(
+            key for key, candidate in self._engines if candidate is engine
+        )
+        return {**result, "inference_engine": engine_key}
 
     async def stream(
         self,

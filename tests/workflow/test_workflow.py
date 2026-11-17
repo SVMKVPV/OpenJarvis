@@ -386,6 +386,7 @@ class TestWorkflowEngine:
     def test_saved_model_instruction_is_separate_from_workflow_input(self):
         from openjarvis.core.config import JarvisConfig
         from openjarvis.core.types import Role
+        from openjarvis.engine.multi import MultiEngine
         from openjarvis.system.core import JarvisSystem
 
         graph = graph_from_dict({
@@ -400,13 +401,25 @@ class TestWorkflowEngine:
             }],
         })
         engine = Mock()
-        engine.generate.return_value = {"content": "Summary"}
-        system = JarvisSystem(JarvisConfig(), EventBus(), engine, "test", "test")
+        engine.engine_id = "instrumented"
+        engine.list_models.return_value = ["review-model"]
+        engine.generate.return_value = {
+            "content": "Summary",
+            "model": "provider/model-v2",
+        }
+        multi = MultiEngine([("review-engine", engine)])
+        system = JarvisSystem(JarvisConfig(), EventBus(), multi, "multi", "test")
 
         result = WorkflowEngine().run(graph, system, initial_input="Example record")
 
         assert result.final_output == "Summary"
         assert engine.generate.call_args.kwargs["model"] == "review-model"
+        assert result.steps[0].metadata == {
+            "model": "review-model",
+            "resolved_model": "provider/model-v2",
+            "engine": "multi",
+            "resolved_engine": "review-engine",
+        }
         assert system.model == "test"
         messages = engine.generate.call_args.args[0]
         assert [(message.role, message.content) for message in messages] == [

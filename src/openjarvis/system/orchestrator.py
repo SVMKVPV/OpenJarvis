@@ -92,11 +92,25 @@ class QueryOrchestrator:
             temperature=temperature,
             max_tokens=max_tokens,
         )
+        resolved_model = result.get("model")
+        resolved_engine = result.get("inference_engine")
         return {
             "content": result.get("content", ""),
             "usage": result.get("usage", {}),
             "model": model,
             "engine": s.engine_key,
+            **(
+                {"resolved_engine": resolved_engine}
+                if isinstance(resolved_engine, str) and resolved_engine != s.engine_key
+                else {}
+            ),
+            **(
+                {"resolved_model": resolved_model}
+                if isinstance(resolved_model, str)
+                and resolved_model.strip()
+                and resolved_model != model
+                else {}
+            ),
             **({"error": result["error"]} if result.get("error") else {}),
         }
 
