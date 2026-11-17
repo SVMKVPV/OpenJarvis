@@ -162,9 +162,9 @@ class KnowledgeStore(MemoryBackend):
 
     def __init__(self, db_path: Union[str, Path] = "") -> None:
         if not db_path:
-            from openjarvis.core.config import DEFAULT_CONFIG_DIR
+            from openjarvis.core.paths import get_config_dir
 
-            db_path = DEFAULT_CONFIG_DIR / "knowledge.db"
+            db_path = get_config_dir() / "knowledge.db"
 
         self._db_path = str(db_path)
         with _SETUP_LOCK:

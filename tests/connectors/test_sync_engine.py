@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, List, Optional
@@ -107,6 +108,30 @@ def _make_doc(
         author="tester@example.com",
         timestamp=datetime(2025, 3, 1, tzinfo=timezone.utc),
     )
+
+
+def test_default_connector_storage_follows_the_active_profile(tmp_path, monkeypatch):
+    from openjarvis.connectors.attachment_store import AttachmentStore
+    from openjarvis.connectors.embedding_store import EmbeddingStore
+
+    for name in ("first", "second"):
+        profile = tmp_path / name
+        monkeypatch.setenv("OPENJARVIS_HOME", str(profile))
+        with (
+            KnowledgeStore() as store,
+            SyncEngine(pipeline=IngestionPipeline(store=store)) as sync,
+            closing(AttachmentStore()),
+            closing(EmbeddingStore()),
+        ):
+            assert store.count() == 0
+            assert sync.get_checkpoint("stub") is None
+            connector = StubConnector([_make_doc(name, content=f"Only in {name}.")])
+            assert sync.sync(connector) == 1
+            assert store.count() == 1
+        assert (profile / "knowledge.db").is_file()
+        assert (profile / "sync_state.db").is_file()
+        assert (profile / "blobs" / "attachments.db").is_file()
+        assert (profile / "embeddings" / "index.db").is_file()
 
 
 # ---------------------------------------------------------------------------

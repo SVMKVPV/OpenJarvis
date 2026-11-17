@@ -49,9 +49,9 @@ class AttachmentStore:
 
     def __init__(self, base_dir: str = "") -> None:
         if not base_dir:
-            from openjarvis.core.config import DEFAULT_CONFIG_DIR
+            from openjarvis.core.paths import get_config_dir
 
-            base_dir = str(DEFAULT_CONFIG_DIR / "blobs")
+            base_dir = str(get_config_dir() / "blobs")
 
         self._base_dir = Path(base_dir)
         from openjarvis.security.file_utils import secure_mkdir

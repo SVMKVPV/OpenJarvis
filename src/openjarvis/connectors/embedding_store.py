@@ -51,9 +51,9 @@ class EmbeddingStore:
 
     def __init__(self, store_dir: str = "") -> None:
         if not store_dir:
-            from openjarvis.core.config import DEFAULT_CONFIG_DIR
+            from openjarvis.core.paths import get_config_dir
 
-            store_dir = str(DEFAULT_CONFIG_DIR / "embeddings")
+            store_dir = str(get_config_dir() / "embeddings")
 
         self._store_dir = Path(store_dir)
         self._tensor_dir = self._store_dir / "tensors"

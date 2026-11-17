@@ -20,7 +20,7 @@ from openjarvis.connectors.embeddings import default_embedder
 from openjarvis.connectors.pipeline import IngestionPipeline
 from openjarvis.connectors.store import KnowledgeStore
 from openjarvis.connectors.sync_engine import SyncEngine
-from openjarvis.core.config import DEFAULT_CONFIG_DIR
+from openjarvis.core.paths import get_config_dir
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -131,7 +131,7 @@ def detect_token_sources(
     connectors_dir: Optional[Path] = None,
 ) -> List[Dict[str, Any]]:
     """Return token-based sources that already have valid credentials."""
-    cdir = connectors_dir or (DEFAULT_CONFIG_DIR / "connectors")
+    cdir = connectors_dir or (get_config_dir() / "connectors")
     sources: List[Dict[str, Any]] = []
 
     for ts in _TOKEN_SOURCES:
@@ -158,7 +158,7 @@ def detect_token_sources(
 def _prompt_connect_sources(console: Console) -> List[Dict[str, Any]]:
     """Interactively prompt the user to connect token-based sources."""
     connected: List[Dict[str, Any]] = []
-    cdir = DEFAULT_CONFIG_DIR / "connectors"
+    cdir = get_config_dir() / "connectors"
     cdir.mkdir(parents=True, exist_ok=True)
 
     while True:
@@ -420,7 +420,7 @@ def deep_research_setup(obsidian_vault: Optional[str], skip_chat: bool) -> None:
     if not click.confirm("Ingest these sources?", default=True):
         sys.exit(0)
 
-    db_path = DEFAULT_CONFIG_DIR / "knowledge.db"
+    db_path = get_config_dir() / "knowledge.db"
     db_path.parent.mkdir(parents=True, exist_ok=True)
     store = KnowledgeStore(str(db_path))
 

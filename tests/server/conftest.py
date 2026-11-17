@@ -37,28 +37,27 @@ def _isolate_traces_db(tmp_path, monkeypatch):
     return db_path
 
 
-@pytest.fixture(scope="module", autouse=True)
-def _isolate_connector_dbs(tmp_path_factory):
+@pytest.fixture(scope="module")
+def _connector_home(tmp_path_factory):
+    return tmp_path_factory.mktemp("openjarvis-home")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_connector_dbs(_connector_home, _isolated_openjarvis_home):
     """Point the knowledge store and sync-state DBs at a per-module temp dir.
 
     ``connectors_router`` opens ``KnowledgeStore()`` and ``SyncEngine`` with no
-    path, so they default to the real ``~/.openjarvis``. Without this, a sync
-    test ingests its fixture note there and a disconnect test purges the
-    developer's real indexed vault. Module scope, not function scope:
-    ``POST /sync`` starts a background thread that can outlive the test, and a
-    function-scoped patch would be undone while it is still writing.
+    path, so they use the active profile. Set that profile after the shared
+    test fixture runs. The sync worker fixture drains each test's workers
+    before the profile is restored.
     """
-    home = tmp_path_factory.mktemp("openjarvis-home")
     with pytest.MonkeyPatch.context() as mp:
-        # store.py imports it lazily from core.config; sync_engine.py binds it
-        # at import.
-        mp.setattr("openjarvis.core.config.DEFAULT_CONFIG_DIR", home)
-        mp.setattr("openjarvis.connectors.sync_engine.DEFAULT_CONFIG_DIR", home)
+        mp.setenv("OPENJARVIS_HOME", str(_connector_home))
         yield
 
 
 @pytest.fixture(autouse=True)
-def _finish_connector_syncs(monkeypatch):
+def _finish_connector_syncs(monkeypatch, _isolate_connector_dbs):
     """Drain each test's sync workers before its mocks and DB isolation expire."""
     from openjarvis.server import connectors_router
 

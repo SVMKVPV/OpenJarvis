@@ -24,7 +24,7 @@ from typing import Any, Dict, Optional
 
 from openjarvis.connectors._stubs import BaseConnector, SyncStatus
 from openjarvis.connectors.pipeline import IngestionPipeline
-from openjarvis.core.config import DEFAULT_CONFIG_DIR
+from openjarvis.core.paths import get_config_dir
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -52,14 +52,14 @@ class SyncEngine:
         The ``IngestionPipeline`` that documents are fed into.
     state_db:
         Path to the SQLite database used for checkpoint state.  If empty,
-        defaults to ``DEFAULT_CONFIG_DIR / "sync_state.db"``.
+        defaults to ``get_config_dir() / "sync_state.db"``.
     """
 
     def __init__(self, pipeline: IngestionPipeline, *, state_db: str = "") -> None:
         self._pipeline = pipeline
 
         if not state_db:
-            db_path = DEFAULT_CONFIG_DIR / "sync_state.db"
+            db_path = get_config_dir() / "sync_state.db"
         else:
             db_path = Path(state_db)
 

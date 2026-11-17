@@ -8,7 +8,7 @@ from openjarvis.server.dashboard import dashboard_router
 
 
 def test_dashboard_calendar_reads_minimal_upcoming_events(tmp_path, monkeypatch):
-    monkeypatch.setattr("openjarvis.core.config.DEFAULT_CONFIG_DIR", tmp_path)
+    monkeypatch.setenv("OPENJARVIS_HOME", str(tmp_path))
     now = datetime.now(timezone.utc)
     today = now.date().isoformat()
 

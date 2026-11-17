@@ -10,7 +10,7 @@ from openjarvis.server.dashboard import dashboard_router
 
 
 def test_gmail_review_counts_threads_with_inbound_latest_message(tmp_path, monkeypatch):
-    monkeypatch.setattr("openjarvis.core.config.DEFAULT_CONFIG_DIR", tmp_path)
+    monkeypatch.setenv("OPENJARVIS_HOME", str(tmp_path))
     app = FastAPI()
     app.include_router(dashboard_router)
     route = "/v1/dashboard/gmail-review"
@@ -67,7 +67,7 @@ def test_gmail_review_counts_threads_with_inbound_latest_message(tmp_path, monke
 def test_finance_can_find_an_older_indexed_message_without_returning_its_body(
     tmp_path, monkeypatch
 ):
-    monkeypatch.setattr("openjarvis.core.config.DEFAULT_CONFIG_DIR", tmp_path)
+    monkeypatch.setenv("OPENJARVIS_HOME", str(tmp_path))
     with KnowledgeStore() as store:
         for chunk in range(2):
             store.store(

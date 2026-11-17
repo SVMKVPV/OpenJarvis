@@ -270,9 +270,9 @@ def build_deep_research_tools(
     """Construct the live knowledge tools granted to ``deep_research``."""
 
     if not knowledge_db_path:
-        from openjarvis.core.config import DEFAULT_CONFIG_DIR
+        from openjarvis.core.paths import get_config_dir
 
-        knowledge_db_path = DEFAULT_CONFIG_DIR / "knowledge.db"
+        knowledge_db_path = get_config_dir() / "knowledge.db"
 
     path = Path(knowledge_db_path)
     if not path.exists():

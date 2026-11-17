@@ -14,7 +14,6 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from openjarvis.connectors.store import KnowledgeStore
-from openjarvis.core.config import DEFAULT_CONFIG_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -106,8 +105,7 @@ def _extract_text_from_docx(data: bytes) -> str:
 
 def _get_store() -> KnowledgeStore:
     """Return a KnowledgeStore pointing at the default knowledge DB."""
-    db_path = DEFAULT_CONFIG_DIR / "knowledge.db"
-    return KnowledgeStore(db_path=db_path)
+    return KnowledgeStore()
 
 
 # ---------------------------------------------------------------------------

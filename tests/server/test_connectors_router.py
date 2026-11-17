@@ -520,15 +520,13 @@ def test_sync_status_restores_failure_and_last_success(app, tmp_path, monkeypatc
     from openjarvis.connectors._stubs import SyncStatus
     from openjarvis.connectors.pipeline import IngestionPipeline
     from openjarvis.connectors.store import KnowledgeStore
-    from openjarvis.core import config
     from openjarvis.server.connectors_router import _instances
 
     class FreshConnector:
         def sync_status(self):
             return SyncStatus()
 
-    monkeypatch.setattr(sync_engine, "DEFAULT_CONFIG_DIR", tmp_path)
-    monkeypatch.setattr(config, "DEFAULT_CONFIG_DIR", tmp_path)
+    monkeypatch.setenv("OPENJARVIS_HOME", str(tmp_path))
     monkeypatch.setitem(_instances, "obsidian", FreshConnector())
     successful_at = "2026-01-01T00:00:00+00:00"
     with KnowledgeStore() as store:

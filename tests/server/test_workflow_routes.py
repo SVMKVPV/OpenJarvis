@@ -20,7 +20,7 @@ def test_import_attachments_from_the_selected_gmail_message(tmp_path, monkeypatc
     from openjarvis.connectors.store import KnowledgeStore
     from openjarvis.server import upload_router
 
-    monkeypatch.setattr(upload_router, "DEFAULT_CONFIG_DIR", tmp_path)
+    monkeypatch.setenv("OPENJARVIS_HOME", str(tmp_path))
     db_path = tmp_path / "knowledge.db"
     with KnowledgeStore(db_path) as store:
         store.store(
@@ -69,13 +69,11 @@ def test_import_attachments_from_the_selected_gmail_message(tmp_path, monkeypatc
 
 
 def test_workflow_reviews_only_the_selected_upload_batch(tmp_path, monkeypatch):
-    from openjarvis.core import config
     from openjarvis.server import approval_routes, upload_router
     from openjarvis.tools.approval_store import ApprovalStore
 
     monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(tmp_path / "workflow.db"))
-    monkeypatch.setattr(config, "DEFAULT_CONFIG_DIR", tmp_path)
-    monkeypatch.setattr(upload_router, "DEFAULT_CONFIG_DIR", tmp_path)
+    monkeypatch.setenv("OPENJARVIS_HOME", str(tmp_path))
     approvals = ApprovalStore(str(tmp_path / "approvals.db"))
     monkeypatch.setattr(approval_routes, "_store", approvals)
     app = FastAPI()
@@ -911,7 +909,7 @@ def test_retry_with_input_preserves_original_run_and_graph(tmp_path, monkeypatch
     from openjarvis.tools.approval_store import ApprovalStore
 
     monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(tmp_path / "workflow.db"))
-    monkeypatch.setattr("openjarvis.core.config.DEFAULT_CONFIG_DIR", tmp_path)
+    monkeypatch.setenv("OPENJARVIS_HOME", str(tmp_path))
     approvals = ApprovalStore(str(tmp_path / "approvals.db"))
     monkeypatch.setattr(approval_routes, "_store", approvals)
     with KnowledgeStore() as store:

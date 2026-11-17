@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import threading
-from types import SimpleNamespace
 
 import pytest
 
@@ -20,15 +19,14 @@ def test_delayed_sync_finishes_before_database_paths_are_restored(
     from openjarvis.connectors import embeddings, sync_engine
     from openjarvis.connectors.pipeline import IngestionPipeline
     from openjarvis.connectors.store import KnowledgeStore
-    from openjarvis.core import config
+    from openjarvis.core.paths import get_config_dir
     from openjarvis.server import connectors_router
     from tests.server.conftest import _finish_connector_syncs, _isolate_connector_dbs
 
     baseline = tmp_path / "restored-home"
     isolated = tmp_path / "isolated-home"
     isolated.mkdir()
-    monkeypatch.setattr(config, "DEFAULT_CONFIG_DIR", baseline)
-    monkeypatch.setattr(sync_engine, "DEFAULT_CONFIG_DIR", baseline)
+    monkeypatch.setenv("OPENJARVIS_HOME", str(baseline))
     monkeypatch.setattr(embeddings, "default_embedder", lambda: None)
     monkeypatch.setattr(connectors_router, "_instances", {})
     with KnowledgeStore() as store:
@@ -62,12 +60,10 @@ def test_delayed_sync_finishes_before_database_paths_are_restored(
 
     monkeypatch.setattr(KnowledgeStore, "__init__", delayed_init)
     monkeypatch.setattr(threading.Thread, "join", observed_join)
-    isolation = _isolate_connector_dbs.__wrapped__(
-        SimpleNamespace(mktemp=lambda _name: isolated)
-    )
+    isolation = _isolate_connector_dbs.__wrapped__(isolated, None)
     next(isolation)
     with pytest.MonkeyPatch.context() as worker_patch:
-        cleanup = _finish_connector_syncs.__wrapped__(worker_patch)
+        cleanup = _finish_connector_syncs.__wrapped__(worker_patch, None)
         next(cleanup)
 
         def teardown():
@@ -96,8 +92,7 @@ def test_delayed_sync_finishes_before_database_paths_are_restored(
             teardown_thread.start()
             assert joining.wait(5)
             assert not finished.is_set()
-            assert config.DEFAULT_CONFIG_DIR == isolated
-            assert sync_engine.DEFAULT_CONFIG_DIR == isolated
+            assert get_config_dir() == isolated
         finally:
             release.set()
             if teardown_thread.ident is not None:
@@ -109,8 +104,7 @@ def test_delayed_sync_finishes_before_database_paths_are_restored(
         assert not teardown_thread.is_alive()
         assert not errors
         assert finished.is_set()
-        assert config.DEFAULT_CONFIG_DIR == baseline
-        assert sync_engine.DEFAULT_CONFIG_DIR == baseline
+        assert get_config_dir() == baseline
 
     assert before == {
         name: hashlib.sha256((baseline / name).read_bytes()).digest() for name in before
