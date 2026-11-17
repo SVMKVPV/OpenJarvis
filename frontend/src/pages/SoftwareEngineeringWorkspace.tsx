@@ -19,6 +19,7 @@ import {
   requestWorkflowRunAction,
   rescheduleWorkflowRun,
   runSavedWorkflow,
+  savedWorkflowRunPath,
   saveWorkflowDefinition,
   startWorkflowRun,
   type McpServerCheck,
@@ -1858,6 +1859,21 @@ export function SoftwareEngineeringWorkspace({
                 {exportingDefinition ? 'Downloading…' : 'Download saved workflow JSON'}
               </button>
             </form>
+          )}
+          {selectedDefinition && (
+            <details>
+              <summary>Run this workflow from another app</summary>
+              <p>Send this request to your OpenJarvis backend. Reuse the same idempotency key when retrying the same event.</p>
+              <pre className="overflow-x-auto">{`POST ${savedWorkflowRunPath(selectedDefinition.id)}
+Content-Type: application/json
+Authorization: Bearer <backend-api-key>
+Idempotency-Key: <unique-event-id>
+
+${JSON.stringify({
+  initial_input: '<event input>',
+  expected_revision: selectedDefinition.revision,
+}, null, 2)}`}</pre>
+            </details>
           )}
           {selectedDefinition && (
             <WorkflowRecurrenceEditor key={selectedDefinition.id}

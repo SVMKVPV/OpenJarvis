@@ -1892,13 +1892,16 @@ export async function workflowRecurrences(
   return (await response.json()).recurrences;
 }
 
+export function savedWorkflowRunPath(id: string, scheduled = false): string {
+  return `/v1/workflows/definitions/${encodeURIComponent(id)}/${scheduled ? 'schedule' : 'runs'}`;
+}
+
 export class SavedWorkflowChangedError extends Error {}
 
 export async function runSavedWorkflow(
   id: string, initialInput: string, launchKey?: string, scheduledAt?: number, expectedRevision?: string,
 ): Promise<WorkflowRunSummary> {
-  const action = scheduledAt === undefined ? 'runs' : 'schedule';
-  const res = await apiFetch(`/v1/workflows/definitions/${encodeURIComponent(id)}/${action}`, {
+  const res = await apiFetch(savedWorkflowRunPath(id, scheduledAt !== undefined), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
