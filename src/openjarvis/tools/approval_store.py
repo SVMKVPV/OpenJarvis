@@ -13,9 +13,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from functools import wraps
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -144,6 +146,17 @@ class PermissionRule:
         )
 
 
+def _serialized(func):
+    """Keep each statement and its commit together on the shared connection."""
+
+    @wraps(func)
+    def wrapped(self, *args, **kwargs):
+        with self._lock:
+            return func(self, *args, **kwargs)
+
+    return wrapped
+
+
 class ApprovalStore:
     """SQLite store for proactive agent action approvals and permission memory."""
 
@@ -152,6 +165,7 @@ class ApprovalStore:
             db_path = str(get_config_dir() / "approvals.db")
         self._db_path = db_path
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.RLock()
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._create_tables()
@@ -185,6 +199,7 @@ class ApprovalStore:
 
     # -- Pending actions -------------------------------------------------------
 
+    @_serialized
     def queue_action(
         self,
         action_type: str,
@@ -231,6 +246,7 @@ class ApprovalStore:
         self._conn.commit()
         return action
 
+    @_serialized
     def get_action(self, action_id: str) -> Optional[PendingAction]:
         row = self._conn.execute(
             "SELECT id, action_type, description, payload, permission_key, "
@@ -240,6 +256,7 @@ class ApprovalStore:
         ).fetchone()
         return PendingAction.from_row(row) if row else None
 
+    @_serialized
     def list_pending(self) -> List[PendingAction]:
         """Return all non-expired pending actions."""
         now = datetime.now(timezone.utc).isoformat()
@@ -252,6 +269,7 @@ class ApprovalStore:
         ).fetchall()
         return [PendingAction.from_row(r) for r in rows]
 
+    @_serialized
     def list_approved(self) -> List[PendingAction]:
         """Return approved-but-not-yet-executed actions."""
         rows = self._conn.execute(
@@ -262,6 +280,7 @@ class ApprovalStore:
         ).fetchall()
         return [PendingAction.from_row(r) for r in rows]
 
+    @_serialized
     def update_status(
         self,
         action_id: str,
@@ -283,6 +302,7 @@ class ApprovalStore:
             )
         self._conn.commit()
 
+    @_serialized
     def decide_pending(
         self, action_id: str, status: str, *, note: str = "",
         checks: list[str] | None = None,
@@ -305,6 +325,7 @@ class ApprovalStore:
         self._conn.commit()
         return cursor.rowcount == 1
 
+    @_serialized
     def expire_stale(self) -> int:
         """Mark past-TTL pending actions as expired. Returns count."""
         now = datetime.now(timezone.utc).isoformat()
@@ -318,6 +339,7 @@ class ApprovalStore:
 
     # -- Permission memory -----------------------------------------------------
 
+    @_serialized
     def get_permission(self, permission_key: str) -> Optional[PermissionRule]:
         row = self._conn.execute(
             "SELECT permission_key, decision, times_approved, times_denied, "
@@ -326,6 +348,7 @@ class ApprovalStore:
         ).fetchone()
         return PermissionRule.from_row(row) if row else None
 
+    @_serialized
     def set_permission(
         self,
         permission_key: str,
@@ -336,40 +359,22 @@ class ApprovalStore:
     ) -> None:
         """Upsert a permission rule, incrementing the relevant counter."""
         now = datetime.now(timezone.utc).isoformat()
-        existing = self.get_permission(permission_key)
-        if existing:
-            times_approved = existing.times_approved + (1 if approved else 0)
-            times_denied = existing.times_denied + (0 if approved else 1)
-            self._conn.execute(
-                "UPDATE permission_memory SET decision = ?, times_approved = ?, "
-                "times_denied = ?, last_updated = ?, notes = ? "
-                "WHERE permission_key = ?",
-                (
-                    decision,
-                    times_approved,
-                    times_denied,
-                    now,
-                    notes or existing.notes,
-                    permission_key,
-                ),
-            )
-        else:
-            self._conn.execute(
-                "INSERT INTO permission_memory "
-                "(permission_key, decision, times_approved, times_denied, "
-                "last_updated, notes) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    permission_key,
-                    decision,
-                    1 if approved else 0,
-                    0 if approved else 1,
-                    now,
-                    notes,
-                ),
-            )
+        self._conn.execute(
+            "INSERT INTO permission_memory "
+            "(permission_key, decision, times_approved, times_denied, "
+            "last_updated, notes) VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(permission_key) DO UPDATE SET "
+            "decision = excluded.decision, "
+            "times_approved = permission_memory.times_approved + "
+            "excluded.times_approved, "
+            "times_denied = permission_memory.times_denied + excluded.times_denied, "
+            "last_updated = excluded.last_updated, "
+            "notes = COALESCE(NULLIF(excluded.notes, ''), permission_memory.notes)",
+            (permission_key, decision, int(approved), int(not approved), now, notes),
+        )
         self._conn.commit()
 
+    @_serialized
     def clear_permission(self, permission_key: str) -> None:
         self._conn.execute(
             "DELETE FROM permission_memory WHERE permission_key = ?",
@@ -377,6 +382,7 @@ class ApprovalStore:
         )
         self._conn.commit()
 
+    @_serialized
     def list_permissions(self) -> List[PermissionRule]:
         rows = self._conn.execute(
             "SELECT permission_key, decision, times_approved, times_denied, "
@@ -384,6 +390,7 @@ class ApprovalStore:
         ).fetchall()
         return [PermissionRule.from_row(r) for r in rows]
 
+    @_serialized
     def get_seen_ids(self) -> set:
         """Return all doc_ids and message_ids previously queued (any status).
 
@@ -405,6 +412,7 @@ class ApprovalStore:
                 seen.add(f"gmail:{msg_id}")
         return seen
 
+    @_serialized
     def close(self) -> None:
         self._conn.close()
 

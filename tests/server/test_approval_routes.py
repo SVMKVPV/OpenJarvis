@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+
 import pytest
 
 from openjarvis.tools.approval_store import (
@@ -281,6 +284,39 @@ class TestDenyAction:
 
 
 @pytest.mark.skipif(not HAS_FASTAPI, reason="fastapi not installed")
+def test_approval_store_serializes_concurrent_workflow_reviews(tmp_path):
+    path = str(tmp_path / "concurrent-approvals.db")
+    store = ApprovalStore(path)
+    other = ApprovalStore(path)
+    workers = 8
+    start = Barrier(workers)
+
+    def review(index):
+        permissions = store if index % 2 else other
+        start.wait(timeout=5)
+        for attempt in range(15):
+            action = store.queue_action(
+                "project_contribution_review",
+                f"Review {index}/{attempt}",
+                {},
+                "shared-review",
+                "high",
+            )
+            store.expire_stale()
+            assert store.get_action(action.id) is not None
+            assert store.decide_pending(action.id, "approved")
+            permissions.set_permission("shared-review", "always_approve", approved=True)
+
+    try:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            list(pool.map(review, range(workers)))
+        assert len(store.list_approved()) == workers * 15
+        assert store.get_permission("shared-review").times_approved == workers * 15
+    finally:
+        other.close()
+        store.close()
+
+
 class TestApprovalStoreIntegration:
     """End-to-end scenarios: queue → inspect → decide."""
 
