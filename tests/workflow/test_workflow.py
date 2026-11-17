@@ -148,11 +148,13 @@ class TestWorkflowEngine:
 
         search = Mock()
         search.spec = ToolSpec(name="search_nodes", description="Node documentation")
+        search.server_name = "n8n-mcp"
         search.execute.return_value = ToolResult(
             tool_name="search_nodes", content="Schedule Trigger", success=True
         )
         unrelated = Mock()
-        unrelated.spec.name = "n8n_execute_workflow"
+        unrelated.spec.name = "search_nodes"
+        unrelated.server_name = "unrelated-mcp"
         graph = graph_from_dict({
             "nodes": [{"id": "lookup", "type": "tool", "config": {
                 "tool_name": "n8n_node_lookup",
@@ -166,12 +168,20 @@ class TestWorkflowEngine:
         )
         assert result.success
         assert result.final_output == "Schedule Trigger"
+        assert result.steps[0].metadata["mcp_server"] == "n8n-mcp"
         search.execute.assert_called_once_with(query="schedule trigger", limit=5)
         unrelated.execute.assert_not_called()
 
         unavailable = engine.run(graph, initial_input="schedule trigger")
         assert not unavailable.success
-        assert "Enable n8n MCP node search" in unavailable.steps[0].output
+        assert "Configure exactly one n8n-mcp server" in unavailable.steps[0].output
+
+        ambiguous = engine.run(
+            graph, SimpleNamespace(mcp_tools=[search, search]),
+            initial_input="schedule trigger",
+        )
+        assert not ambiguous.success
+        assert search.execute.call_count == 1
 
     def test_run_invalid_graph(self):
         engine = WorkflowEngine()

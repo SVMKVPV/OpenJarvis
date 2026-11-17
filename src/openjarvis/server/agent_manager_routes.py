@@ -755,7 +755,7 @@ def _get_mcp_tools_locked(
                 break
             client.initialize()
 
-            provider = MCPToolProvider(client)
+            provider = MCPToolProvider(client, server_name=name)
             discovered = provider.discover()
 
             # Per-server tool filtering

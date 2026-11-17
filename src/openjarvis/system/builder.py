@@ -735,7 +735,7 @@ class SystemBuilder:
 
         self._mcp_clients.append(client)
 
-        provider = MCPToolProvider(client)
+        provider = MCPToolProvider(client, server_name=name)
         discovered = provider.discover()
 
         include_tools = set(cfg.get("include_tools", []))

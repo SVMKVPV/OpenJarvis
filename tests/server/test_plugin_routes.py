@@ -108,7 +108,7 @@ def test_mcp_discovery_reports_partial_failure_without_connection_details(
     tool = MagicMock()
     tool.spec.name = "search_nodes"
 
-    def provider(client):
+    def provider(client, *, server_name):
         instance = MagicMock()
         instance.discover.return_value = [tool] if client is docs else []
         return instance

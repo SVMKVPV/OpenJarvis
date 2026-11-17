@@ -505,18 +505,18 @@ class WorkflowEngine:
                 success=False,
                 output="Enter an n8n node query of 1 to 500 characters.",
             )
-        tool = next(
-            (item for item in getattr(system, "mcp_tools", ())
-             if item.spec.name == "search_nodes"),
-            None,
-        )
-        if tool is None:
+        tools = [
+            item for item in getattr(system, "mcp_tools", ())
+            if getattr(item, "server_name", "") == "n8n-mcp"
+            and item.spec.name == "search_nodes"
+        ]
+        if len(tools) != 1:
             return WorkflowStepResult(
                 node_id=node.id, success=False,
-                output="Enable n8n MCP node search in the workflow backend.",
+                output="Configure exactly one n8n-mcp server with node search enabled.",
             )
         executor = ToolExecutor(
-            tools=[tool],
+            tools=tools,
             bus=self._bus,
             capability_policy=getattr(system, "capability_policy", None),
             rate_limiter=getattr(system, "rate_limiter", None),
@@ -526,7 +526,8 @@ class WorkflowEngine:
             arguments=json.dumps({"query": query, "limit": 5}),
         ))
         return WorkflowStepResult(
-            node_id=node.id, success=result.success, output=result.content
+            node_id=node.id, success=result.success, output=result.content,
+            metadata={"mcp_server": "n8n-mcp", "mcp_tool": "search_nodes"},
         )
 
     def search_connector_index(

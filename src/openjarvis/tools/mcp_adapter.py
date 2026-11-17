@@ -25,9 +25,12 @@ class MCPToolAdapter(BaseTool):
 
     tool_id = "mcp_adapter"
 
-    def __init__(self, client: MCPClient, tool_spec: ToolSpec) -> None:
+    def __init__(
+        self, client: MCPClient, tool_spec: ToolSpec, *, server_name: str = ""
+    ) -> None:
         self._client = client
         self._spec = tool_spec
+        self.server_name = server_name
 
     @property
     def spec(self) -> ToolSpec:
@@ -63,13 +66,17 @@ class MCPToolProvider:
         The ``MCPClient`` connected to the MCP server.
     """
 
-    def __init__(self, client: MCPClient) -> None:
+    def __init__(self, client: MCPClient, *, server_name: str = "") -> None:
         self._client = client
+        self._server_name = server_name
 
     def discover(self) -> List[BaseTool]:
         """Discover available tools and return them as BaseTool adapters."""
         specs = self._client.list_tools()
-        return [MCPToolAdapter(self._client, s) for s in specs]
+        return [
+            MCPToolAdapter(self._client, spec, server_name=self._server_name)
+            for spec in specs
+        ]
 
 
 __all__ = ["MCPToolAdapter", "MCPToolProvider"]
