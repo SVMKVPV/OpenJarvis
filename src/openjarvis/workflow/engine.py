@@ -309,11 +309,13 @@ class WorkflowEngine:
                     output="Approval record was not found.",
                 )
             decision_note = action.payload.get("decision_note")
-            decision_metadata = (
+            decision_metadata: dict[str, Any] = (
                 {"decision_note": decision_note}
                 if isinstance(decision_note, str)
                 else {}
             )
+            if checks := action.payload.get("decision_checks"):
+                decision_metadata["decision_checks"] = checks
             if action.status == STATUS_APPROVED:
                 return WorkflowStepResult(
                     node_id=node.id,
@@ -347,6 +349,8 @@ class WorkflowEngine:
             )
 
         payload = dict(node.config.get("payload", {}))
+        payload.pop("decision_note", None)
+        payload.pop("decision_checks", None)
         payload["workflow_run_id"] = context.get("_workflow_run_id", "")
         payload["workflow_node_id"] = node.id
         action = self._approval_store.queue_action(

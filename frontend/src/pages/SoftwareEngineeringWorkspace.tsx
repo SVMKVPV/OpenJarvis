@@ -1035,6 +1035,7 @@ export function SoftwareEngineeringWorkspace({
   };
 
   const [approvalNotes, setApprovalNotes] = useState<Record<string, string>>({});
+  const [approvalChecks, setApprovalChecks] = useState<Record<string, number[]>>({});
 
   const decideWorkflow = async (approval: PendingApproval, decision: 'approve' | 'deny') => {
     if (decidingApprovalId) return;
@@ -1042,7 +1043,7 @@ export function SoftwareEngineeringWorkspace({
     setApprovalMessage('');
     try {
       const submitDecision = decision === 'approve' ? approveAction : denyAction;
-      await submitDecision(approval.id, approvalNotes[approval.id]?.trim());
+      await submitDecision(approval.id, approvalNotes[approval.id]?.trim(), approvalChecks[approval.id]);
       setWorkflowApprovals((items) => items.filter((item) => item.id !== approval.id));
       setApprovalMessage(decision === 'approve' ? 'Approval recorded.' : 'Denial recorded.');
     } catch (error) {
@@ -1698,6 +1699,13 @@ export function SoftwareEngineeringWorkspace({
                       {typeof step.metadata.decision_note === 'string' && (
                         <><h6>Reviewer note</h6><pre>{step.metadata.decision_note}</pre></>
                       )}
+                      {reviewChecklistLines(step.metadata.decision_checks).length > 0 && (
+                        <ul aria-label="Checks recorded at decision">
+                          {reviewChecklistLines(step.metadata.decision_checks).map(
+                            (item, index) => <li key={index}>{item}</li>,
+                          )}
+                        </ul>
+                      )}
                       {typeof step.metadata.review_input === 'string' && (
                         <details data-approval-input open={initialRunId === inspectedRunId}>
                           <summary>Input presented for approval</summary>
@@ -1732,7 +1740,23 @@ export function SoftwareEngineeringWorkspace({
                               <span>{approval.description}</span>
                               {checklist.length > 0 && (
                                 <ul aria-label="Reviewer checklist">
-                                  {checklist.map((item, index) => <li key={index}>{item}</li>)}
+                                  {checklist.map((item, index) => (
+                                    <li key={index}>
+                                      <label>
+                                        <input type="checkbox" disabled={!!decidingApprovalId}
+                                          checked={approvalChecks[approval.id]?.includes(index) ?? false}
+                                          onChange={(event) => {
+                                            const checked = event.target.checked;
+                                            setApprovalChecks((current) => {
+                                              const selected = current[approval.id] ?? [];
+                                              return { ...current, [approval.id]: checked
+                                                ? [...selected, index] : selected.filter((item) => item !== index) };
+                                            });
+                                          }} />
+                                        {item}
+                                      </label>
+                                    </li>
+                                  ))}
                                 </ul>
                               )}
                               <label>Reviewer note (optional)

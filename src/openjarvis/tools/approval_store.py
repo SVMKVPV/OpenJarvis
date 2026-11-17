@@ -284,18 +284,23 @@ class ApprovalStore:
         self._conn.commit()
 
     def decide_pending(
-        self, action_id: str, status: str, *, note: str = ""
+        self, action_id: str, status: str, *, note: str = "",
+        checks: list[str] | None = None,
     ) -> bool:
         """Record a decision only while the action is pending and unexpired."""
         if status not in {STATUS_APPROVED, STATUS_DENIED}:
             raise ValueError("Invalid approval decision")
         now = datetime.now(timezone.utc).isoformat()
+        details = {}
+        if note:
+            details["decision_note"] = note
+        if checks:
+            details["decision_checks"] = checks
         cursor = self._conn.execute(
             "UPDATE pending_actions SET status = ?, decision_at = ?, "
-            "payload = CASE WHEN ? = '' THEN payload "
-            "ELSE json_set(payload, '$.decision_note', ?) END "
+            "payload = json_patch(payload, ?) "
             "WHERE id = ? AND status = ? AND expires_at > ?",
-            (status, now, note, note, action_id, STATUS_PENDING, now),
+            (status, now, json.dumps(details), action_id, STATUS_PENDING, now),
         )
         self._conn.commit()
         return cursor.rowcount == 1

@@ -278,12 +278,15 @@ class WorkflowRuntime:
         )
 
     def decide_approval(
-        self, action: PendingAction, decision: str, *, note: str = ""
+        self, action: PendingAction, decision: str, *, note: str = "",
+        checks: list[str] | None = None,
     ) -> bool:
         with self._lock:
             if self._stopping or not self.is_waiting_for(action):
                 return False
-            if not self.approval_store.decide_pending(action.id, decision, note=note):
+            if not self.approval_store.decide_pending(
+                action.id, decision, note=note, checks=checks
+            ):
                 return False
             run_id = action.payload["workflow_run_id"]
             if decision == STATUS_APPROVED:

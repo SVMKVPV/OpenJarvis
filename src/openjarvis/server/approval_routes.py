@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
 from openjarvis.tools.approval_store import (
     STATUS_APPROVED,
@@ -75,19 +75,30 @@ async def list_pending_approvals(request: Request) -> Dict[str, Any]:
 
 
 def _decide(
-    action_id: str, request: Request, decision: str, *, note: str = ""
+    action_id: str, request: Request, decision: str, *, note: str = "",
+    checked_items: tuple[int, ...] = (),
 ) -> Dict[str, Any]:
     store = _get_store()
     action = store.get_action(action_id)
     if action is None:
         raise HTTPException(status_code=404, detail="Action not found")
     if "workflow_node_id" in action.payload:
+        raw_items = action.payload.get("review_checklist")
+        items = (
+            [item for item in raw_items if isinstance(item, str) and item.strip()]
+            if isinstance(raw_items, list) else []
+        )
+        if any(index < 0 or index >= len(items) for index in checked_items):
+            raise HTTPException(
+                status_code=422, detail="Invalid reviewer checklist item"
+            )
+        checks = [items[index] for index in sorted(set(checked_items))]
         runtime = _workflow_runtime(request)
         decided = runtime is not None and runtime.decide_approval(
-            action, decision, note=note
+            action, decision, note=note, checks=checks
         )
-    elif note:
-        raise HTTPException(400, "Review notes require a workflow approval")
+    elif note or checked_items:
+        raise HTTPException(400, "Review details require a workflow approval")
     else:
         decided = store.decide_pending(action_id, decision)
     if not decided:
@@ -110,7 +121,8 @@ class WorkflowDecisionNote(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     decision: Literal["approve", "deny"]
-    note: str = Field(min_length=1, max_length=2000)
+    note: str = Field(default="", max_length=2000)
+    checked_items: tuple[StrictInt, ...] = Field(default=(), max_length=4000)
 
 
 @router.post("/v1/approvals/{action_id}/decide-with-note")
@@ -118,7 +130,12 @@ async def decide_workflow_with_note(
     action_id: str, request: Request, payload: WorkflowDecisionNote
 ) -> Dict[str, Any]:
     decision = STATUS_APPROVED if payload.decision == "approve" else STATUS_DENIED
-    return _decide(action_id, request, decision, note=payload.note)
+    if not payload.note and not payload.checked_items:
+        raise HTTPException(422, "Enter a note or select a reviewer checklist item")
+    return _decide(
+        action_id, request, decision, note=payload.note,
+        checked_items=payload.checked_items,
+    )
 
 
 __all__ = ["get_approval_store", "router"]

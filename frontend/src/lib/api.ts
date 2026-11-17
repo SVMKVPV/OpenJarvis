@@ -1297,13 +1297,14 @@ export class ApprovalDecisionError extends Error {
   }
 }
 
-async function decideApproval(actionId: string, decision: 'approve' | 'deny', note?: string): Promise<void> {
-  const path = note ? 'decide-with-note' : decision;
+async function decideApproval(actionId: string, decision: 'approve' | 'deny', note?: string, checkedItems?: number[]): Promise<void> {
+  const hasDetails = Boolean(note || checkedItems?.length);
+  const path = hasDetails ? 'decide-with-note' : decision;
   const res = await apiFetch(`/v1/approvals/${encodeURIComponent(actionId)}/${path}`, {
     method: 'POST',
-    ...(note ? {
+    ...(hasDetails ? {
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ decision, note }),
+      body: JSON.stringify({ decision, note, checked_items: checkedItems }),
     } : {}),
   });
   if (!res.ok) {
@@ -1313,12 +1314,12 @@ async function decideApproval(actionId: string, decision: 'approve' | 'deny', no
   }
 }
 
-export async function approveAction(actionId: string, note?: string): Promise<void> {
-  await decideApproval(actionId, 'approve', note);
+export async function approveAction(actionId: string, note?: string, checkedItems?: number[]): Promise<void> {
+  await decideApproval(actionId, 'approve', note, checkedItems);
 }
 
-export async function denyAction(actionId: string, note?: string): Promise<void> {
-  await decideApproval(actionId, 'deny', note);
+export async function denyAction(actionId: string, note?: string, checkedItems?: number[]): Promise<void> {
+  await decideApproval(actionId, 'deny', note, checkedItems);
 }
 
 // ---------------------------------------------------------------------------

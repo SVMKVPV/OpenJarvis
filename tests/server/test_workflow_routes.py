@@ -260,7 +260,10 @@ def test_parallel_approvals_survive_runtime_restart(tmp_path, monkeypatch) -> No
                 "initial_input": "Evidence for reviewer",
                 "nodes": [
                     {"id": "first", "type": "approval"},
-                    {"id": "second", "type": "approval"},
+                    {"id": "second", "type": "approval", "config": {"payload": {
+                        "review_checklist": ["Check source", "", "Verify amount"],
+                        "decision_checks": ["Untrusted imported assertion"],
+                    }}},
                 ],
             },
         )
@@ -280,13 +283,19 @@ def test_parallel_approvals_survive_runtime_restart(tmp_path, monkeypatch) -> No
         pending = client.get("/v1/approvals/pending").json()
         assert [action["id"] for action in pending["actions"]] == [second_id]
         assert "review_input" not in pending["actions"][0]["payload"]
+        assert "decision_checks" not in pending["actions"][0]["payload"]
         paused = wait_status(client, run_id, "waiting_approval")
         second_step = next(
             step for step in paused["steps"] if step["node_id"] == "second"
         )
         assert second_step["metadata"]["review_input"] == "Evidence for reviewer"
         path = f"/v1/approvals/{second_id}/decide-with-note"
-        note = {"decision": "approve", "note": "Evidence checked against the source."}
+        invalid = client.post(path, json={"decision": "approve", "checked_items": [2]})
+        assert invalid.status_code == 422
+        note = {
+            "decision": "approve", "note": "Evidence checked against the source.",
+            "checked_items": [1],
+        }
         assert client.post(path, json=note).status_code == 200
         repeat = client.post(path, json={**note, "note": "Replacement"})
         assert repeat.status_code == 409
@@ -294,6 +303,7 @@ def test_parallel_approvals_survive_runtime_restart(tmp_path, monkeypatch) -> No
         assert any(
             step["node_id"] == "second"
             and step["metadata"].get("decision_note") == note["note"]
+            and step["metadata"].get("decision_checks") == ["Verify amount"]
             for step in completed["steps"]
         )
     restarted.state.workflow_runtime.close()
