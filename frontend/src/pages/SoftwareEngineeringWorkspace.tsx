@@ -217,6 +217,15 @@ const DELIVERY_QUALITY_REVIEW = {
     { id: 'handoff-review', type: 'approval', config: {
       description: 'Compare findings with the deliverable and its brief. Confirm corrections and listen to source audio if required before approving the handoff.',
       tier: 'high',
+      payload: {
+        require_review_checklist: true,
+        review_checklist: [
+          'Compare names, numbers, dates, and commitments with the approved brief.',
+          'Verify blocking spelling, grammar, and wording issues were corrected.',
+          'Listen to the source audio when the handoff includes pronunciation or audio quality.',
+          'Resolve missing evidence and remaining blockers before approving delivery.',
+        ],
+      },
     } },
   ],
   edges: [
@@ -282,6 +291,15 @@ const EMAIL_REPLY_REVIEW = {
     { id: 'review-reply', type: 'approval', config: {
       description: 'Read the indexed source, proposed reply, and draft quality check. Approve only if the draft is accurate and ready.',
       tier: 'high',
+      payload: {
+        require_review_checklist: true,
+        review_checklist: [
+          'Match the recipient and message reference to the indexed email.',
+          'Verify the reply answers the request using supported facts.',
+          'Check for unintended commitments, unnecessary requests, and sensitive details.',
+          'Review the subject, wording, and BLVCKOAK sign-off.',
+        ],
+      },
     } },
   ],
   edges: [
