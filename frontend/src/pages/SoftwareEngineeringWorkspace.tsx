@@ -2035,6 +2035,10 @@ export function SoftwareEngineeringWorkspace({
                       {typeof step.metadata.shared_brain_revision === 'number' && (
                         <small>Shared Brain revision {step.metadata.shared_brain_revision}</small>
                       )}
+                      {typeof step.metadata.mcp_server === 'string' &&
+                        typeof step.metadata.mcp_tool === 'string' && (
+                          <small>MCP source {step.metadata.mcp_server} · {step.metadata.mcp_tool}</small>
+                        )}
                       {step.output && <pre>{step.output}</pre>}
                       {typeof step.metadata.decision_note === 'string' && (
                         <><h6>Reviewer note</h6><pre>{step.metadata.decision_note}</pre></>
