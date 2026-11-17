@@ -30,6 +30,7 @@ import {
 } from '../lib/api';
 import { getSyncStatus, listConnectors, triggerSync } from '../lib/connectors-api';
 import { isEmbedOnlyModel } from '../lib/model-capabilities';
+import { reviewedWorkflowOutput } from '../lib/reviewed-workflow-output';
 import { useAppStore } from '../lib/store';
 import type { ConnectorInfo, SyncStatus } from '../types/connectors';
 import { ApprovedGmailDraft } from './ApprovedGmailDraft';
@@ -363,38 +364,6 @@ function reviewChecklistLines(items: unknown): string[] {
 
 function workflowReviewChecklist(approval: PendingApproval): string[] {
   return reviewChecklistLines(approval.payload.review_checklist).filter((item) => item.trim());
-}
-
-function reviewedWorkflowOutput(
-  run: WorkflowRunDetail | null, draftId: string, approvalId: string,
-): string | null {
-  if (run?.status !== 'succeeded') return null;
-  const attempts = new Map(run.steps.map((step) => [step.node_id, step]));
-  const draft = attempts.get(draftId);
-  const approval = attempts.get(approvalId);
-  const actionId = approval?.metadata.approval_id;
-  if (!draft?.success || !draft.output.trim() ||
-      approval?.metadata.approval_status !== 'approved' || typeof actionId !== 'string') return null;
-  const reviewIndex = run.steps.findIndex((step) => step.node_id === approvalId &&
-    step.metadata.workflow_status === 'waiting_approval' &&
-    step.metadata.approval_id === actionId,
-  );
-  if (reviewIndex < 0) return null;
-  const reviewedInput = run.steps[reviewIndex].metadata.review_input;
-  if (typeof reviewedInput !== 'string' || reviewedInput !== approval.output) return null;
-
-  const reviewAttempts = new Map(run.steps.slice(0, reviewIndex).map((step) => [step.node_id, step]));
-  const reviewedOutputs = new Map<string, string>();
-  for (const edge of run.graph.edges ?? []) {
-    if (edge.target !== approvalId || typeof edge.source !== 'string') continue;
-    const step = reviewAttempts.get(edge.source);
-    if (!step?.success || !step.output) continue;
-    if (edge.condition && (typeof edge.condition !== 'string' ||
-        edge.condition.trim().toLowerCase() !== step.output.trim().toLowerCase())) continue;
-    reviewedOutputs.set(edge.source, step.output);
-  }
-  return reviewedOutputs.get(draftId) === draft.output &&
-    [...reviewedOutputs.values()].join('\n\n') === reviewedInput ? draft.output : null;
 }
 
 function downloadWorkflowJson(filename: string, data: object) {
