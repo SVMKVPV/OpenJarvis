@@ -22,6 +22,7 @@ _MCP_AGENT_ID = "mcp"
 
 # Tool annotation hints per MCP spec 2025-11-25
 _TOOL_ANNOTATIONS: Dict[str, Dict[str, Any]] = {
+    "read_shared_brain_brief": {"readOnlyHint": True, "destructiveHint": False},
     "memory_store": {"destructiveHint": True, "readOnlyHint": False},
     "memory_retrieve": {"readOnlyHint": True, "destructiveHint": False},
     "memory_search": {"readOnlyHint": True, "destructiveHint": False},

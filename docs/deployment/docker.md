@@ -236,6 +236,17 @@ you authorize to read that brief. A client holding this key cannot edit the
 brief or access other protected endpoints. Remove the digest and recreate
 the service to revoke access.
 
+A local MCP client can use OpenJarvis's stdio adapter. Configure the MCP
+command to run the Python executable from the OpenJarvis environment with
+arguments `-m openjarvis.mcp.shared_brain_stdio`. Pass these environment
+variables to the MCP process:
+
+- `OPENJARVIS_SHARED_BRAIN_URL` for the backend base URL.
+- `OPENJARVIS_SHARED_BRAIN_READ_KEY` for the read key from your credential store.
+
+The adapter exposes only `read_shared_brain_brief`. It accepts HTTPS backend
+URLs and loopback HTTP URLs.
+
 ### Persistent data
 
 The `openjarvis-data` named volume persists Command Center state, including
