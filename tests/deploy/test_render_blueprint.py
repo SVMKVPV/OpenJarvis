@@ -3,6 +3,7 @@
 import json
 import shlex
 import subprocess
+import sys
 from pathlib import Path
 
 import yaml
@@ -41,18 +42,18 @@ def _docker_json_instruction(name: str) -> list[str]:
 
 def _run_fake_jarvis(tmp_path: Path, argv: list[str]) -> list[str]:
     """Run an argv assembled with Docker's exec-form ENTRYPOINT semantics."""
-    fake_jarvis = tmp_path / "jarvis"
+    fake_jarvis = tmp_path / f"{argv[0]}.py"
     fake_jarvis.write_text(
-        "#!/bin/sh\nprintf '%s\\0' \"$@\"\n",
+        "import json, sys\nprint(json.dumps(sys.argv[1:]))\n",
         encoding="utf-8",
     )
-    fake_jarvis.chmod(0o755)
     completed = subprocess.run(
-        [str(fake_jarvis), *argv[1:]],
+        [sys.executable, str(fake_jarvis), *argv[1:]],
         check=True,
         capture_output=True,
+        text=True,
     )
-    return completed.stdout.rstrip(b"\0").decode().split("\0")
+    return json.loads(completed.stdout)
 
 
 def test_render_selects_cloud_engine_through_the_serve_cli(tmp_path: Path) -> None:
@@ -119,6 +120,15 @@ def test_docker_and_compose_command_overrides_remain_jarvis_subcommands(
 
 def test_render_does_not_advertise_an_unconsumed_cors_variable() -> None:
     assert "OPENJARVIS_CORS_ORIGINS" not in _env_vars(_service())
+
+
+def test_render_image_installs_hosted_connector_dependencies() -> None:
+    service = _service()
+    assert service["dockerfilePath"] == "./deploy/docker/Dockerfile"
+    content = DOCKERFILE.read_text(encoding="utf-8")
+    export = content.split("uv export --frozen --no-dev ", 1)[1].split(">", 1)[0]
+    for extra in ("server", "inference-cloud", "inference-google", "channel-gmail"):
+        assert f"--extra {extra}" in export
 
 
 def test_render_public_bind_generates_an_api_key() -> None:
