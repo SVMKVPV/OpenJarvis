@@ -240,6 +240,7 @@ const DELIVERY_QUALITY_REVIEW = {
         'If both the draft and approved version are present, compare them first. Look for changed numbers, dates, names, commitments and omissions. For each mismatch quote the draft words and the approved words side by side.',
         'Then check spelling, grammar and awkward phrasing in the draft. For each issue quote the draft verbatim, cite the source and location if available, and propose a correction. Mark blocking issues separately from optional edits.',
         'When reviewing a transcript, distinguish wording issues from pronunciation or audio quality, which require listening. If the source is incomplete, specify what still needs review.',
+        'Treat an original machine transcript as unverified. When a reviewer-edited transcript is present, use it for the wording review and flag material discrepancies with the original for listening.',
         'Recommend either Ready for human review or Return for corrections. Leave the handoff decision to the reviewer.',
       ].join('\n'),
     } },

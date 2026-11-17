@@ -12,10 +12,12 @@ export function WorkflowEvidenceUpload({ onIndexed, allowAudio = false }: {
   const [audio, setAudio] = useState<File | null>(null);
   const [audioUrl, setAudioUrl] = useState('');
   const [transcript, setTranscript] = useState('');
+  const [machineTranscript, setMachineTranscript] = useState('');
   const [transcribing, setTranscribing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const recording = allowAudio ? audio : null;
+  const corrected = !!machineTranscript && transcript.trim() !== machineTranscript;
   const canIndex = !busy && !transcribing && (recording ? !!transcript.trim() : files.length > 0);
 
   useEffect(() => {
@@ -29,7 +31,7 @@ export function WorkflowEvidenceUpload({ onIndexed, allowAudio = false }: {
   }, [recording]);
 
   const prepareTranscript = async () => {
-    if (!recording || busy || transcribing) return;
+    if (!recording || busy || transcribing || corrected) return;
     if (recording.size > MAX_RECORDING_BYTES) {
       setMessage('Choose a recording under 25 MB.');
       return;
@@ -39,7 +41,11 @@ export function WorkflowEvidenceUpload({ onIndexed, allowAudio = false }: {
     try {
       const result = await transcribeAudio(recording, recording.name);
       const text = result.text.trim();
-      setTranscript(text);
+      if (text) {
+        setTranscript((current) => !current.trim() || current.trim() === machineTranscript
+          ? text : current);
+        setMachineTranscript(text);
+      }
       setMessage(text ? 'Transcript ready. Compare it with the recording before indexing.'
         : 'The speech backend returned no transcript.');
     } catch (error) {
@@ -58,7 +64,15 @@ export function WorkflowEvidenceUpload({ onIndexed, allowAudio = false }: {
     try {
       const evidence = [...files];
       if (recording) {
-        const text = `Transcript of ${recording.name}\n\n${transcript.trim()}`;
+        const sections = [`Transcript of ${recording.name}`];
+        if (corrected) {
+          sections.push(`Reviewer-edited transcript\n${transcript.trim()}`);
+          sections.push(`Original machine transcript (unverified)\n${machineTranscript}`);
+        } else {
+          const label = machineTranscript ? 'Machine transcript (unverified)' : 'User-supplied transcript';
+          sections.push(`${label}\n${transcript.trim()}`);
+        }
+        const text = sections.join('\n\n');
         evidence.push(new File([text], `${recording.name}.transcript.txt`, { type: 'text/plain' }));
       }
       const result = await indexWorkflowEvidence(evidence);
@@ -76,6 +90,7 @@ export function WorkflowEvidenceUpload({ onIndexed, allowAudio = false }: {
       setFiles([]);
       setAudio(null);
       setTranscript('');
+      setMachineTranscript('');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Evidence upload failed.');
     } finally {
@@ -96,21 +111,28 @@ export function WorkflowEvidenceUpload({ onIndexed, allowAudio = false }: {
               onChange={(event) => {
                 setAudio(event.target.files?.[0] ?? null);
                 setTranscript('');
+                setMachineTranscript('');
                 setMessage('');
               }} />
           </label>
           {recording && (
             <>
               {audioUrl && <audio controls src={audioUrl} aria-label="Source recording" />}
-              <button type="button" disabled={busy || transcribing} onClick={prepareTranscript}>
+              <button type="button" disabled={busy || transcribing || corrected} onClick={prepareTranscript}>
                 {transcribing ? 'Transcribing…' : 'Transcribe recording'}
               </button>
               <label>Transcript to index
                 <textarea rows={6} value={transcript} disabled={busy || transcribing}
                   onChange={(event) => setTranscript(event.target.value)} />
               </label>
-              <small>Transcription uses the configured speech backend. Only the transcript
-                is indexed with the source documents. Listen here to check pronunciation and tone.</small>
+              {corrected && (
+                <details>
+                  <summary>Original machine transcript</summary>
+                  <pre style={{ whiteSpace: 'pre-wrap' }}>{machineTranscript}</pre>
+                </details>
+              )}
+              <small>Indexing preserves the machine transcript alongside any edits.
+                Listen to the recording to check pronunciation and tone.</small>
             </>
           )}
         </>
