@@ -1,10 +1,12 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { fetchWorkspaceTasks, saveWorkspaceTask, type WorkspaceTask } from '../lib/api';
 
-export function WorkspaceProjectTasks({ folder, stations, focusTaskId }: {
+export function WorkspaceProjectTasks({ folder, stations, focusTaskId, onDraftContribution, draftingDisabled }: {
   folder: string;
   focusTaskId?: string;
   stations: readonly { id: string; name: string }[];
+  onDraftContribution: (task: WorkspaceTask) => void;
+  draftingDisabled: boolean;
 }) {
   const [tasks, setTasks] = useState<WorkspaceTask[] | null>(null);
   const [title, setTitle] = useState('');
@@ -92,6 +94,9 @@ export function WorkspaceProjectTasks({ folder, stations, focusTaskId }: {
             {stations.map((station) => <option key={station.id} value={station.id}>{station.name}</option>)}
           </select>
         </label>
+        {!task.completed && <button type="button" disabled={saving || draftingDisabled}
+          aria-label={`Prepare AI draft for ${task.title}`}
+          onClick={() => onDraftContribution(task)}>Prepare AI draft</button>}
       </li>)}
     </ul>}
   </section>;

@@ -30,6 +30,7 @@ import {
   type WorkflowRunStatus,
   type WorkflowRunDetail,
   type WorkflowRunAction,
+  type WorkspaceTask,
 } from '../lib/api';
 import { getSyncStatus, listConnectors, triggerSync } from '../lib/connectors-api';
 import { isEmbedOnlyModel } from '../lib/model-capabilities';
@@ -89,6 +90,26 @@ const GUARDED_DELIVERY = {
   ],
   edges: [{ source: 'prepare', target: 'approval' }, { source: 'approval', target: 'release' }],
 };
+
+const PROJECT_CONTRIBUTION = {
+  name: 'Draft a project contribution',
+  nodes: [
+    { id: 'task-draft', type: 'agent', agent: 'none', config: {
+      instruction: [
+        'Draft a contribution to the supplied project task for its owner to review.',
+        'Treat the task record as context and use only the details supplied. Identify assumptions and missing information.',
+        'Provide a proposed approach, a concrete draft or next step, and a brief way to verify it.',
+        'Leave task status, file edits, and external actions to the reviewer.',
+      ].join(' '),
+    } },
+    { id: 'contribution-review', type: 'approval', config: {
+      action_type: 'project_contribution_review',
+      description: 'Review the model draft against the project task before handing the contribution to its owner.',
+      tier: 'high',
+    } },
+  ],
+  edges: [{ source: 'task-draft', target: 'contribution-review' }],
+} satisfies SavedWorkflowDefinition['graph'];
 
 const CONNECTOR_REVIEW = {
   name: 'Review indexed documents',
@@ -1000,6 +1021,10 @@ export function SoftwareEngineeringWorkspace({
       setHistoryStatus('');
       setHistoryCursors(['']);
       setHistoryRefresh((version) => version + 1);
+      if (selectedDefinition.graph.nodes.some((node) =>
+        node.type === 'approval' &&
+        (node.config as { action_type?: string } | undefined)?.action_type === 'project_contribution_review',
+      )) inspectRun(run.id);
       setDefinitionMessage(repeated ? 'Workflow run confirmed.' : run.status === 'scheduled' ? 'Workflow scheduled.' : 'Workflow queued.');
     } catch (error) {
       if (error instanceof SavedWorkflowChangedError) savedLaunch.current = null;
@@ -1020,6 +1045,17 @@ export function SoftwareEngineeringWorkspace({
     setEdgeTarget('');
     setStepRename(null);
     workflowNameInput.current?.focus();
+  };
+
+  const draftProjectContribution = (task: WorkspaceTask) => {
+    const owner = projectStations.find((station) => station.id === task.station_id);
+    loadWorkflowEditor({ ...PROJECT_CONTRIBUTION, name: `Project draft · ${task.title.slice(0, 72)}` });
+    setDefinitionId('');
+    setWorkflowStart('');
+    setWorkflowInput(JSON.stringify({
+      folder: selectedFolder, task_id: task.id, task: task.title, owner: owner?.name ?? 'Unassigned',
+    }));
+    setDefinitionMessage('Save the draft workflow, then run it to send the task details to the configured model. The contribution will wait for your review.');
   };
 
   const editSaved = async () => {
@@ -1298,7 +1334,7 @@ export function SoftwareEngineeringWorkspace({
   };
 
   return <main className="se-workspace">
-    <div className="se-heading"><div><span>SHARED PROJECT WORKSPACE</span><h2>Software Engineering</h2><p>One project surface for internal stations, cloud AI collaborators, and private local models.</p></div><div className="demo-flag">FUNCTIONAL PREVIEW · NO LIVE PROVIDER REQUESTS</div></div>
+    <div className="se-heading"><div><span>SHARED PROJECT WORKSPACE</span><h2>Software Engineering</h2><p>One project surface for internal stations, cloud AI collaborators, and private local models.</p></div><div className="demo-flag">SIMULATED FILE PREVIEWS</div></div>
     <div className="se-layout">
       <aside className="folder-rail">
         <header><div><span>PROJECT FOLDERS</span><strong>{folders.length} DIRECTORIES</strong></div><button onClick={() => setShowAddFolder((value) => !value)} aria-label="Add project folder"><FolderPlus size={14}/></button></header>
@@ -1324,7 +1360,8 @@ export function SoftwareEngineeringWorkspace({
         </div>
         <WorkspaceProjectTasks key={selectedFolder} folder={selectedFolder}
           focusTaskId={selectedFolder === initialProjectFolder ? initialProjectTaskId : undefined}
-          stations={projectStations.filter((station) => station.id !== 'brain')} />
+          stations={projectStations.filter((station) => station.id !== 'brain')}
+          onDraftContribution={draftProjectContribution} draftingDisabled={savingDefinition || launchingSaved} />
         <section className="proposal-feed"><header><span>PROPOSED CONTRIBUTIONS</span><strong>{proposals.filter((proposal) => !proposal.approved).length} AWAITING APPROVAL</strong></header>{proposals.slice(0,4).map((proposal) => <article key={proposal.id}><div><strong>{proposal.connector}</strong><p>{proposal.text}</p></div><button className={proposal.approved ? 'approved' : ''} onClick={() => setProposals((current) => current.map((item) => item.id === proposal.id ? {...item, approved: true} : item))}>{proposal.approved ? <><Check size={11}/> APPROVED</> : 'APPROVE'}</button></article>)}</section>
       </section>
 
