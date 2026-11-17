@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Network, Radio, Users } from 'lucide-react';
 import { fetchSharedBrainBrief, saveSharedBrainBrief, SharedBrainConflict, type SharedBrainBrief } from '../lib/api';
 import './shared-brain.css';
 
@@ -21,6 +20,14 @@ export function SharedBrainPanel({ context, onContextChange, onShare, onOpenDot,
     [...(backendBrief?.context ?? '').matchAll(/^\[Approved workflow ([a-f0-9]{32})\]$/gm)]
       .map((match) => match[1]),
   ));
+
+  const backendStatus = checkingBackend
+    ? 'Checking backend'
+    : !backendBrief
+      ? 'Backend brief unavailable'
+      : backendBrief.revision > 0
+        ? `Saved brief revision ${backendBrief.revision}`
+        : 'No saved brief yet';
 
   useEffect(() => {
     const controller = new AbortController();
@@ -74,7 +81,25 @@ export function SharedBrainPanel({ context, onContextChange, onShare, onOpenDot,
     }
   };
   return <>
-    <main className="shared-brain-panel"><header><div><span>SHARED COMMUNICATION SERVICE</span><h2>The Brain</h2><p>Common context, ownership, and coordination for every agent. The Brain is not part of the reporting hierarchy.</p></div><em>DEMO DATA · SYNCHRONIZED</em></header><section className="brain-metrics"><article><Radio/><span>COMMUNICATION HEALTH</span><strong>98.4%</strong><small>ALL STATIONS RECEIVING CONTEXT</small></article><article><Users/><span>CONNECTED STATIONS</span><strong>10</strong><small>ONE SHARED CONTEXT LAYER</small></article><article><Network/><span>ACTIVE OWNERSHIPS</span><strong>27</strong><small>ASSIGNMENTS INDEXED</small></article><article><AlertTriangle/><span>DUPLICATE WARNINGS</span><strong>0</strong><small>NO CONFLICTS DETECTED</small></article></section><section className="brain-detail-grid"><article><header><span>LIVE CONTEXT ACTIVITY</span><strong>Latest shared updates</strong></header><ul><li><b>MKT</b><div><strong>Campaign brief updated</strong><small>Shared with Growth, Finance, and General Manager</small></div><em>NOW</em></li><li><b>RSC</b><div><strong>Competitor sources verified</strong><small>Evidence added to the shared research context</small></div><em>08M</em></li><li><b>OPS</b><div><strong>Delivery blocker ownership changed</strong><small>Managers notified through the shared context layer</small></div><em>14M</em></li></ul></article><article><header><span>OWNERSHIP MAP</span><strong>Who is working on what</strong></header><ul><li><b>DOT</b><div><strong>CEO weekly briefing</strong><small>Primary owner · General Manager contributing</small></div></li><li><b>GRW</b><div><strong>Inbound lead qualification</strong><small>Primary owner · Email Reply contributing</small></div></li><li><b>FIN</b><div><strong>Monthly revenue forecast</strong><small>Primary owner · no overlap detected</small></div></li></ul></article></section></main>
+    <main className="shared-brain-panel">
+      <header>
+        <div>
+          <h2>The Brain</h2>
+          <p>Shared context for Dot, ChatGPT, Codex, and connected workstations.</p>
+        </div>
+        <small>{backendStatus}</small>
+      </header>
+      {workflowHandoffs.length > 0 && (
+        <section aria-labelledby="brain-handoff-heading">
+          <h3 id="brain-handoff-heading">Approved workflow handoffs</h3>
+          <ul>{workflowHandoffs.map((id) => (
+            <li key={id}><button type="button" onClick={() => onOpenWorkflow(id)}>
+              Open workflow run {id.slice(0, 8)}
+            </button></li>
+          ))}</ul>
+        </section>
+      )}
+    </main>
     <section aria-label="Shared Brain participants" className="station-details-editor">
       <h3>Shared Brain participants</h3>
       <ul>
@@ -101,11 +126,6 @@ export function SharedBrainPanel({ context, onContextChange, onShare, onOpenDot,
             <details>
               <summary>Compare backend brief</summary>
               <pre>{backendBrief.context || 'The backend brief is empty.'}</pre>
-              {workflowHandoffs.map((id) => (
-                <button key={id} type="button" onClick={() => onOpenWorkflow(id)}>
-                  Open workflow run {id.slice(0, 8)}
-                </button>
-              ))}
             </details>
             {backendBrief.revision > 0 && (
               <button type="button" disabled={checkingBackend} onClick={() => {
