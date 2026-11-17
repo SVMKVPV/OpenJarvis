@@ -36,3 +36,46 @@ jobs:
         run: |
           docker run --rm openjarvis-command-center:check serve --help
           docker run --rm --entrypoint python openjarvis-command-center:check -c 'import anthropic, fastapi, google.genai, google_auth_oauthlib, googleapiclient, openjarvis_rust'
+      - name: Start the server and verify API authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+          smoke_key=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
+          container=$(docker run --detach --network none \
+            --env "OPENJARVIS_API_KEY=$smoke_key" \
+            --env OPENAI_API_KEY=ci-placeholder \
+            openjarvis-command-center:check \
+            serve --host 0.0.0.0 --port 10000 --engine cloud --model gpt-4o-mini)
+          trap 'docker logs "$container"; docker rm -f "$container"' EXIT
+          docker exec -i "$container" python - <<'PY'
+          import json
+          import os
+          import time
+          from urllib.error import HTTPError, URLError
+          from urllib.request import Request, urlopen
+
+          base = "http://127.0.0.1:10000"
+          for attempt in range(60):
+              try:
+                  with urlopen(base + "/health", timeout=2) as response:
+                      assert json.load(response)["status"] == "ok"
+                  break
+              except (URLError, TimeoutError):
+                  if attempt == 59:
+                      raise
+                  time.sleep(1)
+
+          try:
+              urlopen(base + "/v1/info", timeout=5).close()
+          except HTTPError as exc:
+              assert exc.code == 401
+          else:
+              raise AssertionError("The API accepted a request without an API key")
+
+          key = os.environ["OPENJARVIS_API_KEY"]
+          request = Request(base + "/v1/info", headers={"Authorization": f"Bearer {key}"})
+          with urlopen(request, timeout=5) as response:
+              info = json.load(response)
+          assert info["engine"] == "cloud"
+          assert info["model"] == "gpt-4o-mini"
+          PY
