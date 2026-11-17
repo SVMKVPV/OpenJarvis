@@ -105,6 +105,11 @@ class WorkflowConditionPreview(BaseModel):
     branches: list[PreviewBranch] = Field(default_factory=list, max_length=100)
 
 
+class WorkflowTransformPreview(BaseModel):
+    expression: str = Field(max_length=1000)
+    sample: str = Field(max_length=16000)
+
+
 _runtime_creation_lock = threading.Lock()
 
 
@@ -140,6 +145,19 @@ def create_workflow_runs_router() -> APIRouter:
     root = APIRouter(prefix="/v1/workflows", tags=["workflows"])
     router = APIRouter(prefix="/runs")
     _runtime = get_workflow_runtime
+
+    @root.post("/preview-transform")
+    def preview_transform(
+        payload: WorkflowTransformPreview, response: Response,
+    ) -> dict:
+        node = WorkflowNode(
+            id="preview-transform",
+            node_type=NodeType.TRANSFORM,
+            transform_expr=payload.expression,
+        )
+        result = WorkflowEngine().evaluate_transform(node, payload.sample)
+        response.headers["Cache-Control"] = "no-store"
+        return {"success": result.success, "output": result.output}
 
     @root.post("/preview-condition")
     def preview_condition(

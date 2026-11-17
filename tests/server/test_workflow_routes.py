@@ -968,3 +968,27 @@ def test_workflow_condition_preview_matches_branch_labels(tmp_path, monkeypatch)
         assert not failed["success"]
         assert failed["matched_targets"] == []
         assert not workflow_db.exists()
+
+
+def test_transform_preview_applies_runtime_json_extraction(tmp_path, monkeypatch):
+    workflow_db = tmp_path / "workflows.db"
+    monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(workflow_db))
+    app = FastAPI()
+    app.include_router(create_workflow_runs_router())
+    endpoint = "/v1/workflows/preview-transform"
+    with TestClient(app) as client:
+        result = client.post(endpoint, json={
+            "expression": "json_select:owner,total",
+            "sample": '{"owner":"Finance","total":42,"unused":true}',
+        })
+        assert result.status_code == 200
+        assert result.headers["Cache-Control"] == "no-store"
+        assert result.json() == {
+            "success": True, "output": '{"owner": "Finance", "total": 42}',
+        }
+        failed = client.post(endpoint, json={
+            "expression": "json_field:missing",
+            "sample": '{"owner":"Finance"}',
+        }).json()
+        assert not failed["success"]
+        assert not workflow_db.exists()

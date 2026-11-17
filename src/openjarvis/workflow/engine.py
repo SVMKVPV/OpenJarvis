@@ -232,7 +232,7 @@ class WorkflowEngine:
             elif node.node_type == NodeType.CONDITION:
                 result = self.evaluate_condition(node, outputs)
             elif node.node_type == NodeType.TRANSFORM:
-                result = self._run_transform_node(
+                result = self.evaluate_transform(
                     node,
                     self._get_node_input(node, outputs, graph),
                 )
@@ -581,7 +581,7 @@ class WorkflowEngine:
             output=result,
         )
 
-    def _run_transform_node(
+    def evaluate_transform(
         self,
         node: WorkflowNode,
         combined: str,

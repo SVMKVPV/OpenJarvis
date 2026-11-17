@@ -39,6 +39,7 @@ import { WorkflowWorkstationAssignment, type WorkflowRecipient, type WorkflowRep
 import { WorkflowEvidenceUpload } from './WorkflowEvidenceUpload';
 import { WorkspaceProjectTasks } from './WorkspaceProjectTasks';
 import { WorkspaceInferenceHealth } from './WorkspaceInferenceHealth';
+import { WorkflowTransformEditor } from './WorkflowTransformEditor';
 import { WorkflowConditionPreview } from './WorkflowConditionPreview';
 import { WorkflowIndexPreview } from './WorkflowIndexPreview';
 import { PriorResearchCheck } from './PriorResearchCheck';
@@ -322,7 +323,7 @@ function downloadWorkflowJson(filename: string, data: object) {
 
 type DraftEdge = { source: string; target: string; condition?: string };
 
-type DraftNode = { id: string; type?: string; agent?: string; config?: Record<string, unknown>; condition_expr?: string };
+type DraftNode = { id: string; type?: string; agent?: string; config?: Record<string, unknown>; condition_expr?: string; transform_expr?: string };
 type DraftGraph = { nodes: DraftNode[]; edges?: DraftEdge[] };
 type NewStepType = 'tool' | 'transform' | 'condition' | 'approval' | 'agent';
 
@@ -1436,6 +1437,14 @@ export function SoftwareEngineeringWorkspace({
                       else stepElements.current.delete(node.id);
                     }}>
                       <span>{node.id}</span>
+                      {node.type === 'transform' && (
+                        <WorkflowTransformEditor stepId={node.id} expression={node.transform_expr ?? ''}
+                          disabled={savingDefinition} onChange={(expression) => setWorkflowGraph(JSON.stringify({
+                            ...draftGraph,
+                            nodes: draftGraph.nodes.map((entry) => entry.id === node.id
+                              ? { ...entry, transform_expr: expression } : entry),
+                          }, null, 2))} />
+                      )}
                       {node.type === 'condition' && (
                         <>
                           <label>Condition expression for {node.id}

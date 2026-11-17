@@ -1494,6 +1494,21 @@ export async function fetchWorkflowRuns(status?: WorkflowRunStatus): Promise<Wor
   return data.runs || [];
 }
 
+export async function previewWorkflowTransform(
+  expression: string, sample: string, signal: AbortSignal,
+): Promise<{ success: boolean; output: string }> {
+  const response = await apiFetch('/v1/workflows/preview-transform', {
+    method: 'POST', signal, headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expression, sample }),
+  });
+  if (!response.ok) throw new Error('Transform preview is unavailable.');
+  const result = await response.json();
+  if (typeof result.success !== 'boolean' || typeof result.output !== 'string') {
+    throw new Error('Transform preview is unavailable.');
+  }
+  return result;
+}
+
 export type WorkflowConditionResult = {
   success: boolean;
   output: string;
