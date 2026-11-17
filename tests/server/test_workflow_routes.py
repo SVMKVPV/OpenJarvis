@@ -1073,6 +1073,9 @@ def test_proposal_history_filters_by_approval_step_type(tmp_path, monkeypatch):
             payload["initial_input"] = '{"task_id": "task-12", "task": "Draft a brief"}'
             task_draft = client.post(base, json=payload)
             assert task_draft.status_code == 202
+            duplicate = client.post(base, json=payload)
+            assert duplicate.status_code == 409
+            assert "already active for this task" in duplicate.json()["detail"]
             for initial_input in ('{"task_id":"task-123"}', 'text containing task-12'):
                 payload["initial_input"] = initial_input
                 assert client.post(base, json=payload).status_code == 202

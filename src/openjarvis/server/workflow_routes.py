@@ -259,6 +259,8 @@ def create_workflow_runs_router() -> APIRouter:
                 initial_input=payload.initial_input,
                 context=payload.context,
             )
+        except WorkflowLaunchConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except (KeyError, TypeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except WorkflowRuntimeStopping as exc:

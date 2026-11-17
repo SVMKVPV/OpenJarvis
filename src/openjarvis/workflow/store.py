@@ -15,6 +15,26 @@ from openjarvis.core.paths import get_config_dir
 from openjarvis.workflow.types import WorkflowStepResult
 
 TERMINAL_STATUSES = {"succeeded", "failed", "cancelled"}
+_PROJECT_REVIEW = "project_contribution_review"
+_PROJECT_TASK_SQL = (
+    "json_extract(CASE WHEN json_valid(initial_input) "
+    "THEN initial_input ELSE '{}' END, '$.task_id')"
+)
+
+
+def _project_task_id(graph: Mapping[str, Any], initial_input: str) -> str:
+    if not any(
+        node.get("type") == "approval"
+        and (node.get("config") or {}).get("action_type") == _PROJECT_REVIEW
+        for node in graph.get("nodes", [])
+    ):
+        return ""
+    try:
+        task = json.loads(initial_input)
+    except (ValueError, RecursionError):
+        return ""
+    task_id = task.get("task_id") if isinstance(task, dict) else None
+    return task_id if isinstance(task_id, str) else ""
 
 
 class WorkflowDefinitionConflict(ValueError):
@@ -280,7 +300,10 @@ class WorkflowRunStore:
     ) -> tuple[dict[str, Any], bool]:
         run_id = uuid.uuid4().hex
         now = time.time()
+        task_id = _project_task_id(graph, initial_input)
         with self._lock, self._conn:
+            if launch is not None or task_id:
+                self._conn.execute("BEGIN IMMEDIATE")
             if launch is not None:
                 launch_inputs = [initial_input, dict(context)]
                 if scheduled_at is not None:
@@ -289,7 +312,6 @@ class WorkflowRunStore:
                     launch_inputs.append({"expected_revision": saved_revision[0]})
                 input_data = json.dumps(launch_inputs, sort_keys=True)
                 input_hash = hashlib.sha256(input_data.encode()).hexdigest()
-                self._conn.execute("BEGIN IMMEDIATE")
                 existing = self._conn.execute(
                     "SELECT input_hash, run_id FROM workflow_launch_keys "
                     "WHERE definition_id = ? AND launch_key = ?",
@@ -308,6 +330,12 @@ class WorkflowRunStore:
                 raise WorkflowDefinitionConflict(
                     "The saved workflow changed. Load it into the editor to review "
                     "the latest version before launching."
+                )
+
+            if task_id and self._has_active_project_draft(task_id):
+                raise WorkflowLaunchConflict(
+                    "An AI draft is already active for this task. Open Draft history "
+                    "to review the existing run."
                 )
 
             self._conn.execute(
@@ -336,6 +364,17 @@ class WorkflowRunStore:
         run = self.get_run(run_id)
         assert run is not None
         return run, True
+
+    def _has_active_project_draft(self, task_id: str) -> bool:
+        return self._conn.execute(
+            "SELECT 1 FROM workflow_runs "
+            "WHERE status IN ('scheduled', 'queued', 'running', 'waiting_approval') "
+            f"AND {_PROJECT_TASK_SQL} = ? "
+            "AND EXISTS (SELECT 1 FROM json_each(graph_json, '$.nodes') AS node "
+            "WHERE json_extract(node.value, '$.type') = 'approval' "
+            "AND json_extract(node.value, '$.config.action_type') = ?) LIMIT 1",
+            (task_id, _PROJECT_REVIEW),
+        ).fetchone() is not None
 
     def save_recurrence(
         self, definition_id: str, initial_input: str,
@@ -498,6 +537,11 @@ class WorkflowRunStore:
                 (now, limit),
             ).fetchall()
             for row in rows:
+                graph = json.loads(row["graph_json"])
+                task_id = _project_task_id(graph, row["initial_input"])
+                has_active_run = row["has_active_run"] or (
+                    bool(task_id) and self._has_active_project_draft(task_id)
+                )
                 interval = row["interval_seconds"]
                 elapsed_intervals = int((now - row["next_due_at"]) // interval)
                 due_at = row["next_due_at"] + elapsed_intervals * interval
@@ -506,13 +550,12 @@ class WorkflowRunStore:
                     "skipped_while_active = skipped_while_active + ?, "
                     "skipped_during_catchup = skipped_during_catchup + ? WHERE id = ?",
                     (
-                        due_at + interval, row["has_active_run"],
+                        due_at + interval, has_active_run,
                         elapsed_intervals, row["id"],
                     ),
                 )
-                if row["has_active_run"]:
+                if has_active_run:
                     continue
-                graph = json.loads(row["graph_json"])
                 self._conn.execute(
                     "INSERT INTO workflow_runs (id, workflow_name, status, graph_json, "
                     "initial_input, context_json, created_at, scheduled_at, "
@@ -701,10 +744,7 @@ class WorkflowRunStore:
             filters.append("instr(lower(initial_input), lower(?)) > 0")
             params.append(input_contains)
         if project_task_id:
-            filters.append(
-                "json_extract(CASE WHEN json_valid(initial_input) "
-                "THEN initial_input ELSE '{}' END, '$.task_id') = ?"
-            )
+            filters.append(f"{_PROJECT_TASK_SQL} = ?")
             params.append(project_task_id)
         if before:
             # Runs can share a timestamp. Their rowids preserve insertion order.

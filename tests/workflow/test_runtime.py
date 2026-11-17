@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import time
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from threading import Event, Thread
 from types import SimpleNamespace
@@ -12,7 +13,7 @@ from openjarvis.tools.approval_store import STATUS_APPROVED, ApprovalStore
 from openjarvis.workflow.builder import WorkflowBuilder
 from openjarvis.workflow.runtime import WorkflowRuntime, WorkflowRuntimeStopping
 from openjarvis.workflow.serialization import graph_from_dict, graph_to_dict
-from openjarvis.workflow.store import WorkflowRunStore
+from openjarvis.workflow.store import WorkflowLaunchConflict, WorkflowRunStore
 from openjarvis.workflow.types import WorkflowStepResult
 
 
@@ -163,6 +164,49 @@ def test_recurrence_records_older_starts_skipped_during_catchup(tmp_path) -> Non
         assert schedule["skipped_while_active"] == 0
     finally:
         reopened.close()
+
+
+def test_project_draft_claim_is_shared_by_direct_and_scheduled_runs(tmp_path) -> None:
+    path = str(tmp_path / "workflow.db")
+    with (
+        closing(WorkflowRunStore(path)) as store,
+        closing(WorkflowRunStore(path)) as other,
+    ):
+        graph = graph_to_dict(
+            WorkflowBuilder("Project draft")
+            .add_approval(
+                "review",
+                action_type="project_contribution_review",
+                description="Review the draft",
+            )
+            .build()
+        )
+        initial_input = '{"task_id":"task-21"}'
+        definition = store.save_definition(graph)
+        schedule = store.save_recurrence(definition["id"], initial_input, 1000, 60)
+
+        def launch(candidate):
+            try:
+                return candidate.create_run(
+                    workflow_name="Project draft",
+                    graph=graph,
+                    initial_input=initial_input,
+                    context={},
+                )
+            except WorkflowLaunchConflict:
+                return None
+
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            winner, = [run for run in workers.map(launch, (store, other)) if run]
+        store.enqueue_due_recurrences(1000)
+        assert [run["id"] for run in store.list_runs()] == [winner["id"]]
+        assert store.list_recurrences(definition["id"])[0]["skipped_while_active"] == 1
+
+        store.finish(winner["id"], status="cancelled")
+        store.enqueue_due_recurrences(1060)
+        scheduled, = store.list_runs(recurrence_id=schedule["id"])
+        assert scheduled["status"] == "scheduled"
+        assert launch(other) is None
 
 
 def test_schedule_history_includes_retries_with_legacy_parent_links(
