@@ -480,27 +480,45 @@ def test_parallel_approval_keeps_other_checkpoint_available(
         approvals.close()
 
 
-def test_resume_recognizes_expired_approval_without_polling(tmp_path) -> None:
+@pytest.mark.parametrize("resume_mode", ["manual", "scheduler", "already_expired"])
+def test_resume_recognizes_expired_approval_without_polling(
+    tmp_path, resume_mode
+) -> None:
     store = WorkflowRunStore(str(tmp_path / "workflow.db"))
     approvals = ApprovalStore(str(tmp_path / "approvals.db"))
     runtime = WorkflowRuntime(system=None, store=store, approval_store=approvals)
     graph = graph_from_dict(
         {
             "nodes": [
-                {"id": "review", "type": "approval", "config": {"ttl_hours": -1}},
+                {
+                    "id": "review", "type": "approval",
+                    "config": {
+                        "ttl_hours": -1, "action_type": "project_contribution_review",
+                    },
+                },
                 {"id": "after", "type": "transform"},
             ],
             "edges": [{"source": "review", "target": "after"}],
         }
     )
     try:
-        run_id = runtime.submit(graph)["id"]
+        initial_input = '{"task_id":"expires-after-review"}'
+        run_id = runtime.submit(graph, initial_input=initial_input)["id"]
         _wait_for_status(store, run_id, "waiting_approval")
-        runtime.resume(run_id)
+        with pytest.raises(WorkflowLaunchConflict, match="already active"):
+            runtime.submit(graph, initial_input=initial_input)
+        if resume_mode == "manual":
+            runtime.resume(run_id)
+        else:
+            if resume_mode == "already_expired":
+                assert approvals.expire_stale() == 1
+            runtime.start_scheduling()
         result = _wait_for_terminal(store, run_id)
         assert result["status"] == "failed"
         assert result["error"] == "Approval expired"
         assert all(step["node_id"] == "review" for step in result["steps"])
+        replacement = runtime.submit(graph, initial_input=initial_input)
+        assert replacement["id"] != run_id
     finally:
         runtime.close()
         approvals.close()

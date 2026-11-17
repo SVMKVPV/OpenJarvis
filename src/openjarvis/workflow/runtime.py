@@ -5,12 +5,14 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from datetime import datetime, timezone
 from typing import Any, Mapping
 
 from openjarvis.core.events import EventBus
 from openjarvis.tools.approval_store import (
     STATUS_APPROVED,
     STATUS_DENIED,
+    STATUS_EXPIRED,
     STATUS_PENDING,
     ApprovalStore,
     PendingAction,
@@ -143,24 +145,31 @@ class WorkflowRuntime:
                 logger.exception("Could not launch scheduled workflow runs")
             self._schedule_stop.wait(1)
 
-    def _approval_decision_ready(self, run_id: str, context: dict[str, Any]) -> bool:
+    def _approval_checkpoint_ready(self, run_id: str, context: dict[str, Any]) -> bool:
         statuses: set[str | None] = set()
+        now = datetime.now(timezone.utc).isoformat()
         for node_id, action_id in context.get("_workflow_approvals", {}).items():
             action = self.approval_store.get_action(action_id)
-            statuses.add(
-                action.status
-                if action is not None
-                and action.payload.get("workflow_run_id") == run_id
-                and action.payload.get("workflow_node_id") == node_id
-                else None
-            )
+            if (
+                action is None
+                or action.payload.get("workflow_run_id") != run_id
+                or action.payload.get("workflow_node_id") != node_id
+            ):
+                statuses.add(None)
+                continue
+            if action.status == STATUS_EXPIRED or (
+                action.status == STATUS_PENDING and action.expires_at <= now
+            ):
+                # The worker records the expiration using the normal approval path.
+                return True
+            statuses.add(action.status)
         if STATUS_PENDING in statuses and statuses <= {STATUS_PENDING, STATUS_APPROVED}:
             return False
         return STATUS_APPROVED in statuses or STATUS_DENIED in statuses
 
     def _resume_decided_runs(self) -> None:
         for run_id, context in self.store.waiting_approval_runs():
-            if run_id in self._threads or not self._approval_decision_ready(
+            if run_id in self._threads or not self._approval_checkpoint_ready(
                 run_id, context
             ):
                 continue
@@ -341,7 +350,7 @@ class WorkflowRuntime:
             if decision == STATUS_APPROVED:
                 run = self.store.get_run(run_id)
                 self.approval_store.expire_stale()
-                if run is None or not self._approval_decision_ready(
+                if run is None or not self._approval_checkpoint_ready(
                     run_id, run["context"]
                 ):
                     return True
