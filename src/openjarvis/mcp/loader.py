@@ -36,6 +36,7 @@ def load_mcp_tools_from_config(
     *,
     allowed_names: Optional[set[str]] = None,
     config_dir: Optional[Path] = None,
+    outcomes: list[dict[str, str | int]] | None = None,
 ) -> tuple[list["BaseTool"], list["MCPClient"]]:
     """Load tools from every server in ``mcp_cfg.servers``.
 
@@ -94,10 +95,11 @@ def load_mcp_tools_from_config(
     tools: list["BaseTool"] = []
     clients: list["MCPClient"] = []
 
-    for server_cfg in server_list:
+    for index, server_cfg in enumerate(server_list, start=1):
+        name = f"MCP server {index}"
         try:
             cfg = json.loads(server_cfg) if isinstance(server_cfg, str) else server_cfg
-            name = cfg.get("name", "<unnamed>")
+            name = str(cfg.get("name") or name)
             url = cfg.get("url")
             token = cfg.get("token")
             command = cfg.get("command", "")
@@ -112,6 +114,8 @@ def load_mcp_tools_from_config(
                     "MCP server '%s' has neither 'url' nor 'command' — skipping",
                     name,
                 )
+                if outcomes is not None:
+                    outcomes.append({"name": name, "status": "failed", "tool_count": 0})
                 continue
 
             client = MCPClient(transport)
@@ -150,13 +154,21 @@ def load_mcp_tools_from_config(
                 discovered = [t for t in discovered if t.spec.name in allowed_names]
 
             tools.extend(discovered)
+            if outcomes is not None:
+                outcomes.append({
+                    "name": name,
+                    "status": "available" if discovered else "no_tools",
+                    "tool_count": len(discovered),
+                })
             logger.info(
                 "Discovered %d MCP tools from server '%s'", len(discovered), name
             )
         except Exception as exc:  # per-server isolation
+            if outcomes is not None:
+                outcomes.append({"name": name, "status": "failed", "tool_count": 0})
             logger.warning(
                 "Failed to discover MCP tools from '%s': %s",
-                cfg.get("name", "<unnamed>") if "cfg" in locals() else "<unparsed>",
+                name,
                 exc,
             )
             continue

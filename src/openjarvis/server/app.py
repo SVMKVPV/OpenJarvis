@@ -184,6 +184,7 @@ def create_app(
     agent_scheduler=None,
     mcp_tools=None,
     mcp_clients=None,
+    mcp_outcomes: list[dict[str, str | int]] | None = None,
     capability_policy=None,
     rate_limiter=None,
     audit_logger=None,
@@ -317,6 +318,7 @@ def create_app(
     app.state.rate_limiter = rate_limiter
     app.state.audit_logger = audit_logger
     app.state.mcp_tools = list(mcp_tools or [])
+    app.state._mcp_discovery_outcomes = list(mcp_outcomes or [])
     app.state._mcp_discovery_lock = threading.Lock()
     app.state._mcp_clients_lock = threading.Lock()
     app.state._mcp_clients = list(mcp_clients or [])

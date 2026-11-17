@@ -219,8 +219,15 @@ export type RuntimePlugin = {
   version: string;
 };
 
-export async function discoverMcpTools(): Promise<{ count: number; names: string[] }> {
+export type McpServerCheck = {
+  name: string;
+  status: 'available' | 'no_tools' | 'failed';
+  tool_count: number;
+};
+
+export async function discoverMcpTools(): Promise<{ count: number; names: string[]; servers: McpServerCheck[] }> {
   const response = await apiFetch('/v1/plugins/mcp/discover', { method: 'POST' });
+  if (response.status === 405) throw new Error('This backend does not support checking MCP tools. Update the backend.');
   if (!response.ok) throw new Error(`MCP tool discovery failed (${response.status}).`);
   const payload = await response.json();
   if (!Number.isSafeInteger(payload.tool_count) || payload.tool_count < 0) {
@@ -229,7 +236,12 @@ export async function discoverMcpTools(): Promise<{ count: number; names: string
   const names = Array.isArray(payload.tool_names) ? payload.tool_names.filter(
     (name: unknown): name is string => typeof name === 'string' && !!name,
   ) : [];
-  return { count: payload.tool_count, names };
+  const servers = Array.isArray(payload.servers) ? payload.servers.filter(
+    (item: McpServerCheck) => item && typeof item.name === 'string' &&
+      ['available', 'no_tools', 'failed'].includes(item.status) &&
+      Number.isSafeInteger(item.tool_count) && item.tool_count >= 0,
+  ) : [];
+  return { count: payload.tool_count, names, servers };
 }
 
 export async function fetchRuntimePlugins(): Promise<RuntimePlugin[]> {

@@ -21,6 +21,7 @@ import {
   runSavedWorkflow,
   saveWorkflowDefinition,
   startWorkflowRun,
+  type McpServerCheck,
   type PendingApproval,
   type RuntimePlugin,
   type SavedWorkflowDefinition,
@@ -501,13 +502,16 @@ export function SoftwareEngineeringWorkspace({
   const [checkingMcp, setCheckingMcp] = useState(false);
   const [mcpMessage, setMcpMessage] = useState('');
   const [mcpToolNames, setMcpToolNames] = useState<string[]>([]);
+  const [mcpServerChecks, setMcpServerChecks] = useState<McpServerCheck[]>([]);
   const checkMcp = async () => {
     if (checkingMcp) return;
     setCheckingMcp(true);
     setMcpMessage('');
     setMcpToolNames([]);
+    setMcpServerChecks([]);
     try {
-      const { count, names } = await discoverMcpTools();
+      const { count, names, servers } = await discoverMcpTools();
+      setMcpServerChecks(servers);
       setMcpToolNames(names);
       setMcpMessage(count ? `${count} MCP tools available to the runtime.` : 'No MCP tools were discovered.');
     } catch (error) {
@@ -1388,6 +1392,12 @@ export function SoftwareEngineeringWorkspace({
                 </button>
               )}
               {mcpMessage && <p role="status">{mcpMessage}</p>}
+              {mcpServerChecks.length > 0 && <ul aria-label="MCP server check results">
+                {mcpServerChecks.map((server, index) => <li key={`${index}:${server.name}`}>
+                  {server.name} · {server.status === 'available' ? `${server.tool_count} tools available`
+                    : server.status === 'no_tools' ? 'No usable tools returned' : 'Discovery failed'}
+                </li>)}
+              </ul>}
               {mcpToolNames.length > 0 && (
                 <ul aria-label="Discovered MCP tools">{mcpToolNames.map((name) => <li key={name}>{name}</li>)}</ul>
               )}
@@ -1437,6 +1447,7 @@ export function SoftwareEngineeringWorkspace({
               setPluginCatalogState('loading');
               setLiveConnectors(null);
               setMcpMessage('');
+              setMcpServerChecks([]);
               setConnectorSync(null);
               setSyncMessage('');
               setPluginRefresh((version) => version + 1);

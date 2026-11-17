@@ -699,6 +699,7 @@ def _get_mcp_tools_locked(
 
     from openjarvis.core.config import load_config, resolve_mcp_servers
 
+    app_state._mcp_discovery_outcomes = []
     openai_tools: List[Dict[str, Any]] = []
     adapters_by_name: Dict[str, Any] = {}
 
@@ -724,9 +725,9 @@ def _get_mcp_tools_locked(
         logger.warning("Failed to parse MCP server config: %s", exc)
         return openai_tools, adapters_by_name
 
-    for server_cfg in server_list:
-        cfg = server_cfg
-        name = cfg.get("name", "<unnamed>")
+    outcomes: list[dict[str, str | int]] = []
+    for index, cfg in enumerate(server_list, start=1):
+        name = str(cfg.get("name") or f"MCP server {index}")
         url = cfg.get("url")
         # Bearer token from config — mirrors the builder.py fix for #461.
         token = cfg.get("token")
@@ -744,6 +745,7 @@ def _get_mcp_tools_locked(
                     "MCP server '%s' has neither 'url' nor 'command' — skipping",
                     name,
                 )
+                outcomes.append({"name": name, "status": "failed", "tool_count": 0})
                 continue
 
             client = MCPClient(transport)
@@ -791,6 +793,11 @@ def _get_mcp_tools_locked(
                 _unregister_mcp_client(app_state, client)
             client = None
 
+            outcomes.append({
+                "name": name,
+                "status": "available" if staged else "no_tools",
+                "tool_count": len(staged),
+            })
             logger.info(
                 "Discovered %d MCP tools from server '%s'",
                 len(staged),
@@ -804,12 +811,14 @@ def _get_mcp_tools_locked(
                     logger.debug("Failed to close unusable MCP client", exc_info=True)
                 else:
                     _unregister_mcp_client(app_state, client)
+            outcomes.append({"name": name, "status": "failed", "tool_count": 0})
             logger.warning(
                 "Failed to discover MCP tools from '%s': %s",
                 name,
                 exc,
             )
 
+    app_state._mcp_discovery_outcomes = outcomes
     if openai_tools:
         clients_lock = _mcp_state_lock(app_state, "_mcp_clients_lock")
         with clients_lock:

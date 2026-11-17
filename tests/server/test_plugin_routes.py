@@ -76,6 +76,53 @@ def test_mcp_discovery_is_explicit_and_returns_tool_names(monkeypatch) -> None:
     result = client.post("/v1/plugins/mcp/discover")
     assert result.status_code == 200
     assert result.json() == {
-        "tool_count": 2, "tool_names": ["get_node", "search_nodes"],
+        "tool_count": 2, "tool_names": ["get_node", "search_nodes"], "servers": [],
     }
     discover.assert_called_once()
+
+
+def test_mcp_discovery_reports_partial_failure_without_connection_details(
+    monkeypatch, tmp_path
+) -> None:
+    import json
+    from unittest.mock import MagicMock
+
+    from openjarvis.core.config import JarvisConfig
+
+    config = JarvisConfig()
+    config._config_dir = tmp_path
+    config.tools.mcp.enabled = True
+    config.tools.mcp.servers = json.dumps([
+        {"name": "Unavailable", "command": "unavailable-server"},
+        {"name": "Empty", "command": "empty-server"},
+        {"name": "Documentation", "command": "docs-server"},
+    ])
+    monkeypatch.setattr("openjarvis.core.config.load_config", lambda: config)
+    unavailable, empty, docs = (MagicMock() for _ in range(3))
+    unavailable.initialize.side_effect = RuntimeError("private connection details")
+    monkeypatch.setattr("openjarvis.mcp.transport.StdioTransport", MagicMock())
+    monkeypatch.setattr(
+        "openjarvis.mcp.client.MCPClient",
+        MagicMock(side_effect=[unavailable, empty, docs]),
+    )
+    tool = MagicMock()
+    tool.spec.name = "search_nodes"
+
+    def provider(client):
+        instance = MagicMock()
+        instance.discover.return_value = [tool] if client is docs else []
+        return instance
+
+    monkeypatch.setattr("openjarvis.tools.mcp_adapter.MCPToolProvider", provider)
+    with _client() as client:
+        result = client.post("/v1/plugins/mcp/discover")
+        assert result.status_code == 200
+        assert result.json() == {
+            "tool_count": 1,
+            "tool_names": ["search_nodes"],
+            "servers": [
+                {"name": "Unavailable", "status": "failed", "tool_count": 0},
+                {"name": "Empty", "status": "no_tools", "tool_count": 0},
+                {"name": "Documentation", "status": "available", "tool_count": 1},
+            ],
+        }
