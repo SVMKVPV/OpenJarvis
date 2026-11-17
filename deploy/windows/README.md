@@ -89,6 +89,35 @@ powershell -ExecutionPolicy Bypass -File $srv install -ListenHost 0.0.0.0
 `$env:OPENJARVIS_API_KEY` is unset — same guard as the systemd unit's
 `EnvironmentFile=/etc/openjarvis/env`.
 
+## Route desktop inference through local OmniRoute
+
+This option uses the OmniRoute gateway installed under the Command Center
+installation. With Ollama running, open PowerShell and confirm the model is
+available, then start the gateway on loopback:
+
+```powershell
+ollama list
+$env:OMNIROUTE_SERVER_HOST = '127.0.0.1'
+& "$env:LOCALAPPDATA/OpenJarvis/gateways/OmniRoute/omniroute.cmd" serve --port 20128
+```
+
+In the OmniRoute dashboard:
+
+1. Sign in and add an **OpenAI-compatible** provider with base URL
+   `http://127.0.0.1:11434/v1` and prefix `local-ollama`. Use a placeholder
+   such as `ollama-local-placeholder` if the provider connection form
+   requires an upstream key for the local Ollama server.
+2. Add `qwen2.5-coder:3b` to the provider's model catalog. If you use a
+   different installed model, enter its exact Ollama tag.
+3. Create an OmniRoute gateway key in **API Keys** for Command Center.
+
+In Command Center, open **Settings → Inference source**, choose
+**Custom OpenAI-compatible server**, then select **Use local OmniRoute**.
+Enter the gateway key and the full catalog ID, such as
+`local-ollama/qwen2.5-coder:3b`. Select **Check OmniRoute**, then
+**Test selected model**. After both succeed, save the inference source and
+restart Command Center. Keep OmniRoute and Ollama running for gateway calls.
+
 ## Parity table
 
 | Concern | systemd | launchd | Windows |
