@@ -346,6 +346,7 @@ def create_app(
             agent=agent,
             agent_name=agent_name,
             tool_executor=getattr(agent, "_tool_executor", None) if agent else None,
+            mcp_tools=app.state.mcp_tools,
             capability_policy=capability_policy,
             audit_logger=audit_logger,
             rate_limiter=rate_limiter,

@@ -140,6 +140,39 @@ class TestWorkflowBuilder:
 
 
 class TestWorkflowEngine:
+    def test_n8n_documentation_step_uses_only_node_search(self):
+        from types import SimpleNamespace
+
+        from openjarvis.core.types import ToolResult
+        from openjarvis.tools._stubs import ToolSpec
+
+        search = Mock()
+        search.spec = ToolSpec(name="search_nodes", description="Node documentation")
+        search.execute.return_value = ToolResult(
+            tool_name="search_nodes", content="Schedule Trigger", success=True
+        )
+        unrelated = Mock()
+        unrelated.spec.name = "n8n_execute_workflow"
+        graph = graph_from_dict({
+            "nodes": [{"id": "lookup", "type": "tool", "config": {
+                "tool_name": "n8n_node_lookup",
+                "tool_args": '{"query":"ignored","limit":999}',
+            }}],
+        })
+        engine = WorkflowEngine()
+        result = engine.run(
+            graph, SimpleNamespace(mcp_tools=[unrelated, search]),
+            initial_input="  schedule trigger  ",
+        )
+        assert result.success
+        assert result.final_output == "Schedule Trigger"
+        search.execute.assert_called_once_with(query="schedule trigger", limit=5)
+        unrelated.execute.assert_not_called()
+
+        unavailable = engine.run(graph, initial_input="schedule trigger")
+        assert not unavailable.success
+        assert "Enable n8n MCP node search" in unavailable.steps[0].output
+
     def test_run_invalid_graph(self):
         engine = WorkflowEngine()
         g = WorkflowGraph("bad")

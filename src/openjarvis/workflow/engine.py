@@ -472,6 +472,10 @@ class WorkflowEngine:
             return self.search_connector_index(
                 node, self._get_node_input(node, outputs, graph).strip(), system
             )
+        if tool_name == "n8n_node_lookup":
+            return self._lookup_n8n_nodes(
+                node, self._get_node_input(node, outputs, graph).strip(), system
+            )
         tool_args = node.config.get("tool_args", "{}")
         if system and system.tool_executor:
             from openjarvis.core.types import ToolCall
@@ -487,6 +491,42 @@ class WorkflowEngine:
             node_id=node.id,
             success=False,
             output="No tool executor available.",
+        )
+
+    def _lookup_n8n_nodes(
+        self, node: WorkflowNode, query: str, system: Any
+    ) -> WorkflowStepResult:
+        from openjarvis.core.types import ToolCall
+        from openjarvis.tools._stubs import ToolExecutor
+
+        if not query or len(query) > 500:
+            return WorkflowStepResult(
+                node_id=node.id,
+                success=False,
+                output="Enter an n8n node query of 1 to 500 characters.",
+            )
+        tool = next(
+            (item for item in getattr(system, "mcp_tools", ())
+             if item.spec.name == "search_nodes"),
+            None,
+        )
+        if tool is None:
+            return WorkflowStepResult(
+                node_id=node.id, success=False,
+                output="Enable n8n MCP node search in the workflow backend.",
+            )
+        executor = ToolExecutor(
+            tools=[tool],
+            bus=self._bus,
+            capability_policy=getattr(system, "capability_policy", None),
+            rate_limiter=getattr(system, "rate_limiter", None),
+        )
+        result = executor.execute(ToolCall(
+            id=f"wf_{node.id}", name="search_nodes",
+            arguments=json.dumps({"query": query, "limit": 5}),
+        ))
+        return WorkflowStepResult(
+            node_id=node.id, success=result.success, output=result.content
         )
 
     def search_connector_index(

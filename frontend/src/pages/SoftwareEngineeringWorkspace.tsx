@@ -385,7 +385,7 @@ type DraftEdge = { source: string; target: string; condition?: string };
 
 type DraftNode = { id: string; type?: string; agent?: string; config?: Record<string, unknown>; condition_expr?: string; transform_expr?: string };
 type DraftGraph = { nodes: DraftNode[]; edges?: DraftEdge[] };
-type NewStepType = 'tool' | 'transform' | 'condition' | 'approval' | 'agent';
+type NewStepType = 'tool' | 'transform' | 'condition' | 'approval' | 'agent' | 'n8n_node_lookup';
 
 function readDraftGraph(draft: string): DraftGraph | null {
   try {
@@ -908,7 +908,7 @@ export function SoftwareEngineeringWorkspace({
     : Boolean(jsonField.trim());
   const canAddStep = draftGraph && newStepId && newStepId !== '_input' &&
     !draftGraph.nodes.some((node) => node.id === newStepId) &&
-    (stepType === 'agent' ||
+    (stepType === 'agent' || stepType === 'n8n_node_lookup' ||
       (stepType === 'transform' ? !needsJsonFields || hasJsonFields : stepSetting.trim()));
   const addStep = () => {
     if (!draftGraph || !canAddStep) return;
@@ -922,6 +922,9 @@ export function SoftwareEngineeringWorkspace({
         definition = { ...node, config: {
           tool_name: 'knowledge_search', query_from_input: true, source: stepSetting.trim(),
         } };
+        break;
+      case 'n8n_node_lookup':
+        definition = { ...node, type: 'tool', config: { tool_name: 'n8n_node_lookup' } };
         break;
       case 'condition':
         definition = { ...node, condition_expr: stepSetting.trim() };
@@ -1699,6 +1702,7 @@ export function SoftwareEngineeringWorkspace({
                       <option value="transform">Transform</option>
                       <option value="agent">Model response</option>
                       <option value="tool">Search connector index</option>
+                      <option value="n8n_node_lookup">Look up n8n nodes</option>
                       <option value="condition">Condition</option>
                       <option value="approval">Approval</option>
                     </select>
@@ -1719,6 +1723,8 @@ export function SoftwareEngineeringWorkspace({
                       <small>{indexHint(stepSetting) ?? 'Searches the local index with incoming text.'}</small>
                       <Link to="/data-sources">Manage data sources</Link>
                     </label>
+                  ) : stepType === 'n8n_node_lookup' ? (
+                    <small>Sends incoming text as a node search to the configured n8n MCP server.</small>
                   ) : stepType === 'agent' ? (
                     <label>Model instructions (optional)
                       <textarea value={stepSetting} maxLength={4000}
