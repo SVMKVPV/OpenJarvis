@@ -434,7 +434,11 @@ const REPORTING_LINKS = [
   ['system-builder', 'operations-manager'],
 ] as const;
 
-function OrganizationOverview({ stations, onOpen }: { stations: Station[]; onOpen: (id: string) => void }) {
+function OrganizationOverview({ stations, onOpen, accent }: {
+  stations: Station[];
+  onOpen: (id: string) => void;
+  accent: string;
+}) {
   const organizationStations = useMemo(() => [{ id: 'ceo', code: 'CEO', name: 'You — CEO / Director', purpose: 'Organization owner', current: 'Direction, final approval, and accountability', reportsTo: 'No one', status: 'working' as const }, ...stations, ...BRAIN_COLLABORATORS], [stations]);
   const nodes = useMemo<OrganizationNode[]>(() => organizationStations.map((station, index) => ({
     id: station.id,
@@ -461,8 +465,8 @@ function OrganizationOverview({ stations, onOpen }: { stations: Station[]; onOpe
       targetHandle: 'reports-in',
       type: 'smoothstep',
       animated: source === 'dot',
-      markerEnd: { type: MarkerType.ArrowClosed, color: '#d6ad52', width: 14, height: 14 },
-      style: { stroke: '#a77c2e', strokeWidth: 1.5 },
+      markerEnd: { type: MarkerType.ArrowClosed, color: accent, width: 14, height: 14 },
+      style: { stroke: accent === DEFAULT_COMMAND_ACCENT ? '#a77c2e' : 'var(--gold-bright)', strokeWidth: 1.5 },
     }));
   const brainEdges: Edge[] = [...stations, ...BRAIN_COLLABORATORS].filter((station) => station.id !== 'brain').map((station) => ({ id: `brain-${station.id}`, source: station.id, target: 'brain', sourceHandle: BRAIN_COLLABORATORS.includes(station) ? 'collaborator-out' : 'brain-out', targetHandle: BRAIN_COLLABORATORS.includes(station) ? 'collaborator-in' : 'brain-in', type: 'straight', animated: false, style: { stroke: '#8a7650', strokeWidth: 1.2, strokeDasharray: '5 7', opacity: .8 } }));
   const edges = [...reportingEdges, ...brainEdges];
@@ -640,7 +644,7 @@ export function CommandCenterPage() {
   };
 
   return (
-    <div className="jarvis-command" style={accentStyle}>
+    <div className="jarvis-command" style={accentStyle} data-custom-accent={accentStyle ? 'true' : undefined}>
       <header className="command-header">
         <div><span className="command-eyebrow">OPENJARVIS // ORGANIZATION CONTROL</span><h1>COMMAND CENTER</h1></div>
         <nav className="command-view-nav" aria-label="Command center views">
@@ -651,7 +655,7 @@ export function CommandCenterPage() {
         </nav>
         <div className="header-telemetry"><span><i /> SYSTEM ONLINE</span><span>{stations.length} STATIONS</span><span>LOCAL FIRST</span></div>
       </header>
-      {view === 'overview' ? <OrganizationOverview stations={stations} onOpen={openStation} /> : view === 'workspace' ? <SoftwareEngineeringWorkspace {...workspaceEntry} recipients={workflowRecipients} onOpenStation={openStation} /> : view === 'dashboard' ? <CustomDashboard widgetIds={dashboardWidgetIds} setWidgetIds={setDashboardWidgetIds} onOpenStation={openStation} onOpenWorkflow={openWorkflowReview}
+      {view === 'overview' ? <OrganizationOverview stations={stations} onOpen={openStation} accent={accent} /> : view === 'workspace' ? <SoftwareEngineeringWorkspace {...workspaceEntry} recipients={workflowRecipients} onOpenStation={openStation} /> : view === 'dashboard' ? <CustomDashboard widgetIds={dashboardWidgetIds} setWidgetIds={setDashboardWidgetIds} onOpenStation={openStation} onOpenWorkflow={openWorkflowReview}
         onOpenRecurringWorkflow={(initialDefinitionId, initialRecurrenceId) =>
           openWorkspace({ initialDefinitionId, initialRecurrenceId })} /> : <div className="command-grid">
         <aside className="station-rail">

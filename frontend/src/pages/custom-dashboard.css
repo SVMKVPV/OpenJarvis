@@ -41,6 +41,31 @@
 }
 .dashboard-workflow-calendar time { color: #ad9b73; }
 
+.jarvis-command[data-custom-accent] :is(
+  .dashboard-title > button,
+  .dashboard-widget > header button,
+  .widget-content > strong,
+  .widget-catalog > div button,
+  .dashboard-workflow-calendar button,
+  .calendar-list b
+) {
+  color: var(--gold-bright);
+}
+
+.jarvis-command[data-custom-accent] :is(
+  .dashboard-title > button, .widget-catalog, .dashboard-widget
+) {
+  border-color: var(--gold-dim);
+}
+
+.jarvis-command[data-custom-accent] :is(
+  .dashboard-title > button.active, .dashboard-empty button
+) {
+  background: var(--gold-bright);
+  border-color: var(--gold-bright);
+  color: #090704;
+}
+
 .dashboard-indexed-calendar { margin: 8px 0 0; padding: 0; list-style: none; }
 .dashboard-indexed-calendar li {
   display: flex;
