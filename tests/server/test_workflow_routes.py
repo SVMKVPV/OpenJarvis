@@ -910,3 +910,29 @@ def test_proposal_history_filters_by_approval_step_type(tmp_path, monkeypatch):
     finally:
         app.state.workflow_runtime.close()
         approvals.close()
+
+
+def test_workflow_index_preview_reads_only_the_selected_index(tmp_path, monkeypatch):
+    from openjarvis.connectors.store import KnowledgeStore
+
+    monkeypatch.setenv("OPENJARVIS_HOME", str(tmp_path))
+    workflow_db = tmp_path / "workflows.db"
+    monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(workflow_db))
+    with KnowledgeStore() as store:
+        store.store("Preview sentinel from selected source", source="upload")
+        store.store("Preview sentinel from excluded source", source="another-source")
+
+    app = FastAPI()
+    app.include_router(create_workflow_runs_router())
+    with TestClient(app) as client:
+        endpoint = "/v1/workflows/preview-index"
+        response = client.post(endpoint, json={"source": "upload", "query": "sentinel"})
+        assert response.status_code == 200
+        assert response.headers["Cache-Control"] == "no-store"
+        result = response.json()
+        assert result["success"]
+        assert "selected source" in result["output"]
+        assert "excluded source" not in result["output"]
+        assert not workflow_db.exists()
+        invalid = client.post(endpoint, json={"source": " ", "query": "sentinel"})
+        assert invalid.status_code == 422

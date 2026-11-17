@@ -1494,6 +1494,21 @@ export async function fetchWorkflowRuns(status?: WorkflowRunStatus): Promise<Wor
   return data.runs || [];
 }
 
+export async function previewWorkflowIndex(
+  source: string, query: string, allowGmailReference: boolean, signal: AbortSignal,
+): Promise<{ success: boolean; output: string }> {
+  const response = await apiFetch('/v1/workflows/preview-index', {
+    method: 'POST', signal, headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source, query, allow_gmail_reference: allowGmailReference }),
+  });
+  if (!response.ok) throw new Error('Index preview is unavailable.');
+  const result = await response.json();
+  if (typeof result.success !== 'boolean' || typeof result.output !== 'string') {
+    throw new Error('Index preview is unavailable.');
+  }
+  return result;
+}
+
 export async function fetchWorkspaceFolders(signal?: AbortSignal, name?: string): Promise<string[]> {
   const options: RequestInit = name ? {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),

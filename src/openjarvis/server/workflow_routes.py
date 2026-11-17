@@ -15,6 +15,7 @@ from openjarvis.core.paths import get_config_dir
 from openjarvis.core.shared_brain import SharedBriefConflict, append_workflow_handoff
 from openjarvis.server.approval_routes import get_approval_store
 from openjarvis.tools.approval_store import STATUS_APPROVED, STATUS_DENIED
+from openjarvis.workflow.engine import WorkflowEngine
 from openjarvis.workflow.runtime import WorkflowRuntime, WorkflowRuntimeStopping
 from openjarvis.workflow.serialization import graph_from_dict, graph_to_dict
 from openjarvis.workflow.store import (
@@ -85,6 +86,12 @@ class WorkflowRunRequest(WorkflowDefinition, WorkflowInputs):
     pass
 
 
+class WorkflowIndexPreview(BaseModel):
+    source: str = Field(min_length=1, max_length=128)
+    query: str = Field(min_length=1, max_length=500)
+    allow_gmail_reference: StrictBool = False
+
+
 _runtime_creation_lock = threading.Lock()
 
 
@@ -120,6 +127,31 @@ def create_workflow_runs_router() -> APIRouter:
     root = APIRouter(prefix="/v1/workflows", tags=["workflows"])
     router = APIRouter(prefix="/runs")
     _runtime = get_workflow_runtime
+
+    @root.post("/preview-index")
+    def preview_index(
+        payload: WorkflowIndexPreview, request: Request, response: Response,
+    ) -> dict:
+        from openjarvis.workflow.types import NodeType, WorkflowNode
+
+        query = payload.query.strip()
+        source = payload.source.strip()
+        if not query or not source:
+            raise HTTPException(422, "Enter a search query and indexed source.")
+        node = WorkflowNode(
+            id="preview-index",
+            node_type=NodeType.TOOL,
+            config={
+                "source": source,
+                "allow_gmail_reference": payload.allow_gmail_reference,
+            },
+        )
+        state = request.app.state
+        result = WorkflowEngine(bus=getattr(state, "bus", None)).search_connector_index(
+            node, query, getattr(state, "workflow_system", None),
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return {"success": result.success, "output": result.output}
 
     @router.post("", status_code=status.HTTP_202_ACCEPTED)
     async def start_run(payload: WorkflowRunRequest, request: Request) -> dict:

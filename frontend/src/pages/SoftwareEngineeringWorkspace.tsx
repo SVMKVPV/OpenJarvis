@@ -39,6 +39,7 @@ import { WorkflowWorkstationAssignment, type WorkflowRecipient, type WorkflowRep
 import { WorkflowEvidenceUpload } from './WorkflowEvidenceUpload';
 import { WorkspaceProjectTasks } from './WorkspaceProjectTasks';
 import { WorkspaceInferenceHealth } from './WorkspaceInferenceHealth';
+import { WorkflowIndexPreview } from './WorkflowIndexPreview';
 import { PriorResearchCheck } from './PriorResearchCheck';
 import { WorkflowRecurrenceEditor } from './WorkflowRecurrenceEditor';
 import './software-workspace.css';
@@ -1421,6 +1422,11 @@ export function SoftwareEngineeringWorkspace({
                                 onChange={(event) => setStepConfig(node, 'source', event.target.value)} />
                               <small>{indexHint(node.config.source)}</small>
                             </label>
+                            {typeof node.config.source === 'string' && node.config.source.trim() && (
+                              <WorkflowIndexPreview key={node.config.source}
+                                source={node.config.source}
+                                allowGmailReference={node.config.allow_gmail_reference === true} />
+                            )}
                             <label>
                               <input type="checkbox" checked={node.config.require_match === true}
                                 disabled={savingDefinition}

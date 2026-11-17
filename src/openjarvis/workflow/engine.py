@@ -468,7 +468,7 @@ class WorkflowEngine:
             tool_name == "knowledge_search"
             and node.config.get("query_from_input") is True
         ):
-            return self._search_connector_index(
+            return self.search_connector_index(
                 node, self._get_node_input(node, outputs, graph).strip(), system
             )
         tool_args = node.config.get("tool_args", "{}")
@@ -488,9 +488,10 @@ class WorkflowEngine:
             output="No tool executor available.",
         )
 
-    def _search_connector_index(
+    def search_connector_index(
         self, node: WorkflowNode, query: str, system: Any
     ) -> WorkflowStepResult:
+        """Run the same indexed lookup for workflow steps and editor previews."""
         from openjarvis.connectors.store import KnowledgeStore
         from openjarvis.core.registry import ConnectorRegistry
         from openjarvis.core.types import ToolCall
