@@ -35,6 +35,7 @@ import { WorkflowDraftMap } from './WorkflowDraftMap';
 import { WorkflowBrainHandoff } from './WorkflowBrainHandoff';
 import { WorkflowWorkstationAssignment, type WorkflowRecipient, type WorkflowReportingRoute } from './WorkflowWorkstationAssignment';
 import { WorkflowEvidenceUpload } from './WorkflowEvidenceUpload';
+import { PriorResearchCheck } from './PriorResearchCheck';
 import { WorkflowRecurrenceEditor } from './WorkflowRecurrenceEditor';
 import './software-workspace.css';
 
@@ -1508,6 +1509,15 @@ export function SoftwareEngineeringWorkspace({
               <label>Run input
                 <input value={workflowInput} onChange={(event) => setWorkflowInput(event.target.value)} />
               </label>
+              {selectedDefinition?.graph.nodes.some((node) =>
+                node.type === 'approval' &&
+                (node.config as { action_type?: string } | undefined)?.action_type === 'system_builder_proposal',
+              ) && (
+                <PriorResearchCheck key={workflowInput.trim()} brief={workflowInput.trim()} onOpenRun={(id) => {
+                  if (inspectedRunId === id) runInspector.current?.focus();
+                  else inspectRun(id);
+                }} />
+              )}
               <label>Start time (optional, local time)
                 <input type="datetime-local" value={workflowStart}
                   onChange={(event) => setWorkflowStart(event.target.value)} />
