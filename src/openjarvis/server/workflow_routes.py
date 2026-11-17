@@ -65,9 +65,15 @@ class WorkflowHandoff(BaseModel):
     summary: str = Field(min_length=1, max_length=750)
 
 
+class WorkflowReportingRoute(BaseModel):
+    source_workstation: str = Field(min_length=1, max_length=80)
+    manager_workstation: str = Field(min_length=1, max_length=80)
+
+
 class WorkflowAgentHandoff(BaseModel):
     agent_id: str = Field(min_length=1, max_length=128)
     instruction: str = Field(min_length=1, max_length=2000)
+    reporting_route: WorkflowReportingRoute | None = None
 
 
 class WorkflowDefinitionUpdate(WorkflowDefinition):
@@ -213,8 +219,10 @@ def create_workflow_runs_router() -> APIRouter:
                 status_code=503, detail="Managed agents are unavailable."
             )
         try:
+            route = payload.reporting_route
             queued = manager.queue_workflow_handoff(
-                payload.agent_id, run_id, instruction
+                payload.agent_id, run_id, instruction,
+                route=route.model_dump() if route else None,
             )
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc

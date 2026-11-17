@@ -39,7 +39,14 @@ def test_handoff_approved_run_keeps_evidence_in_workflow(tmp_path, monkeypatch):
         share_path = f"{run_path}/share-to-brain"
         assign_path = f"{run_path}/assign-workstation"
         follow_ups_path = f"{run_path}/workstation-follow-ups"
-        assignment = {"agent_id": agent["id"], "instruction": "Plan a delivery check."}
+        route = {
+            "source_workstation": "Finance",
+            "manager_workstation": "Operations Manager",
+        }
+        assignment = {
+            "agent_id": agent["id"], "instruction": "Plan a delivery check.",
+            "reporting_route": route,
+        }
         summary = {"summary": "Delivery wording confirmed."}
         assert client.post(share_path, json=summary).status_code == 409
         assert client.post(assign_path, json=assignment).status_code == 409
@@ -68,7 +75,11 @@ def test_handoff_approved_run_keeps_evidence_in_workflow(tmp_path, monkeypatch):
             "revision": 2,
         }
         assert client.post(assign_path, json=assignment).json() == {"queued": True}
-        assert client.post(assign_path, json=assignment).json() == {"queued": False}
+        repeated = client.post(assign_path, json={
+            **assignment,
+            "reporting_route": {**route, "manager_workstation": "Renamed"},
+        })
+        assert repeated.json() == {"queued": False}
         unavailable = client.post(
             assign_path, json={**assignment, "agent_id": "missing"}
         )
@@ -82,6 +93,7 @@ def test_handoff_approved_run_keeps_evidence_in_workflow(tmp_path, monkeypatch):
         follow_up, = client.get(follow_ups_path).json()["follow_ups"]
         assert follow_up["agent_name"] == agent["name"]
         assert follow_up["status"] == "pending"
+        assert follow_up["reporting_route"] == route
         manager.store_agent_response(
             agent["id"], "Checklist ready", delivered_message_ids=(queued["id"],)
         )

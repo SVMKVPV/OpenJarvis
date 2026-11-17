@@ -149,6 +149,7 @@ class AgentManager:
             "ALTER TABLE managed_agents ADD COLUMN output_tokens INTEGER DEFAULT 0",
             # JSON-encoded array of {tool, arguments, result, success, latency}
             "ALTER TABLE agent_messages ADD COLUMN tool_calls TEXT",
+            "ALTER TABLE agent_messages ADD COLUMN handoff_route TEXT",
         ]
         for migration in _MIGRATIONS:
             try:
@@ -690,7 +691,8 @@ class AgentManager:
 
     @_db_locked
     def queue_workflow_handoff(
-        self, agent_id: str, run_id: str, instruction: str
+        self, agent_id: str, run_id: str, instruction: str, *,
+        route: dict[str, str] | None = None,
     ) -> bool:
         """Queue one follow-up per approved workflow and recipient."""
         message_id = f"workflow:{run_id}:{agent_id}"
@@ -698,11 +700,13 @@ class AgentManager:
         with self._conn:
             result = self._conn.execute(
                 "INSERT INTO agent_messages "
-                "(id, agent_id, direction, content, mode, status, created_at) "
-                "SELECT ?, id, 'user_to_agent', ?, 'handoff', 'pending', ? "
+                "(id, agent_id, direction, content, mode, status, created_at, "
+                "handoff_route) "
+                "SELECT ?, id, 'user_to_agent', ?, 'handoff', 'pending', ?, ? "
                 "FROM managed_agents WHERE id = ? AND status != 'archived' "
                 "ON CONFLICT(id) DO NOTHING",
-                (message_id, content, time.time(), agent_id),
+                (message_id, content, time.time(), json.dumps(route) if route else None,
+                 agent_id),
             )
             if result.rowcount:
                 return True
@@ -717,14 +721,21 @@ class AgentManager:
     def list_workflow_handoffs(self, run_id: str) -> list[dict]:
         rows = self._conn.execute(
             "SELECT message.id, message.agent_id, agent.name AS agent_name, "
-            "message.status, message.created_at "
+            "message.status, message.created_at, message.handoff_route "
             "FROM agent_messages AS message "
             "JOIN managed_agents AS agent ON agent.id = message.agent_id "
             "WHERE message.id GLOB ? AND message.mode = 'handoff' "
             "ORDER BY message.created_at DESC, message.id",
             (f"workflow:{run_id}:*",),
         ).fetchall()
-        return [dict(row) for row in rows]
+        follow_ups = []
+        for row in rows:
+            follow_up = dict(row)
+            route = follow_up.pop("handoff_route")
+            if route is not None:
+                follow_up["reporting_route"] = json.loads(route)
+            follow_ups.append(follow_up)
+        return follow_ups
 
     @_db_locked
     def store_agent_response(

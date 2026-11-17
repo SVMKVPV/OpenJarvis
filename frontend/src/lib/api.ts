@@ -166,11 +166,12 @@ export async function shareWorkflowWithBrain(runId: string, summary: string): Pr
 
 export async function assignWorkflowFollowUp(
   runId: string, agentId: string, instruction: string,
+  reportingRoute?: WorkflowFollowUp['reporting_route'],
 ): Promise<boolean> {
   const response = await apiFetch(`/v1/workflows/runs/${encodeURIComponent(runId)}/assign-workstation`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ agent_id: agentId, instruction }),
+    body: JSON.stringify({ agent_id: agentId, instruction, reporting_route: reportingRoute }),
   });
   const result = await response.json().catch(() => null);
   if (!response.ok || typeof result?.queued !== 'boolean') {
@@ -186,6 +187,7 @@ export type WorkflowFollowUp = {
   agent_name: string;
   status: AgentMessage['status'];
   created_at: number;
+  reporting_route?: { source_workstation: string; manager_workstation: string };
 };
 
 export async function fetchWorkflowFollowUps(

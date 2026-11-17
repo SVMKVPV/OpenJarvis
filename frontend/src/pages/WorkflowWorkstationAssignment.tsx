@@ -16,6 +16,7 @@ export function WorkflowWorkstationAssignment({ runId, recipients, reportingRout
   onOpenStation?: (stationId: string) => void;
 }) {
   const [stationId, setStationId] = useState('');
+  const [sourceStationId, setSourceStationId] = useState('');
   const [instruction, setInstruction] = useState('');
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState('');
@@ -25,6 +26,8 @@ export function WorkflowWorkstationAssignment({ runId, recipients, reportingRout
   const [followUpStatus, setFollowUpStatus] = useState('Checking follow-ups…');
   const [refreshVersion, setRefreshVersion] = useState(0);
   const recipient = recipients.find((entry) => entry.stationId === stationId);
+  const reportingRoute = reportingRoutes.find((route) =>
+    route.stationId === sourceStationId && route.managerId === stationId);
 
   useEffect(() => {
     if (!open) return;
@@ -56,7 +59,13 @@ export function WorkflowWorkstationAssignment({ runId, recipients, reportingRout
     setMessage('');
     setConfirmedStation('');
     try {
-      const queued = await assignWorkflowFollowUp(runId, recipient.agentId, instruction.trim());
+      const queued = await assignWorkflowFollowUp(
+        runId, recipient.agentId, instruction.trim(),
+        reportingRoute && {
+          source_workstation: reportingRoute.stationName,
+          manager_workstation: reportingRoute.managerName,
+        },
+      );
       setMessage(queued ? `Follow-up queued for ${recipient.name}.`
         : `${recipient.name} already has a follow-up for this run.`);
       setConfirmedStation(recipient.stationId);
@@ -75,14 +84,17 @@ export function WorkflowWorkstationAssignment({ runId, recipients, reportingRout
         <form className="connector-editor" onSubmit={assign}>
           {reportingRoutes.length > 0 && (
             <label>Use a workstation’s reporting manager
-              <select aria-label="Use a workstation’s reporting manager" value="" disabled={pending}
+              <select aria-label="Use a workstation’s reporting manager" value={sourceStationId} disabled={pending}
                 onChange={(event) => {
+                  setSourceStationId(event.target.value);
+                  setStationId('');
+                  setConfirmedStation('');
+                  setMessage('');
                   const route = reportingRoutes.find((entry) => entry.stationId === event.target.value);
                   if (!route) return;
                   const manager = recipients.find((entry) => entry.stationId === route.managerId);
                   setStationId(manager?.stationId ?? '');
-                  setConfirmedStation('');
-                  setMessage(manager ? '' : `Link an agent to ${route.managerName} before assigning a follow-up.`);
+                  if (!manager) setMessage(`Link an agent to ${route.managerName} before assigning a follow-up.`);
                 }}>
                 <option value="">Choose the source workstation</option>
                 {reportingRoutes.map((route) => (
@@ -95,7 +107,12 @@ export function WorkflowWorkstationAssignment({ runId, recipients, reportingRout
           )}
           <label>Recipient workstation
             <select aria-label="Recipient workstation" value={stationId} disabled={pending} required
-              onChange={(event) => setStationId(event.target.value)}>
+              onChange={(event) => {
+                setStationId(event.target.value);
+                setSourceStationId('');
+                setConfirmedStation('');
+                setMessage('');
+              }}>
               <option value="">Choose a workstation</option>
               {recipients.map((entry) => (
                 <option key={entry.stationId} value={entry.stationId}>{entry.name}</option>
@@ -121,6 +138,11 @@ export function WorkflowWorkstationAssignment({ runId, recipients, reportingRout
             <li key={followUp.id}>
               <strong>{followUp.agent_name}</strong>{' '}
               <span>{followUp.status === 'pending' ? 'Waiting for agent' : 'Picked up by agent'}</span>
+              {followUp.reporting_route && (
+                <small>
+                  {followUp.reporting_route.source_workstation} → {followUp.reporting_route.manager_workstation}
+                </small>
+              )}
             </li>
           ))}
         </ul>
