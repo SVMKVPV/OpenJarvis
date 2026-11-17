@@ -29,6 +29,7 @@ import { GmailReviewList } from './GmailReviewList';
 import { LeadRegister } from './LeadRegister';
 import { Ga4PropertyForm } from './Ga4PropertyForm';
 import { SocialContentStudio } from './SocialContentStudio';
+import { WorkflowReviewHistory } from './WorkflowReviewHistory';
 import { StationProjectTasks } from './StationProjectTasks';
 import { SystemBuilderLab } from './SystemBuilderLab';
 import { WorkstationAgentActivity } from './WorkstationAgentActivity';
@@ -794,6 +795,7 @@ export function CommandCenterPage() {
               </div>
               <p>Search indexed invoices and receipts, then review the draft against its sources.</p>
             </section>
+            <WorkflowReviewHistory kind="finance" onOpenWorkflow={openWorkflowReview} />
             <GmailReviewList onOpenFinance={(initialUploadReference) =>
               openWorkspace({ initialStarter: 'finance', initialUploadReference })} />
             </>

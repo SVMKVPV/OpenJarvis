@@ -619,6 +619,7 @@ class WorkflowRunStore:
         recent: bool = False,
         recurrence_id: str = "",
         approval_type: str = "",
+        legacy_approval_node: str = "",
         input_contains: str = "",
     ) -> list[dict[str, Any]]:
         limit = max(1, min(int(limit), 200))
@@ -639,12 +640,20 @@ class WorkflowRunStore:
             filters.append("status = ?")
             params.append(status)
         if approval_type:
+            match = "json_extract(node.value, '$.config.action_type') = ?"
+            params.append(approval_type)
+            if legacy_approval_node:
+                match += (
+                    " OR (json_extract(node.value, '$.id') = ? "
+                    "AND COALESCE(json_extract(node.value, '$.config.action_type'), "
+                    "'workflow_action') = 'workflow_action')"
+                )
+                params.append(legacy_approval_node)
             filters.append(
                 "EXISTS (SELECT 1 FROM json_each(graph_json, '$.nodes') AS node "
                 "WHERE json_extract(node.value, '$.type') = 'approval' "
-                "AND json_extract(node.value, '$.config.action_type') = ?)"
+                f"AND ({match}))"
             )
-            params.append(approval_type)
         if input_contains:
             filters.append("instr(lower(initial_input), lower(?)) > 0")
             params.append(input_contains)

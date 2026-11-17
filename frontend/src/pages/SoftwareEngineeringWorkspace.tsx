@@ -124,6 +124,7 @@ const FINANCE_EVIDENCE_REVIEW = {
       ].join(' '),
     } },
     { id: 'finance-review', type: 'approval', config: {
+      action_type: 'finance_workpaper_review',
       description: 'Compare the source documents, proposed workpaper, and advisory workpaper check. Verify figures, currencies, duplicates, and missing evidence before approving.',
       tier: 'high',
       payload: {

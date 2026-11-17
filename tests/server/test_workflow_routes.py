@@ -1043,3 +1043,34 @@ def test_run_details_explain_skipped_branches(tmp_path, monkeypatch):
             ]
     finally:
         app.state.workflow_runtime.close()
+
+
+def test_review_history_matches_current_and_legacy_finance_runs(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(tmp_path / "workflows.db"))
+    app = FastAPI()
+    app.state.workflow_system = None
+    app.include_router(create_workflow_runs_router())
+    endpoint = "/v1/workflows/runs"
+    try:
+        with TestClient(app) as client:
+            def start(name, node_id, action_type):
+                config = {} if action_type is None else {"action_type": action_type}
+                response = client.post(endpoint, json={
+                    "name": name, "initial_input": "Invoice 731",
+                    "nodes": [{"id": node_id, "type": "approval", "config": config}],
+                })
+                assert response.status_code == 202
+                return response.json()["id"]
+
+            legacy = start("Old workpaper", "finance-review", None)
+            modern = start("Renamed workpaper", "custom-id", "finance_workpaper_review")
+            start("Unrelated", "finance-review", "unrelated")
+            result = client.get(endpoint, params={
+                "approval_type": "finance_workpaper_review",
+                "legacy_approval_node": "finance-review",
+                "input_contains": "731",
+            })
+            assert result.status_code == 200
+            assert [run["id"] for run in result.json()["runs"]] == [modern, legacy]
+    finally:
+        app.state.workflow_runtime.close()

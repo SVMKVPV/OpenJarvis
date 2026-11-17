@@ -263,6 +263,7 @@ def create_workflow_runs_router() -> APIRouter:
         recent: bool = False,
         recurrence_id: str = Query(default="", max_length=128),
         approval_type: str = Query(default="", max_length=128),
+        legacy_approval_node: str = Query(default="", max_length=128),
         input_contains: str = Query(default="", max_length=200),
     ) -> dict:
         if before and run_status == "scheduled" and not recent:
@@ -273,11 +274,13 @@ def create_workflow_runs_router() -> APIRouter:
             status=run_status, limit=limit, before=before, recent=recent,
             recurrence_id=recurrence_id, approval_type=approval_type,
             input_contains=input_contains.strip(),
+            legacy_approval_node=legacy_approval_node,
         )
         return {
             "runs": runs, "count": len(runs), "before": before, "recent": recent,
             "recurrence_id": recurrence_id,
             "approval_type": approval_type, "input_contains": input_contains.strip(),
+            "legacy_approval_node": legacy_approval_node,
         }
 
     @router.get("/{run_id}")
