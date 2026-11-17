@@ -39,7 +39,7 @@ export function N8nWorkflowInspector({ onLoadDraft }: {
           if (file) void inspect(file);
         }} />
     </label>
-    <small>Linear workflows with a Manual Trigger, No Operation, and fixed JSON output can be loaded into the editor.</small>
+    <small>Supported manual workflows can use No Operation, fixed JSON output, and strict text equality branches.</small>
     {loading && <p role="status">Reading workflow…</p>}
     {error && <p role="alert">{error}</p>}
     {workflow && <>

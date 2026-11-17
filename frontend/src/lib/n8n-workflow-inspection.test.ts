@@ -39,6 +39,37 @@ describe('n8n workflow inspection', () => {
     expect(preview.draft).toBeUndefined();
     expect(preview.conversionIssue).toContain('Data');
   });
+
+  it('converts a strict text condition and preserves true and false edge labels', () => {
+    const preview = inspectN8nWorkflow({
+      nodes: [
+        { name: 'Start', type: 'n8n-nodes-base.manualTrigger' },
+        { name: 'Data', type: 'n8n-nodes-base.set', typeVersion: 3.4,
+          parameters: { mode: 'raw', jsonOutput: '{"status":"ready"}' } },
+        { name: 'Check', type: 'n8n-nodes-base.if', typeVersion: 2.2, parameters: {
+          options: {}, conditions: {
+            options: { caseSensitive: true, typeValidation: 'strict' }, combinator: 'and',
+            conditions: [{ leftValue: '={{ $json.status }}', rightValue: 'ready',
+              operator: { type: 'string', operation: 'equals' } }],
+          },
+        } },
+        { name: 'Yes', type: 'n8n-nodes-base.noOp' },
+        { name: 'No', type: 'n8n-nodes-base.noOp' },
+      ],
+      connections: {
+        Start: { main: [[{ node: 'Data', type: 'main', index: 0 }]] },
+        Data: { main: [[{ node: 'Check', type: 'main', index: 0 }]] },
+        Check: { main: [[{ node: 'Yes', type: 'main', index: 0 }], [{ node: 'No', type: 'main', index: 0 }]] },
+      },
+    });
+    expect(preview.draft?.nodes[2]).toEqual({
+      id: 'Check', type: 'condition', condition_expr: 'json_string_equals:{"key":"status","value":"ready"}',
+    });
+    expect(preview.draft?.edges?.slice(-2)).toEqual([
+      { source: 'Check', target: 'Yes', condition: 'true' },
+      { source: 'Check', target: 'No', condition: 'false' },
+    ]);
+  });
   it('keeps the graph and credential presence without retaining settings or identifiers', () => {
     const preview = inspectN8nWorkflow({
       name: 'Optional template',

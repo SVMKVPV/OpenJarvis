@@ -231,7 +231,9 @@ class WorkflowEngine:
             elif node.node_type == NodeType.TOOL:
                 result = self._run_tool_node(node, outputs, system, graph)
             elif node.node_type == NodeType.CONDITION:
-                result = self.evaluate_condition(node, outputs)
+                result = self.evaluate_condition(
+                    node, outputs, input_text=self._get_node_input(node, outputs, graph)
+                )
             elif node.node_type == NodeType.TRANSFORM:
                 result = self.evaluate_transform(
                     node,
@@ -381,13 +383,21 @@ class WorkflowEngine:
         graph: WorkflowGraph,
     ) -> str:
         """Get input for a node from predecessor outputs."""
-        if graph.predecessors(node.id):
-            return "\n\n".join(
-                outputs[p]
-                for p in graph.active_predecessors(node.id, outputs)
-                if outputs[p]
-            )
-        return outputs.get("_input", "")
+        if not graph.predecessors(node.id):
+            return outputs.get("_input", "")
+        inputs = []
+        for predecessor in graph.active_predecessors(node.id, outputs):
+            source = graph.get_node(predecessor)
+            if (
+                source is not None
+                and source.node_type == NodeType.CONDITION
+                and source.condition_expr.startswith("json_string_equals:")
+            ):
+                # The boolean selects an edge. The JSON item travels along it.
+                inputs.append(self._get_node_input(source, outputs, graph))
+            else:
+                inputs.append(outputs[predecessor])
+        return "\n\n".join(value for value in inputs if value)
 
     def _run_agent_node(
         self,
@@ -633,9 +643,31 @@ class WorkflowEngine:
         self,
         node: WorkflowNode,
         outputs: Dict[str, str],
+        *,
+        input_text: str | None = None,
     ) -> WorkflowStepResult:
         """Evaluate a condition expression against outputs."""
         expr = node.condition_expr
+        if expr.startswith("json_string_equals:"):
+            try:
+                config = json.loads(expr.removeprefix("json_string_equals:"))
+                data = json.loads(
+                    outputs.get("_input", "") if input_text is None else input_text
+                )
+                key, expected = config["key"], config["value"]
+                if not isinstance(data, dict):
+                    raise ValueError("Expected an object")
+                actual = data[key]
+                if not all(isinstance(value, str) for value in (key, actual, expected)):
+                    raise ValueError("Expected string comparison")
+                return WorkflowStepResult(
+                    node_id=node.id, output="true" if actual == expected else "false"
+                )
+            except (KeyError, TypeError, ValueError, RecursionError):
+                return WorkflowStepResult(
+                    node_id=node.id, success=False,
+                    output="JSON condition requires an existing string field.",
+                )
         if not expr:
             return WorkflowStepResult(
                 node_id=node.id,

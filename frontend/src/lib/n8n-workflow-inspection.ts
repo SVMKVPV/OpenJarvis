@@ -2,6 +2,8 @@ import type { SavedWorkflowDefinition } from './api';
 
 type N8nNode = { id: string; type: string; usesCredentials: boolean; disabled: boolean };
 type N8nConnection = { source: string; target: string; condition: string };
+type DraftGraph = SavedWorkflowDefinition['graph'];
+type DraftEdge = { source: string; target: string; condition?: 'true' | 'false' };
 
 function object(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -39,6 +41,27 @@ function literalTransform(node: Record<string, unknown>): string | undefined {
   }
 }
 
+function stringCondition(node: Record<string, unknown>): string | undefined {
+  if (node.type !== 'n8n-nodes-base.if' || typeof node.typeVersion !== 'number' ||
+      ![2, 2.1, 2.2, 2.3, 2.4].includes(node.typeVersion)) return undefined;
+  const parameters = object(node.parameters);
+  const filter = object(parameters?.conditions);
+  const options = object(filter?.options);
+  if (!parameters || !filter || options?.caseSensitive !== true ||
+      options.typeValidation !== 'strict' || parameters.looseTypeValidation === true ||
+      object(parameters.options)?.ignoreCase === true ||
+      !Array.isArray(filter.conditions) || filter.conditions.length !== 1) return undefined;
+  const condition = object(filter.conditions[0]);
+  const operator = object(condition?.operator);
+  const left = condition?.leftValue;
+  const right = condition?.rightValue;
+  if (operator?.type !== 'string' || operator.operation !== 'equals' ||
+      typeof left !== 'string' || typeof right !== 'string' ||
+      right.startsWith('=') || right.includes('{{') || right.length > 500) return undefined;
+  const match = /^=\{\{\s*\$json\.([a-zA-Z_][a-zA-Z0-9_]{0,127})\s*\}\}$/.exec(left);
+  if (match) return `json_string_equals:${JSON.stringify({ key: match[1], value: right })}`;
+}
+
 export function inspectN8nWorkflow(value: unknown) {
   const document = object(value);
   if (!document || !Array.isArray(document.nodes) || !object(document.connections)) {
@@ -49,7 +72,8 @@ export function inspectN8nWorkflow(value: unknown) {
   }
 
   const nodes: N8nNode[] = [];
-  const transforms: SavedWorkflowDefinition['graph']['nodes'] = [];
+  const draftNodes: DraftGraph['nodes'] = [];
+  const branches = new Set<string>();
   let conversionIssue = Object.keys(object(document.pinData) ?? {}).length
     ? 'Pinned data needs manual reconstruction.' : '';
   const known = new Set<string>();
@@ -66,17 +90,23 @@ export function inspectN8nWorkflow(value: unknown) {
       disabled: node.disabled === true,
     });
     const transform = literalTransform(node);
-    if (!transform || node.disabled === true || Object.keys(object(node.credentials) ?? {}).length ||
-        node.name === '_input' || node.name.length > 128) {
+    const condition = stringCondition(node);
+    if ((!transform && !condition) || node.disabled === true || Object.keys(object(node.credentials) ?? {}).length ||
+        node.name === '_input' || node.name.length > 128 || node.continueOnFail === true ||
+        (node.onError !== undefined && node.onError !== 'stopWorkflow')) {
       conversionIssue ||= `${node.name} needs manual reconstruction.`;
+    } else if (condition) {
+      draftNodes.push({ id: node.name, type: 'condition', condition_expr: condition });
+      branches.add(node.name);
     } else {
-      transforms.push({ id: node.name, type: 'transform', transform_expr: transform });
+      draftNodes.push({ id: node.name, type: 'transform', transform_expr: transform });
     }
   }
 
   const connections: N8nConnection[] = [];
   let skippedConnections = 0;
-  let nonLinearConnection = false;
+  const draftEdges: DraftEdge[] = [];
+  let unsupportedConnection = false;
   for (const [source, channels] of Object.entries(object(document.connections) ?? {})) {
     if (!object(channels)) throw new Error('The workflow contains an invalid connection source.');
     for (const [channel, outputs] of Object.entries(object(channels) ?? {})) {
@@ -95,8 +125,10 @@ export function inspectN8nWorkflow(value: unknown) {
             continue;
           }
           const connection = object(link);
-          if (channel !== 'main' || index !== 0 || connection?.index !== 0 ||
-              connection.type !== 'main') nonLinearConnection = true;
+          const branch = branches.has(source);
+          if (channel !== 'main' || index > (branch ? 1 : 0) || connection?.index !== 0 ||
+              connection.type !== 'main') unsupportedConnection = true;
+          draftEdges.push({ source, target, ...(branch ? { condition: index === 0 ? 'true' : 'false' } : {}) });
           connections.push({ source, target, condition: `${channel} ${index + 1}` });
         }
       });
@@ -105,21 +137,33 @@ export function inspectN8nWorkflow(value: unknown) {
   const name = typeof document.name === 'string' ? document.name.trim() : '';
   const workflowName = name || 'Unnamed n8n workflow';
   const triggers = nodes.filter((node) => node.type === 'n8n-nodes-base.manualTrigger');
-  const next = new Map(connections.map(({ source, target }) => [source, target]));
-  const visited = new Set<string>();
-  let current: string | undefined = triggers[0]?.id;
-  while (current && !visited.has(current)) {
-    visited.add(current);
-    current = next.get(current);
+  const outgoing = new Map<string, typeof draftEdges>();
+  for (const edge of draftEdges) {
+    const edges = outgoing.get(edge.source) ?? [];
+    edges.push(edge);
+    outgoing.set(edge.source, edges);
   }
-  if (triggers.length !== 1 || nonLinearConnection || skippedConnections ||
-      connections.length !== nodes.length - 1 || visited.size !== nodes.length || current) {
-    conversionIssue ||= 'Draft import requires one unbranched path from a Manual Trigger.';
+  const unsupportedFanout = nodes.some(({ id }) => {
+    const edges = outgoing.get(id) ?? [];
+    return branches.has(id) ? edges.length !== 2 || edges[0].condition === edges[1].condition
+      : edges.length > 1;
+  });
+  const visited = new Set<string>();
+  const queue = triggers.map(({ id }) => id);
+  while (queue.length) {
+    const current = queue.pop()!;
+    if (visited.has(current)) continue;
+    visited.add(current);
+    queue.push(...(outgoing.get(current) ?? []).map(({ target }) => target));
+  }
+  if (triggers.length !== 1 || unsupportedConnection || unsupportedFanout || skippedConnections ||
+      connections.length !== nodes.length - 1 || visited.size !== nodes.length) {
+    conversionIssue ||= 'Draft import needs one Manual Trigger and separate paths for each supported If branch.';
   }
   const draft: SavedWorkflowDefinition['graph'] | undefined = conversionIssue ? undefined : {
     name: workflowName,
-    nodes: transforms,
-    edges: connections.map(({ source, target }) => ({ source, target })),
+    nodes: draftNodes,
+    edges: draftEdges,
   };
   return { name: workflowName, nodes, connections, skippedConnections, draft, conversionIssue };
 }

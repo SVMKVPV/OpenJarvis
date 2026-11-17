@@ -481,6 +481,30 @@ class TestWorkflowEngine:
         if expected_status == "succeeded":
             assert result.final_output == '{"status": "ready"}'
 
+    @pytest.mark.parametrize(("status", "branch"), [("ready", "yes"), ("Ready", "no")])
+    def test_json_string_branch_preserves_input(self, status, branch):
+        graph = graph_from_dict({
+            "nodes": [
+                {
+                    "id": "check", "type": "condition",
+                    "condition_expr": (
+                        'json_string_equals:{"key":"status","value":"ready"}'
+                    ),
+                },
+                {"id": "yes", "type": "transform"},
+                {"id": "no", "type": "transform"},
+            ],
+            "edges": [
+                {"source": "check", "target": "yes", "condition": "true"},
+                {"source": "check", "target": "no", "condition": "false"},
+            ],
+        })
+        payload = f'{{"status":"{status}","count":2}}'
+        result = WorkflowEngine().run(graph, None, initial_input=payload)
+        assert result.status == "succeeded"
+        assert [step.node_id for step in result.steps] == ["check", branch]
+        assert result.final_output == payload
+
     def test_keep_selected_json_fields(self):
         graph = (
             WorkflowBuilder("select")
