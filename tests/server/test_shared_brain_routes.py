@@ -154,3 +154,36 @@ def test_shared_brief_is_authenticated_persistent_and_revisioned(
         )
         assert too_long.status_code == 422
         assert restarted.get(path, headers=headers).json() == winner
+
+
+def test_shared_brain_read_key_cannot_edit_or_access_other_routes(tmp_path, monkeypatch):
+    import hashlib
+
+    from fastapi import FastAPI
+
+    from openjarvis.server.auth_middleware import AuthMiddleware
+    from openjarvis.server.shared_brain_routes import router
+
+    monkeypatch.setenv("OPENJARVIS_HOME", str(tmp_path))
+    read_key = "test-brief-reader"
+    monkeypatch.setenv(
+        "OPENJARVIS_SHARED_BRAIN_READ_KEY_SHA256",
+        hashlib.sha256(read_key.encode()).hexdigest(),
+    )
+    app = FastAPI()
+    app.include_router(router)
+    app.add_middleware(AuthMiddleware, api_key="test-owner")
+    reader = {"Authorization": f"Bearer {read_key}"}
+    owner = {"Authorization": "Bearer test-owner"}
+    path = "/v1/shared-brain/brief"
+    payload = {"context": "Approved shared context", "revision": 0}
+    with TestClient(app) as client:
+        assert client.get(path).status_code == 401
+        saved = client.put(path, json=payload, headers=owner)
+        assert saved.status_code == 200
+        brief = client.get(path, headers=reader)
+        assert brief.status_code == 200
+        assert brief.headers["Cache-Control"] == "no-store"
+        assert brief.json() == saved.json()
+        assert client.put(path, json=payload, headers=reader).status_code == 401
+        assert client.get("/v1/workflows/runs", headers=reader).status_code == 401

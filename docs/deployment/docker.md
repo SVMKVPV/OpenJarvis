@@ -222,6 +222,20 @@ Select it in the request node and replace the saved revision and event ID
 placeholders. Use the same event ID and request body when retrying that event.
 Use a fresh event ID for distinct events.
 
+### Give a collaborator read access to the Shared Brain brief
+
+Use the key-generation command above to create a separate random key and its
+SHA-256 digest. Keep the backend's owner API key configured. Set
+`OPENJARVIS_SHARED_BRAIN_READ_KEY_SHA256` to the new digest and recreate the
+backend service so it loads the setting. Store the original key in the
+collaborating client's credential store.
+
+Send `GET /v1/shared-brain/brief` with this key as a Bearer token. The response
+contains the full saved brief and its revision. Use this only with clients
+you authorize to read that brief. A client holding this key cannot edit the
+brief or access other protected endpoints. Remove the digest and recreate
+the service to revoke access.
+
 ### Persistent data
 
 The `openjarvis-data` named volume persists Command Center state, including

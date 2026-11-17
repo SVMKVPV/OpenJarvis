@@ -60,6 +60,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, api_key: str = "") -> None:  # noqa: ANN001
         super().__init__(app)
         self._api_key = api_key or os.environ.get("OPENJARVIS_API_KEY", "")
+        brief_digest = os.environ.get("OPENJARVIS_SHARED_BRAIN_READ_KEY_SHA256", "")
+        self._shared_brain_read_digest = (
+            brief_digest if self._api_key and re.fullmatch(r"[0-9a-f]{64}", brief_digest)
+            else ""
+        )
         self._workflow_launch_keys = (
             _load_workflow_launch_keys() if self._api_key else {}
         )
@@ -85,6 +90,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     return await call_next(request)
                 if self._matches_workflow_launch_key(request, token):
                     request.state.scoped_workflow_launch = True
+                    return await call_next(request)
+                if (
+                    self._shared_brain_read_digest
+                    and request.method == "GET"
+                    and request.url.path == "/v1/shared-brain/brief"
+                    and token
+                    and _api_keys_match(
+                        hashlib.sha256(token.encode("utf-8")).hexdigest(),
+                        self._shared_brain_read_digest,
+                    )
+                ):
                     return await call_next(request)
             return JSONResponse(
                 {"detail": "Invalid API key"},

@@ -11,6 +11,7 @@ services:
       - OPENJARVIS_HOME=/home/openjarvis/.openjarvis
       - OPENJARVIS_CORS_ORIGINS=${OPENJARVIS_CORS_ORIGINS:-}
       - OPENJARVIS_WORKFLOW_LAUNCH_KEYS=${OPENJARVIS_WORKFLOW_LAUNCH_KEYS:-}
+      - OPENJARVIS_SHARED_BRAIN_READ_KEY_SHA256=${OPENJARVIS_SHARED_BRAIN_READ_KEY_SHA256:-}
       # The container binds 0.0.0.0, so an API key is REQUIRED. Compose fails
       # fast if OPENJARVIS_API_KEY is unset (set it in deploy/docker/.env —
       # see .env.example, or `export` it). Generate one: `jarvis auth generate-key`.
