@@ -62,10 +62,10 @@ def test_mcp_catalog_reports_configuration_without_credentials(monkeypatch) -> N
     assert client.get("/v1/plugins/mcp/" + item["id"]).json() == item
 
 
-def test_mcp_discovery_is_explicit_and_returns_only_tool_count(monkeypatch) -> None:
+def test_mcp_discovery_is_explicit_and_returns_tool_names(monkeypatch) -> None:
     from unittest.mock import Mock
 
-    discover = Mock(return_value=([], {"search_nodes": object()}))
+    discover = Mock(return_value=([], {"search_nodes": object(), "get_node": object()}))
     monkeypatch.setattr(
         "openjarvis.server.agent_manager_routes._get_mcp_tools", discover
     )
@@ -75,5 +75,7 @@ def test_mcp_discovery_is_explicit_and_returns_only_tool_count(monkeypatch) -> N
 
     result = client.post("/v1/plugins/mcp/discover")
     assert result.status_code == 200
-    assert result.json() == {"tool_count": 1}
+    assert result.json() == {
+        "tool_count": 2, "tool_names": ["get_node", "search_nodes"],
+    }
     discover.assert_called_once()

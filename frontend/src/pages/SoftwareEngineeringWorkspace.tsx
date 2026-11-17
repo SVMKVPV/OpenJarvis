@@ -461,12 +461,15 @@ export function SoftwareEngineeringWorkspace({
   const [pluginCatalogState, setPluginCatalogState] = useState<'loading' | 'online' | 'offline'>('loading');
   const [checkingMcp, setCheckingMcp] = useState(false);
   const [mcpMessage, setMcpMessage] = useState('');
+  const [mcpToolNames, setMcpToolNames] = useState<string[]>([]);
   const checkMcp = async () => {
     if (checkingMcp) return;
     setCheckingMcp(true);
     setMcpMessage('');
+    setMcpToolNames([]);
     try {
-      const count = await discoverMcpTools();
+      const { count, names } = await discoverMcpTools();
+      setMcpToolNames(names);
       setMcpMessage(count ? `${count} MCP tools available to the runtime.` : 'No MCP tools were discovered.');
     } catch (error) {
       setMcpMessage(error instanceof Error ? error.message : 'Could not check MCP tools.');
@@ -1327,6 +1330,9 @@ export function SoftwareEngineeringWorkspace({
                 </button>
               )}
               {mcpMessage && <p role="status">{mcpMessage}</p>}
+              {mcpToolNames.length > 0 && (
+                <ul aria-label="Discovered MCP tools">{mcpToolNames.map((name) => <li key={name}>{name}</li>)}</ul>
+              )}
             </details>
             <details ref={connectorStatusDetails}>
               <summary>Connector status</summary>

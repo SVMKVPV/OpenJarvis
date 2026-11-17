@@ -20,11 +20,11 @@ async def list_plugins(kind: str | None = Query(default=None)) -> dict:
 
 
 @router.post("/mcp/discover")
-def discover_mcp_tools(request: Request) -> dict[str, int]:
+def discover_mcp_tools(request: Request) -> dict[str, int | list[str]]:
     from openjarvis.server.agent_manager_routes import _get_mcp_tools
 
     _, tools = _get_mcp_tools(request.app.state)
-    return {"tool_count": len(tools)}
+    return {"tool_count": len(tools), "tool_names": sorted(tools)}
 
 
 @router.get("/{kind}/{plugin_id}")

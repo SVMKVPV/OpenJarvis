@@ -219,11 +219,17 @@ export type RuntimePlugin = {
   version: string;
 };
 
-export async function discoverMcpTools(): Promise<number> {
+export async function discoverMcpTools(): Promise<{ count: number; names: string[] }> {
   const response = await apiFetch('/v1/plugins/mcp/discover', { method: 'POST' });
   if (!response.ok) throw new Error(`MCP tool discovery failed (${response.status}).`);
   const payload = await response.json();
-  return payload.tool_count;
+  if (!Number.isSafeInteger(payload.tool_count) || payload.tool_count < 0) {
+    throw new Error('The backend did not report an MCP tool count.');
+  }
+  const names = Array.isArray(payload.tool_names) ? payload.tool_names.filter(
+    (name: unknown): name is string => typeof name === 'string' && !!name,
+  ) : [];
+  return { count: payload.tool_count, names };
 }
 
 export async function fetchRuntimePlugins(): Promise<RuntimePlugin[]> {
