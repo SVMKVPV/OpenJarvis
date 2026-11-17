@@ -3,7 +3,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, Grip, Plus, Settings2, X } fro
 import { useLocalPreference } from '../hooks/useLocalPreference';
 import {
   fetchGa4Views, fetchGmailReviewCount, fetchIndexedCalendarEvents, fetchLeadCount, fetchPendingApprovals, fetchWorkflowRuns,
-  fetchUpcomingWorkflowRecurrences,
+  fetchSharedBrainBrief, fetchUpcomingWorkflowRecurrences,
   type Ga4Views, type IndexedCalendarEvent, type PendingApproval, type WorkflowRunSummary,
   type UpcomingWorkflowRecurrence,
 } from '../lib/api';
@@ -17,7 +17,7 @@ import './custom-dashboard.css';
 export type DashboardWidget = { id: string; stationId: string; station: string; name: string; value: string; detail: string; kind: 'metric' | 'calendar' | 'queue' | 'trend' | 'content' };
 export const DASHBOARD_WIDGETS: DashboardWidget[] = [
   { id: 'dot-briefing', stationId: 'dot', station: 'DOT', name: 'CEO briefing', value: '7', detail: 'DECISIONS + UPDATES', kind: 'queue' },
-  { id: 'brain-health', stationId: 'brain', station: 'SHARED BRAIN', name: 'Communication health', value: '98.4%', detail: '10 STATIONS SYNCHRONIZED', kind: 'metric' },
+  { id: 'brain-health', stationId: 'brain', station: 'SHARED BRAIN', name: 'Shared brief', value: '', detail: '', kind: 'content' },
   { id: 'leads-found', stationId: 'growth', station: 'LEADS + GROWTH', name: 'Leads found', value: '', detail: 'Saved growth leads', kind: 'metric' },
   { id: 'content-approval', stationId: 'marketing', station: 'MARKETING', name: 'Content to approve', value: '', detail: 'Waiting for review', kind: 'queue' },
   { id: 'social-pipeline', stationId: 'marketing', station: 'MARKETING', name: 'Social content pipeline', value: '', detail: 'Recent drafts and planned content', kind: 'content' },
@@ -51,6 +51,24 @@ function WorkflowApprovalLinks({ approvals, label, onOpen }: {
       ))}
     </ul>
   );
+}
+
+function DashboardSharedBrief() {
+  const [status, setStatus] = useState('Checking backend brief…');
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchSharedBrainBrief(controller.signal).then((brief) => {
+      if (!controller.signal.aborted) {
+        setStatus(brief.revision > 0 ? `Saved revision ${brief.revision}` : 'No saved brief yet');
+      }
+    }).catch(() => {
+      if (!controller.signal.aborted) setStatus('Backend brief unavailable');
+    });
+    return () => controller.abort();
+  }, []);
+
+  return <p role="status">{status}</p>;
 }
 
 export function CustomDashboard({
@@ -285,8 +303,9 @@ export function CustomDashboard({
   const move = (index: number, delta: number) => { const next = [...widgetIds]; const target = index + delta; if (target < 0 || target >= next.length) return; [next[index], next[target]] = [next[target], next[index]]; setWidgetIds(next); };
   return <main className="custom-dashboard"><div className="dashboard-title"><div><span>CUSTOM DASHBOARD</span><h2>CEO operating picture</h2><p>Station-owned widgets. Add what matters, remove what does not.</p></div><button className={editing ? 'active' : ''} onClick={() => setEditing(!editing)}><Settings2 size={13}/>{editing ? 'DONE EDITING' : 'EDIT DASHBOARD'}</button></div>
     {editing && <section className="widget-catalog"><header><div><span>ADD WIDGET</span><strong>AVAILABLE FROM WORKSTATIONS</strong></div><em>{available.length} AVAILABLE</em></header><div>{available.length ? available.map((widget) => <button key={widget.id} onClick={() => setWidgetIds([...widgetIds, widget.id])}><Plus size={11}/><span><b>{widget.name}</b><small>{widget.station}</small></span></button>) : <p>All available widgets are already on the dashboard.</p>}</div></section>}
-    {widgets.length ? <section className="widget-grid">{widgets.map((widget,index) => <article key={widget.id} className={`dashboard-widget ${sizes[widget.id] ?? (widget.kind === 'calendar' ? 'large' : 'small')}`}><header><button onClick={() => onOpenStation(widget.stationId)}>{widget.station}</button><span>{widget.id === 'approvals' || widget.id === 'builder-proposals' ? (approvalCount !== null ? 'LIVE DATA' : 'BACKEND') : widget.kind === 'calendar' ? (scheduledRuns !== null ? 'LIVE WORKFLOWS' : 'BACKEND') : widget.id === 'content-approval' || widget.id === 'social-pipeline' ? (socialQueue ? 'LIVE QUEUE' : 'BACKEND') : widget.id === 'email-replies' ? 'GMAIL INDEX' : widget.id === 'analytics-views' ? (analytics?.status === 'live' ? 'LIVE GA4' : 'GA4') : widget.id === 'leads-found' ? 'LEAD REGISTER' : widget.id === 'workflow-failures' ? 'WORKFLOW HISTORY' : widget.id === 'revenue' ? 'FINANCE RECORD' : 'DEMO DATA'}</span></header><div className="widget-content"><span>{widget.name}</span>{widget.kind !== 'content' && widget.kind !== 'calendar' && <><strong>{queueMetrics[widget.id]?.value ?? widget.value}</strong><small>{queueMetrics[widget.id]?.detail ?? widget.detail}</small></>}
+    {widgets.length ? <section className="widget-grid">{widgets.map((widget,index) => <article key={widget.id} className={`dashboard-widget ${sizes[widget.id] ?? (widget.kind === 'calendar' ? 'large' : 'small')}`}><header><button onClick={() => onOpenStation(widget.stationId)}>{widget.station}</button><span>{widget.id === 'approvals' || widget.id === 'builder-proposals' ? (approvalCount !== null ? 'LIVE DATA' : 'BACKEND') : widget.kind === 'calendar' ? (scheduledRuns !== null ? 'LIVE WORKFLOWS' : 'BACKEND') : widget.id === 'content-approval' || widget.id === 'social-pipeline' ? (socialQueue ? 'LIVE QUEUE' : 'BACKEND') : widget.id === 'email-replies' ? 'GMAIL INDEX' : widget.id === 'analytics-views' ? (analytics?.status === 'live' ? 'LIVE GA4' : 'GA4') : widget.id === 'leads-found' ? 'LEAD REGISTER' : widget.id === 'workflow-failures' ? 'WORKFLOW HISTORY' : widget.id === 'revenue' ? 'FINANCE RECORD' : widget.id === 'brain-health' ? 'BACKEND BRIEF' : 'DEMO DATA'}</span></header><div className="widget-content"><span>{widget.name}</span>{widget.kind !== 'content' && widget.kind !== 'calendar' && <><strong>{queueMetrics[widget.id]?.value ?? widget.value}</strong><small>{queueMetrics[widget.id]?.detail ?? widget.detail}</small></>}
     {widget.id === 'revenue' && <FinanceRevenue />}
+    {widget.id === 'brain-health' && <DashboardSharedBrief />}
     {widget.id === 'workflow-failures' && <DashboardWorkflowFailures onOpen={onOpenWorkflow} />}
     {widget.id === 'approvals' && (
       <WorkflowApprovalLinks approvals={workflowApprovals} label="Workflow approvals" onOpen={onOpenWorkflow} />
