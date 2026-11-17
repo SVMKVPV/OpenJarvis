@@ -544,6 +544,18 @@ def test_sync_status_restores_failure_and_last_success(app, tmp_path, monkeypatc
     assert status["items_synced"] == 10
     assert status["last_sync"] == successful_at
 
+    monkeypatch.setitem(_instances, "news_rss", FreshConnector())
+    partial_error = "RSS sync incomplete. Ollama releases: HTTP 429"
+    with KnowledgeStore() as store:
+        with sync_engine.SyncEngine(pipeline=IngestionPipeline(store=store)) as engine:
+            engine._save_checkpoint(
+                "news_rss", 12, cursor=None, error=partial_error
+            )
+    rss = app.get("/v1/connectors/news_rss/sync").json()
+    assert rss["state"] == "error"
+    assert rss["items_synced"] == 12
+    assert rss["error"] == partial_error
+
 
 def test_trigger_sync(app, tmp_path: Path) -> None:
     """POST /v1/connectors/obsidian/sync triggers an incremental sync.

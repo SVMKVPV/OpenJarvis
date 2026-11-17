@@ -310,6 +310,8 @@ def create_connectors_router():
 
     def _translate_sync_error(raw: str) -> str:
         """Map common backend exceptions to a short user-facing message."""
+        if raw.startswith("RSS sync incomplete. "):
+            return raw
         if "401" in raw or "Unauthorized" in raw:
             return "Authentication failed — credentials may have expired."
         if "429" in raw or "Too Many Requests" in raw or "rate limited" in raw.lower():

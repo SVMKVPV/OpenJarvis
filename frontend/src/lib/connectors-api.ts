@@ -180,8 +180,8 @@ export async function disconnectSourceUntilComplete(
   }
 }
 
-export async function getSyncStatus(id: string): Promise<SyncStatus> {
-  const res = await apiFetch(`/v1/connectors/${encodeURIComponent(id)}/sync`);
+export async function getSyncStatus(id: string, signal?: AbortSignal): Promise<SyncStatus> {
+  const res = await apiFetch(`/v1/connectors/${encodeURIComponent(id)}/sync`, { signal });
   if (!res.ok) throw new Error(`Failed to get sync status for ${id}: ${res.status}`);
   return res.json();
 }
