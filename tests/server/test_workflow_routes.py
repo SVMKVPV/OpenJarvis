@@ -936,3 +936,35 @@ def test_workflow_index_preview_reads_only_the_selected_index(tmp_path, monkeypa
         assert not workflow_db.exists()
         invalid = client.post(endpoint, json={"source": " ", "query": "sentinel"})
         assert invalid.status_code == 422
+
+
+def test_workflow_condition_preview_matches_branch_labels(tmp_path, monkeypatch):
+    workflow_db = tmp_path / "workflows.db"
+    monkeypatch.setenv("OPENJARVIS_WORKFLOW_DB", str(workflow_db))
+    app = FastAPI()
+    app.include_router(create_workflow_runs_router())
+    endpoint = "/v1/workflows/preview-condition"
+    payload = {
+        "expression": "outputs['_input'] == 'yes'",
+        "outputs": {"_input": "yes"},
+        "branches": [
+            {"target": "continue", "condition": "true"},
+            {"target": "stop", "condition": "false"},
+            {"target": "record"},
+        ],
+    }
+    with TestClient(app) as client:
+        assert client.post(endpoint, json=payload).json() == {
+            "success": True,
+            "output": "True",
+            "matched_targets": ["continue", "record"],
+        }
+        payload["outputs"]["_input"] = "no"
+        assert client.post(endpoint, json=payload).json()["matched_targets"] == [
+            "stop", "record",
+        ]
+        payload["outputs"] = {}
+        failed = client.post(endpoint, json=payload).json()
+        assert not failed["success"]
+        assert failed["matched_targets"] == []
+        assert not workflow_db.exists()

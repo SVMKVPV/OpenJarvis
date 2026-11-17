@@ -1494,6 +1494,29 @@ export async function fetchWorkflowRuns(status?: WorkflowRunStatus): Promise<Wor
   return data.runs || [];
 }
 
+export type WorkflowConditionResult = {
+  success: boolean;
+  output: string;
+  matched_targets: string[];
+};
+
+export async function previewWorkflowCondition(
+  expression: string, outputs: Record<string, string>,
+  branches: Array<{ target: string; condition?: string }>, signal: AbortSignal,
+): Promise<WorkflowConditionResult> {
+  const response = await apiFetch('/v1/workflows/preview-condition', {
+    method: 'POST', signal, headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expression, outputs, branches }),
+  });
+  if (!response.ok) throw new Error('Condition preview is unavailable.');
+  const result = await response.json();
+  if (typeof result.success !== 'boolean' || typeof result.output !== 'string'
+      || !Array.isArray(result.matched_targets)) {
+    throw new Error('Condition preview is unavailable.');
+  }
+  return result;
+}
+
 export async function previewWorkflowIndex(
   source: string, query: string, allowGmailReference: boolean, signal: AbortSignal,
 ): Promise<{ success: boolean; output: string }> {

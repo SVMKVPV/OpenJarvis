@@ -39,6 +39,7 @@ import { WorkflowWorkstationAssignment, type WorkflowRecipient, type WorkflowRep
 import { WorkflowEvidenceUpload } from './WorkflowEvidenceUpload';
 import { WorkspaceProjectTasks } from './WorkspaceProjectTasks';
 import { WorkspaceInferenceHealth } from './WorkspaceInferenceHealth';
+import { WorkflowConditionPreview } from './WorkflowConditionPreview';
 import { WorkflowIndexPreview } from './WorkflowIndexPreview';
 import { PriorResearchCheck } from './PriorResearchCheck';
 import { WorkflowRecurrenceEditor } from './WorkflowRecurrenceEditor';
@@ -321,7 +322,7 @@ function downloadWorkflowJson(filename: string, data: object) {
 
 type DraftEdge = { source: string; target: string; condition?: string };
 
-type DraftNode = { id: string; type?: string; agent?: string; config?: Record<string, unknown> };
+type DraftNode = { id: string; type?: string; agent?: string; config?: Record<string, unknown>; condition_expr?: string };
 type DraftGraph = { nodes: DraftNode[]; edges?: DraftEdge[] };
 type NewStepType = 'tool' | 'transform' | 'condition' | 'approval' | 'agent';
 
@@ -1435,6 +1436,24 @@ export function SoftwareEngineeringWorkspace({
                       else stepElements.current.delete(node.id);
                     }}>
                       <span>{node.id}</span>
+                      {node.type === 'condition' && (
+                        <>
+                          <label>Condition expression for {node.id}
+                            <input value={node.condition_expr ?? ''} maxLength={4000} disabled={savingDefinition}
+                              onChange={(event) => {
+                                const expression = event.target.value;
+                                setWorkflowGraph(JSON.stringify({
+                                  ...draftGraph,
+                                  nodes: draftGraph.nodes.map((entry) => entry.id === node.id
+                                    ? { ...entry, condition_expr: expression } : entry),
+                                }, null, 2));
+                              }} />
+                          </label>
+                          <WorkflowConditionPreview expression={node.condition_expr ?? ''}
+                            branches={draftEdges.filter((edge) => edge.source === node.id)
+                              .map(({ target, condition }) => ({ target, condition }))} />
+                        </>
+                      )}
                       {node.type === 'tool' && node.config?.tool_name === 'knowledge_search' &&
                         node.config.query_from_input === true && (
                           <>

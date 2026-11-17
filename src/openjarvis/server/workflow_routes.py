@@ -16,6 +16,7 @@ from openjarvis.core.shared_brain import SharedBriefConflict, append_workflow_ha
 from openjarvis.server.approval_routes import get_approval_store
 from openjarvis.tools.approval_store import STATUS_APPROVED, STATUS_DENIED
 from openjarvis.workflow.engine import WorkflowEngine
+from openjarvis.workflow.graph import edge_matches_output
 from openjarvis.workflow.runtime import WorkflowRuntime, WorkflowRuntimeStopping
 from openjarvis.workflow.serialization import graph_from_dict, graph_to_dict
 from openjarvis.workflow.store import (
@@ -23,6 +24,7 @@ from openjarvis.workflow.store import (
     WorkflowLaunchConflict,
     WorkflowRunStore,
 )
+from openjarvis.workflow.types import NodeType, WorkflowNode
 
 
 class WorkflowDefinition(BaseModel):
@@ -92,6 +94,17 @@ class WorkflowIndexPreview(BaseModel):
     allow_gmail_reference: StrictBool = False
 
 
+class PreviewBranch(BaseModel):
+    target: str = Field(min_length=1, max_length=128)
+    condition: str = Field(default="", max_length=32)
+
+
+class WorkflowConditionPreview(BaseModel):
+    expression: str = Field(max_length=4000)
+    outputs: dict[str, str] = Field(max_length=100)
+    branches: list[PreviewBranch] = Field(default_factory=list, max_length=100)
+
+
 _runtime_creation_lock = threading.Lock()
 
 
@@ -128,12 +141,32 @@ def create_workflow_runs_router() -> APIRouter:
     router = APIRouter(prefix="/runs")
     _runtime = get_workflow_runtime
 
+    @root.post("/preview-condition")
+    def preview_condition(
+        payload: WorkflowConditionPreview, response: Response,
+    ) -> dict:
+        if sum(len(key) + len(value) for key, value in payload.outputs.items()) > 16000:
+            raise HTTPException(422, "Reduce the sample output size.")
+        node = WorkflowNode(
+            id="preview-condition",
+            node_type=NodeType.CONDITION,
+            condition_expr=payload.expression,
+        )
+        result = WorkflowEngine().evaluate_condition(node, payload.outputs)
+        response.headers["Cache-Control"] = "no-store"
+        return {
+            "success": result.success,
+            "output": result.output,
+            "matched_targets": [
+                edge.target for edge in payload.branches
+                if result.success and edge_matches_output(edge.condition, result.output)
+            ],
+        }
+
     @root.post("/preview-index")
     def preview_index(
         payload: WorkflowIndexPreview, request: Request, response: Response,
     ) -> dict:
-        from openjarvis.workflow.types import NodeType, WorkflowNode
-
         query = payload.query.strip()
         source = payload.source.strip()
         if not query or not source:

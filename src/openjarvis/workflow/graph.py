@@ -8,6 +8,10 @@ from typing import Dict, List, Optional, Set, Tuple
 from openjarvis.workflow.types import NodeType, WorkflowEdge, WorkflowNode
 
 
+def edge_matches_output(condition: str, output: str) -> bool:
+    return not condition or condition.strip().lower() == output.strip().lower()
+
+
 class WorkflowGraph:
     """Directed acyclic graph of workflow nodes.
 
@@ -59,11 +63,7 @@ class WorkflowGraph:
                 for edge in self._edges
                 if edge.target == node_id
                 and edge.source in outputs
-                and (
-                    not edge.condition
-                    or edge.condition.strip().lower()
-                    == outputs[edge.source].strip().lower()
-                )
+                and edge_matches_output(edge.condition, outputs[edge.source])
             )
         )
 
