@@ -1421,6 +1421,20 @@ export async function fetchLeadCount(signal?: AbortSignal): Promise<number> {
   return count;
 }
 
+export type ReviewedLeadCandidate = { organization: string; source_reference: string };
+
+export async function fetchReviewedLeadCandidates(
+  runId: string, signal: AbortSignal,
+): Promise<ReviewedLeadCandidate[] | null> {
+  const response = await apiFetch(`/v1/leads/reviewed-candidates/${encodeURIComponent(runId)}`, { signal });
+  if (!response.ok) throw new Error('Could not load the reviewed lead candidates.');
+  const { candidates } = await response.json();
+  if (candidates !== null && !Array.isArray(candidates)) {
+    throw new Error('Could not load the reviewed lead candidates.');
+  }
+  return candidates;
+}
+
 export async function saveLead(
   organization: string, sourceReference: string, workflowRunId?: string,
 ): Promise<SavedLead> {

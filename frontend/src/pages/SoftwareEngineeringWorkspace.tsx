@@ -157,9 +157,11 @@ const LEAD_DISCOVERY = {
     { id: 'lead-candidates', type: 'agent', agent: 'none', config: {
       instruction: [
         'Identify organizations that explicitly expressed interest, asked for a quote, or were referred as potential customers in the indexed evidence.',
-        'List the organization, exact source reference, and a brief reason grounded in the evidence for each candidate.',
+        'Copy each organization and exact source reference from the input. Prefer a source URL when present.',
+        'Return only a JSON object with a candidates array. Each candidate has organization, source_reference, and reason text fields.',
+        'Use {"candidates":[]} when no candidate is supported.',
         'Consolidate repeated mentions of one organization. Exclude vendors and other organizations with no evidence of customer interest.',
-        'If no candidate is supported, report that result. Leave qualification and outreach decisions to the reviewer.',
+        'Leave qualification and outreach decisions to the reviewer.',
       ].join(' '),
     } },
     { id: 'lead-review', type: 'approval', config: {
@@ -167,6 +169,7 @@ const LEAD_DISCOVERY = {
       description: 'Verify each candidate and its source before saving it in the Growth lead register.',
       tier: 'high',
       payload: {
+        candidate_format: 'json_v1',
         require_review_checklist: true,
         review_checklist: [
           'Match each organization and source reference to the indexed evidence.',

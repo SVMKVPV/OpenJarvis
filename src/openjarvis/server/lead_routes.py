@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 import sqlite3
 import time
 import uuid
@@ -78,29 +80,89 @@ def lead_summary(response: Response) -> dict:
     return {"count": count}
 
 
+def _approved_lead_review(run_id: str, request: Request) -> tuple[str, list | None]:
+    run = get_workflow_runtime(request).store.get_run(run_id, include_graph=True)
+    if run is None:
+        raise HTTPException(404, "Workflow run not found")
+    if run["status"] != "succeeded" or not any(
+        step["node_id"] == "lead-review"
+        and step["metadata"].get("approval_status") == "approved"
+        for step in run["steps"]
+    ):
+        raise HTTPException(409, "The lead discovery workflow needs approval")
+
+    outputs = {
+        step["node_id"]: step["output"] for step in run["steps"] if step["success"]
+    }
+    candidate = outputs.get("lead-candidates", "")
+    review_node = next(
+        (node for node in run["graph"]["nodes"] if node["id"] == "lead-review"),
+        {},
+    )
+    payload = review_node.get("config", {}).get("payload")
+    structured = (
+        isinstance(payload, dict) and payload.get("candidate_format") == "json_v1"
+    )
+    if not structured:
+        return candidate, None
+    return candidate, _reviewed_candidates(candidate, outputs.get("lead-source", ""))
+
+
+def _reviewed_candidates(text: str, source: str) -> list[dict[str, str]]:
+    text = text.strip()
+    fence = re.fullmatch(r"```(?:json)?\s+(.*?)\s*```", text, re.I | re.S)
+    try:
+        result = json.loads(fence.group(1) if fence else text)
+    except (ValueError, RecursionError):
+        return []
+    candidates = result.get("candidates") if isinstance(result, dict) else None
+    if not isinstance(candidates, list):
+        return []
+    seen = set()
+    evidence = source.casefold()
+    rows = []
+    for item in candidates:
+        if not isinstance(item, dict):
+            continue
+        org, ref = item.get("organization"), item.get("source_reference")
+        if not isinstance(org, str) or not isinstance(ref, str):
+            continue
+        org, ref = org.strip(), ref.strip()
+        if not (0 < len(org) <= 160 and 0 < len(ref) <= 1000):
+            continue
+        key = org.casefold()
+        if key in seen or key not in evidence or ref.casefold() not in evidence:
+            continue
+        seen.add(key)
+        rows.append({"organization": org, "source_reference": ref})
+    return rows
+
+
+@router.get("/reviewed-candidates/{run_id}")
+def get_reviewed_candidates(run_id: str, request: Request, response: Response) -> dict:
+    _, candidates = _approved_lead_review(run_id, request)
+    response.headers["Cache-Control"] = "no-store"
+    return {"candidates": candidates}
+
+
 @router.post("", status_code=201)
 def add_lead(fields: LeadInput, request: Request) -> dict:
     if fields.workflow_run_id:
-        run = get_workflow_runtime(request).store.get_run(fields.workflow_run_id)
-        if run is None:
-            raise HTTPException(404, "Workflow run not found")
-        approved = run["status"] == "succeeded" and any(
-            step["node_id"] == "lead-review"
-            and step["metadata"].get("approval_status") == "approved"
-            for step in run["steps"]
-        )
-        if not approved:
-            raise HTTPException(409, "The lead discovery workflow needs approval")
-        candidate = next(
-            (step["output"] for step in reversed(run["steps"])
-             if step["node_id"] == "lead-candidates" and step["success"]),
-            "",
-        )
-        if any(
-            value.casefold() not in candidate.casefold()
-            for value in (fields.organization, fields.source_reference)
-        ):
-            raise HTTPException(400, "Use the organization and source from the review")
+        original, candidates = _approved_lead_review(fields.workflow_run_id, request)
+        pair = {
+            "organization": fields.organization,
+            "source_reference": fields.source_reference,
+        }
+        if candidates is None:
+            matches = all(
+                value.casefold() in original.casefold() for value in pair.values()
+            )
+        else:
+            matches = pair in candidates
+        if not matches:
+            raise HTTPException(
+                400, "Use an organization and source pair from the review"
+            )
 
     lead = {"id": uuid.uuid4().hex, **fields.model_dump(), "created_at": time.time()}
     with closing(_connect()) as conn, conn:
