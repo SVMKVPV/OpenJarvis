@@ -42,6 +42,7 @@ import { WorkspaceInferenceHealth } from './WorkspaceInferenceHealth';
 import { WorkflowTransformEditor } from './WorkflowTransformEditor';
 import { WorkflowConditionPreview } from './WorkflowConditionPreview';
 import { WorkflowIndexPreview } from './WorkflowIndexPreview';
+import { N8nWorkflowInspector } from './N8nWorkflowInspector';
 import { PriorResearchCheck } from './PriorResearchCheck';
 import { WorkflowRecurrenceEditor } from './WorkflowRecurrenceEditor';
 import './software-workspace.css';
@@ -1703,6 +1704,7 @@ export function SoftwareEngineeringWorkspace({
                 selectedDefinition?.graph.nodes.some((node) => node.id === 'delivery-evidence')} />
           )}
           <p><a href="https://zie619.github.io/n8n-workflows/" target="_blank" rel="noopener noreferrer">Browse optional n8n templates ↗</a><br />Download JSON for manual import into n8n.</p>
+          <N8nWorkflowInspector />
           <form className="connector-editor" onSubmit={(event) => {
             event.preventDefault();
             void loadDefinitionPage(definitionSearch.trim());
